@@ -45,7 +45,7 @@ Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press th
 
 **Finder:** right-click an archive for **Extract Here**, **Extract to "Name"**, **Extract to…**; right-click anything for **Compress to ZIP**. Archives can also be opened with Tutto by double-clicking (Archives › Make Default).
 
-**Automation:** `tutto://do/capture-area`, `capture-screen`, `capture-edit`, `clipboard`, `windows` run an action; `tutto://open/<page>` (e.g. `battery`, `shortcuts`) opens a page — handy from Shortcuts, Raycast scripts or a Stream Deck.
+**Automation:** `tutto://do/capture-area`, `capture-screen`, `capture-edit`, `clipboard`, `windows`, `quit` run an action; `tutto://open/<page>` (e.g. `battery`, `shortcuts`) opens a page — handy from Shortcuts, Raycast scripts or a Stream Deck.
 
 **Can't see the menu bar icon?** On MacBooks with a camera notch, a full menu bar hides new icons behind the notch. Tutto notices and tells you; quitting the apps it replaces frees room, or hold ⌘ and drag icons to reorder them. Everything in the panel is also in the app (Spotlight › Tutto).
 

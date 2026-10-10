@@ -102,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// `tutto://open/<page>` shows a page of the app; `tutto://do/<action>` runs an action, for
 /// automation (Shortcuts, Raycast scripts, Stream Deck…).
 ///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows screenshots archives cornerClick shortcuts permissions general
-///   actions: capture-area capture-screen capture-edit clipboard windows
+///   actions: capture-area capture-screen capture-edit clipboard windows quit
 @MainActor
 enum DeepLinks {
     static func handle(_ url: URL, model: AppModel) {
@@ -118,6 +118,10 @@ enum DeepLinks {
         case "clipboard": .clipboardHistory
         case "windows": .windowPalette
         default: nil
+        }
+        if name == "quit" {
+            NSApp.terminate(nil)  // runs the normal shutdown (fans back to automatic, tap removed)
+            return
         }
         if let action { model.perform(action) }
     }

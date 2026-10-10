@@ -60,12 +60,18 @@ codesign --verify --deep --strict $APP
 echo "Tutto $VERSION ($BUILD) $CONFIG  $(du -sh $APP | cut -f1)  signed: $IDENTITY"
 
 if (( INSTALL )); then
-  osascript -e 'tell application id "ca.bryanyao.Tutto" to quit' 2>/dev/null || true
-  for _ in {1..20}; do pgrep -x Tutto > /dev/null || break; sleep 0.2; done
-  pkill -x Tutto 2>/dev/null || true
+  # Ask a running Tutto to quit through its own URL (no Apple Events), so it resets fans cleanly.
+  if pgrep -x Tutto > /dev/null; then
+    open -g "tutto://do/quit" 2>/dev/null || true
+    for _ in {1..25}; do pgrep -x Tutto > /dev/null || break; sleep 0.2; done
+    pkill -x Tutto 2>/dev/null || true
+  fi
   rm -rf /Applications/Tutto.app
   ditto $APP /Applications/Tutto.app
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/Tutto.app
   pluginkit -a /Applications/Tutto.app/Contents/PlugIns/TuttoFinder.appex 2>/dev/null || true
+  # Leave only the installed copy registered (the build folder copy would otherwise compete).
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$PWD/$APP" 2>/dev/null || true
+  pluginkit -r "$PWD/$EXT" 2>/dev/null || true
   echo "installed /Applications/Tutto.app"
 fi
