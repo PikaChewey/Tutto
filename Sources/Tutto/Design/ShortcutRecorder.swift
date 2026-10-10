@@ -20,6 +20,7 @@ struct ShortcutRecorder: View {
     @State private var note: String?
     @State private var monitor: Any?
     @State private var hovering = false
+    @State private var recordingSession: UUID?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -80,6 +81,14 @@ struct ShortcutRecorder: View {
             handle(event)
             return nil  // swallow while recording
         }
+        // A combo another app owns globally never reaches Tutto; say so instead of looking stuck.
+        let session = UUID()
+        recordingSession = session
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            if recording, recordingSession == session, note == nil {
+                flash("Nothing yet? Another app may already own that shortcut.", duration: 4)
+            }
+        }
     }
 
     private func stop() {
@@ -91,6 +100,7 @@ struct ShortcutRecorder: View {
     }
 
     private func handle(_ event: NSEvent) {
+        recordingSession = nil
         let modifiers = Self.modifiers(event.modifierFlags)
         if event.type == .flagsChanged {
             liveModifiers = modifiers
