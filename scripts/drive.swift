@@ -156,6 +156,51 @@ case "taps":
     let pid = Int32(args[1])!
     let mine = taps.filter { $0.tappingProcess == pid }
     print("taps for \(pid):", mine.count, mine.map { "enabled=\($0.enabled) mask=\(String($0.eventsOfInterest, radix: 16))" })
+case "focus":
+    // Which app and element have keyboard focus system-wide (to type only into the right place).
+    let system = AXUIElementCreateSystemWide()
+    var element: CFTypeRef?
+    AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &element)
+    guard let element else { print("no focus"); break }
+    var pid: pid_t = 0
+    AXUIElementGetPid(element as! AXUIElement, &pid)
+    var role: CFTypeRef?
+    AXUIElementCopyAttributeValue(element as! AXUIElement, kAXRoleAttribute as CFString, &role)
+    print(NSRunningApplication(processIdentifier: pid)?.localizedName ?? "?", pid, role as? String ?? "?")
+case "axpress":
+    // Presses the first button in an app whose title or description matches (VoiceOver's view of it).
+    let name = args[1], label = args[2].lowercased()
+    guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }) else { print("not running"); break }
+    func find(_ element: AXUIElement, depth: Int) -> AXUIElement? {
+        guard depth < 40 else { return nil }
+        for attribute in [kAXTitleAttribute, kAXDescriptionAttribute] {
+            var value: CFTypeRef?
+            AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+            if let text = value as? String, text.lowercased() == label {
+                var role: CFTypeRef?
+                AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+                if (role as? String) == "AXButton" || (role as? String) == "AXRadioButton" || (role as? String) == "AXCheckBox" { return element }
+            }
+        }
+        var children: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children)
+        for child in children as? [AXUIElement] ?? [] {
+            if let found = find(child, depth: depth + 1) { return found }
+        }
+        return nil
+    }
+    let root = AXUIElementCreateApplication(app.processIdentifier)
+    var windows: CFTypeRef?
+    AXUIElementCopyAttributeValue(root, kAXWindowsAttribute as CFString, &windows)
+    var pressed = false
+    for window in windows as? [AXUIElement] ?? [] {
+        if let button = find(window, depth: 0) {
+            print("press:", AXUIElementPerformAction(button, kAXPressAction as CFString).rawValue)
+            pressed = true
+            break
+        }
+    }
+    if !pressed { print("not found:", label) }
 case "pbsave":
     // Saves every item and type on the clipboard, so tests can put it back exactly.
     let items = (NSPasteboard.general.pasteboardItems ?? []).map { item in

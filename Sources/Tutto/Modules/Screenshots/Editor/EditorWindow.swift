@@ -32,6 +32,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
 
     func show() {
         let hosting = NSHostingView(rootView: EditorView(document: document, canvas: canvas, actions: self))
+        hosting.sizingOptions = []  // the window decides its size; SwiftUI must not move or resize it
         let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                               backing: .buffered, defer: false)
         window.titlebarAppearsTransparent = true
@@ -40,7 +41,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.contentView = hosting
         window.delegate = self
-        window.minSize = NSSize(width: 640, height: 420)
+        window.minSize = NSSize(width: 860, height: 420)
         window.collectionBehavior = [.fullScreenPrimary]
         window.animationBehavior = .documentWindow
 
@@ -50,7 +51,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let backing = screen?.backingScaleFactor ?? 2
         let natural = NSSize(width: document.size.width / backing + 56, height: document.size.height / backing + 46 + 28 + 56)
-        let size = NSSize(width: min(max(natural.width, 640), visible.width * 0.85),
+        let size = NSSize(width: min(max(natural.width, 860), visible.width * 0.85),
                           height: min(max(natural.height, 420), visible.height * 0.85))
         window.setFrame(NSRect(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2,
                                width: size.width, height: size.height).integral, display: false)
@@ -228,6 +229,60 @@ private struct EditorToolbar: View {
             .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.wash))
 
             Hairline(vertical: true).frame(height: 22)
+            if document.tool != .select && document.tool != .pixelate {
+                drawingOptions
+                    .transition(.opacity)
+                Hairline(vertical: true).frame(height: 22)
+            }
+            Button {
+                actions.recognizeText()
+            } label: {
+                Label("Text", systemImage: "text.viewfinder")
+                    .font(.system(size: 12, weight: .medium))
+                    .fixedSize()
+            }
+            .buttonStyle(OutlineButtonStyle(compact: true))
+            .focusable(false)
+            .help("Copy all text\(document.selection == nil ? "" : " in the selection") (T)")
+
+            Spacer(minLength: 8)
+
+            IconButton(symbol: "arrow.uturn.backward", help: "Undo (⌘Z)", size: 26) { document.undo(); actions.focusCanvas() }
+                .disabled(!document.canUndo)
+                .opacity(document.canUndo ? 1 : 0.35)
+            IconButton(symbol: "arrow.uturn.forward", help: "Redo (⇧⌘Z)", size: 26) { document.redo(); actions.focusCanvas() }
+                .disabled(!document.canRedo)
+                .opacity(document.canRedo ? 1 : 0.35)
+
+            if document.tool == .select {
+                Text(verbatim: "\(Int(document.size.width)) × \(Int(document.size.height))")
+                    .font(.mono(11, weight: .medium))
+                    .foregroundStyle(Color.ink2)
+                    .fixedSize()
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.hairline))
+                    .help("Image size in pixels")
+                    .transition(.opacity)
+            }
+            Button("Save") { actions.save(choosingLocation: false) }
+                .buttonStyle(OutlineButtonStyle(compact: true))
+                .fixedSize()
+                .focusable(false)
+                .help("Save to your screenshot folder (⌘S) · ⇧⌘S to choose")
+            Button("Copy") { actions.copy() }
+                .buttonStyle(InkButtonStyle(compact: true))
+                .fixedSize()
+                .focusable(false)
+                .help("Copy (⌘C) · Esc copies and closes")
+        }
+        .padding(.trailing, 12)
+        .animation(Motion.micro, value: document.tool)
+    }
+
+    /// Colors and line thickness, shown while a drawing tool is active.
+    private var drawingOptions: some View {
+        HStack(spacing: 10) {
             HStack(spacing: 5) {
                 ForEach(Array(EditorPalette.colors.enumerated()), id: \.offset) { _, color in
                     Swatch(color: color, selected: document.color == color) {
@@ -238,7 +293,6 @@ private struct EditorToolbar: View {
                 }
                 CustomColorButton(document: document)
             }
-            Hairline(vertical: true).frame(height: 22)
             HStack(spacing: 2) {
                 ForEach(EditorDocument.Thickness.allCases, id: \.self) { thickness in
                     Button {
@@ -258,43 +312,7 @@ private struct EditorToolbar: View {
                     .accessibilityLabel("\(thickness.title) line")
                 }
             }
-            Hairline(vertical: true).frame(height: 22)
-            Button {
-                actions.recognizeText()
-            } label: {
-                Label("Text", systemImage: "text.viewfinder")
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .buttonStyle(OutlineButtonStyle(compact: true))
-            .focusable(false)
-            .help("Copy all text\(document.selection == nil ? "" : " in the selection") (T)")
-
-            Spacer(minLength: 8)
-
-            IconButton(symbol: "arrow.uturn.backward", help: "Undo (⌘Z)", size: 26) { document.undo(); actions.focusCanvas() }
-                .disabled(!document.canUndo)
-                .opacity(document.canUndo ? 1 : 0.35)
-            IconButton(symbol: "arrow.uturn.forward", help: "Redo (⇧⌘Z)", size: 26) { document.redo(); actions.focusCanvas() }
-                .disabled(!document.canRedo)
-                .opacity(document.canRedo ? 1 : 0.35)
-
-            Text(verbatim: "\(Int(document.size.width)) × \(Int(document.size.height))")
-                .font(.mono(11, weight: .medium))
-                .foregroundStyle(Color.ink2)
-                .padding(.horizontal, 8)
-                .frame(height: 24)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.hairline))
-                .help("Image size in pixels")
-            Button("Save") { actions.save(choosingLocation: false) }
-                .buttonStyle(OutlineButtonStyle(compact: true))
-                .focusable(false)
-                .help("Save to your screenshot folder (⌘S) · ⇧⌘S to choose")
-            Button("Copy") { actions.copy() }
-                .buttonStyle(InkButtonStyle(compact: true))
-                .focusable(false)
-                .help("Copy (⌘C) · Esc copies and closes")
         }
-        .padding(.trailing, 12)
     }
 }
 

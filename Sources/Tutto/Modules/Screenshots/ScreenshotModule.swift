@@ -86,22 +86,22 @@ final class ScreenshotModule: ModuleController {
                 return
             }
             lastLatency = ProcessInfo.processInfo.systemUptime - started
-            capturePerf.info("captured \(shots.count, privacy: .public) display(s) in \(Int((self.lastLatency ?? 0) * 1000), privacy: .public) ms")
+            capturePerf.notice("captured \(shots.count, privacy: .public) display(s) in \(Int((self.lastLatency ?? 0) * 1000), privacy: .public) ms")
             switch mode {
             case .screenToClipboard:
                 guard let shot = shots.first else { return }
                 deliver(shot.image, toEditor: false)
-                capturePerf.info("shortcut → full screen on clipboard in \(Int((ProcessInfo.processInfo.systemUptime - started) * 1000), privacy: .public) ms")
+                capturePerf.notice("shortcut → full screen on clipboard in \(Int((ProcessInfo.processInfo.systemUptime - started) * 1000), privacy: .public) ms")
             case .areaToClipboard, .areaToEditor:
                 let overlay = SelectionOverlay()
                 self.overlay = overlay
                 defer {
-                    capturePerf.info("shortcut → overlay on screen in \(Int((ProcessInfo.processInfo.systemUptime - started) * 1000), privacy: .public) ms")
+                    capturePerf.notice("shortcut → overlay on screen in \(Int((ProcessInfo.processInfo.systemUptime - started) * 1000), privacy: .public) ms")
                 }
                 overlay.begin(shots: shots) { [weak self] selection in
                     let released = ProcessInfo.processInfo.systemUptime
                     defer {
-                        capturePerf.info("selection → delivered in \(Int((ProcessInfo.processInfo.systemUptime - released) * 1000), privacy: .public) ms")
+                        capturePerf.notice("selection → delivered in \(Int((ProcessInfo.processInfo.systemUptime - released) * 1000), privacy: .public) ms")
                     }
                     guard let self else { return }
                     self.overlay = nil
