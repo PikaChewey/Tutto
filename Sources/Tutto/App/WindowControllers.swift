@@ -113,6 +113,25 @@ final class FloatingPanel: NSPanel {
         close()
     }
 
+    /// Puts the text cursor in the panel's search field. SwiftUI's focus state alone doesn't
+    /// reliably reach a non-activating panel, so find the field and focus it directly.
+    func focusSearchField() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let content = self.contentView else { return }
+            if let field = Self.firstEditableField(in: content) {
+                self.makeFirstResponder(field)
+            }
+        }
+    }
+
+    private static func firstEditableField(in view: NSView) -> NSTextField? {
+        if let field = view as? NSTextField, field.isEditable { return field }
+        for subview in view.subviews {
+            if let field = firstEditableField(in: subview) { return field }
+        }
+        return nil
+    }
+
     /// Centers horizontally in the upper third of the screen with the pointer.
     func positionOnActiveScreen() {
         let mouse = NSEvent.mouseLocation

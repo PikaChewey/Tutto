@@ -39,6 +39,14 @@ final class WindowPaletteModel {
     }
 
     var selected: WindowAction? { results.indices.contains(selection) ? results[selection] : nil }
+
+    private let openedAt = NSEvent.mouseLocation
+
+    /// True once the pointer has moved since the palette opened.
+    func pointerMoved() -> Bool {
+        let now = NSEvent.mouseLocation
+        return hypot(now.x - openedAt.x, now.y - openedAt.y) > 3
+    }
 }
 
 @MainActor
@@ -75,6 +83,7 @@ final class WindowPaletteController: NSObject, NSWindowDelegate {
         }))
         panel.positionOnActiveScreen()
         panel.makeKeyAndOrderFront(nil)
+        panel.focusSearchField()
         self.panel = panel
         installKeys()
     }
@@ -150,7 +159,11 @@ struct WindowPaletteView: View {
                                             shortcut: AppModel.shared.shortcuts.shortcut(for: .window(action)))
                                 .id(action)
                                 .onTapGesture { perform(action) }
-                                .onHover { if $0 { model.selection = index } }
+                                .onContinuousHover { phase in
+                                    // Only a pointer that moved selects: one resting where the palette
+                                    // opens must not override what you type.
+                                    if case .active = phase, model.pointerMoved() { model.selection = index }
+                                }
                         }
                         if model.results.isEmpty {
                             Text("No window action matches “\(model.query)”.")

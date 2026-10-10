@@ -14,7 +14,7 @@ import UniformTypeIdentifiers
 final class EditorWindowController: NSObject, NSWindowDelegate {
     let document: EditorDocument
     private weak var module: ScreenshotModule?
-    private var window: NSWindow?
+    private var window: NSPanel?
     private let canvas: EditorCanvas
 
     init(image: CGImage, module: ScreenshotModule) {
@@ -33,8 +33,15 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
     func show() {
         let hosting = NSHostingView(rootView: EditorView(document: document, canvas: canvas, actions: self))
         hosting.sizingOptions = []  // the window decides its size; SwiftUI must not move or resize it
-        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-                              backing: .buffered, defer: false)
+        // A panel that takes keyboard focus without needing macOS to activate Tutto (activation
+        // after a global shortcut isn't guaranteed on macOS 14+), so Esc, Tab and T always work.
+        let window = EditorPanel(contentRect: .zero,
+                                 styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView, .nonactivatingPanel],
+                                 backing: .buffered, defer: false)
+        window.isFloatingPanel = false
+        window.level = .normal
+        window.hidesOnDeactivate = false
+        window.becomesKeyOnlyIfNeeded = false
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.title = "Screenshot"
@@ -163,6 +170,11 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
     }
 }
 
+final class EditorPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 // MARK: - SwiftUI chrome
 
 private struct EditorView: View {
@@ -198,7 +210,7 @@ private struct EditorToolbar: View {
     @Namespace private var toolPill
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Color.clear.frame(width: 64)  // traffic lights
             HStack(spacing: 2) {
                 ForEach(EditorTool.allCases) { tool in
@@ -283,7 +295,7 @@ private struct EditorToolbar: View {
     /// Colors and line thickness, shown while a drawing tool is active.
     private var drawingOptions: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 5) {
+            HStack(spacing: 3) {
                 ForEach(Array(EditorPalette.colors.enumerated()), id: \.offset) { _, color in
                     Swatch(color: color, selected: document.color == color) {
                         document.color = color
@@ -303,7 +315,7 @@ private struct EditorToolbar: View {
                         Circle()
                             .fill(document.thickness == thickness ? Color.ink : Color.ink4)
                             .frame(width: 4 + thickness.rawValue * 0.7, height: 4 + thickness.rawValue * 0.7)
-                            .frame(width: 22, height: 26)
+                            .frame(width: 20, height: 26)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

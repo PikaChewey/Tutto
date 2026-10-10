@@ -51,6 +51,18 @@ func press(_ combo: String) {
 }
 
 func type(_ text: String) {
+    // Letters, digits and space go as real key codes (like a keyboard); anything else as Unicode.
+    for character in text.lowercased() {
+        let key = character == " " ? "space" : String(character)
+        if keyCodes[key] != nil {
+            press(key)
+            continue
+        }
+        typeUnicode(String(character))
+    }
+}
+
+func typeUnicode(_ text: String) {
     for scalar in text.unicodeScalars {
         let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)!
         let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)!

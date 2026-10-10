@@ -83,6 +83,7 @@ final class ClipboardPaletteController: NSObject, NSWindowDelegate {
         panel.contentView = hosting
         panel.positionOnActiveScreen()
         panel.makeKeyAndOrderFront(nil)
+        panel.focusSearchField()
         self.panel = panel
         installKeys()
     }
