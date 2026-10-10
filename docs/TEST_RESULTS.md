@@ -50,6 +50,7 @@ Run against the release build launched from `build/`, driven with real HID event
 | Archives | Password-protected zip | ✅ prompt appears (now a focus-taking panel; the first version, an alert, could leave typing going to the previous app). Decryption itself covered by unit tests (ZipCrypto, AES) |
 | Clipboard | ⌃⇧V-style palette (test shortcut) → type "paste test" → ↩ with TextEdit in front | ✅ "tutto paste test 123" (the older of two clips) pasted into TextEdit, read back via Accessibility; footer showed "Paste to TextEdit" |
 | Windows | Per-action shortcuts: Left Half on ⌃⌥⌘L, Maximize on ⌃⌥⌘M | ✅ (0, 33, 756 × 858) then (0, 33, 1512 × 858) |
+| CornerClick | Physical press in the bottom-right corner with every module on (diagnostics log) | ✅ `decided=click result=right` for the touch at (0.740, 0.183), inside the saved 44 × 19 mm zone; ordinary clicks elsewhere stayed left clicks |
 | Accessibility | `scripts/ax-audit.swift` over all 16 main-window pages and the menu bar panel | ✅ 0 unlabeled interactive elements (2 found and fixed: encoding picker, archive Cancel) |
 | Accessibility | Editor controls in the AX tree | ✅ Select, Draw, Highlight, Arrow, Rectangle, Pixelate, Text, Undo, Redo, Save, Copy all labeled |
 | First run | Installed app, clean settings, launched through LaunchServices (`open -a`, as Spotlight does) while a full-screen app was in front | ✅ after a fix. Bug found: the welcome window opened on another Space, so first launch looked like nothing happened; welcome, main window and editor now open on the active Space. All four steps checked with the real buttons: Tools; Access with live states (Accessibility "Allow", since the installed copy had no grant yet; Screen Recording and Finder extension "Allowed"); Keys with the five defaults; Try It showing the Accessibility card |
@@ -61,6 +62,5 @@ Run against the release build launched from `build/`, driven with real HID event
 | Item | Status |
 |---|---|
 | Shortcut recorder UI (clicking a recorder and pressing keys) | Custom shortcuts saved in settings were verified to register and fire; driving the recorder itself was deferred while the user was active. |
-| CornerClick corner press inside Tutto | Needs a physical trackpad press. The engine is CornerClick's (48 tests, real CGEvents); the module's event tap is verified installed. |
 | Fan speed changes | Needs the user to approve the root helper (App Background Activity). Non-root SMC writes verified to be refused (0xe00002c1); helper code-signing checks verified. |
 | Installed app in /Applications: Spotlight launch, login item, its own TCC grants | Needs installation + user approval of the TCC prompts. |

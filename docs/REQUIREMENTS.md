@@ -88,13 +88,13 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 
 | ID | Requirement | Acceptance criteria | Status |
 |---|---|---|---|
-| CC-1 | Corner click/tap → right-click, bottom-left or bottom-right | Same engine & tests as CornerClick (ported unit tests pass) | [~] Engine ported verbatim; 48 original tests pass; Tutto's event tap verified installed. Physical corner press in Tutto needs the user |
+| CC-1 | Corner click/tap → right-click, bottom-left or bottom-right | Same engine & tests as CornerClick (ported unit tests pass) | [x] Engine ported verbatim; 48 original tests pass. Live: a physical press in the saved bottom-right zone (touch at 0.740, 0.183) was logged by Tutto as `decided=click result=right`, while presses elsewhere stayed left clicks |
 | CC-2 | Two-finger right-click untouched | — | [x] Engine passes native right-click through untouched (unit test with real CGEvents) |
 | CC-3 | S / M / L / Custom (mm), drag to size, click other corner to switch | — | [x] S/M/L/Custom mm steppers, drag-to-size, click other corner — CornerClick's own UI code |
 | CC-4 | Tap to click on/off, tap-to-drag timing | — | [x] Tap-to-click on/off and tap-to-drag windows (unit tests + live preference reading) |
 | CC-5 | Pause from menu bar, open at login | — | [x] Pause switch in panel/page; open at login (app-wide) |
 | CC-6 | Diagnostics log `~/Library/Logs/CornerClick/clicks.log` | Opt-in toggle, reveal log | [x] Diagnostics toggle + Reveal; same log path |
-| CC-7 | Accessibility flow + Set Up & Test | — | [~] Accessibility card + Set Up & Test (onboarding step 4); pending the installed app's own grant |
+| CC-7 | Accessibility flow + Set Up & Test | — | [~] The installed copy without a grant shows the Accessibility card in the welcome window (verified); with a grant (test copy run under an approved process) the corner works. Granting the installed copy is the user's switch in System Settings |
 | CC-8 | Robustness: sleep/wake, hot-plug, stale stream, trust watchdog, menus, typing | — | [x] Engine's sleep/wake, hot-plug, stale-stream, watchdog, menu and typing rules kept; engine now also releases IOKit notifications when switched off |
 | CC-9 | Panel section more minimal (no right-click counter) | — | [x] Panel shows no right-click counter |
 | CC-10 | Migrates CornerClick settings; warns if CornerClick.app also runs | — | [x] Live: migrated the user's zone (S, 44 × 19 mm) and triggers from CornerClick's settings; warns while CornerClick.app runs |
