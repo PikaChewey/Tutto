@@ -1,0 +1,4 @@
+module CBridges {
+    umbrella header "CBridges.h"
+    export *
+}

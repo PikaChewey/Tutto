@@ -1,0 +1,5 @@
+process                      cpu%  footprint  wakeups/s    power
+Shottr                          0       81MB        .09      0.0
+CornerClick                  .005       25MB        .04      0.0
+Raycast                      .022      104MB        .26      0.0
+Stats                       1.761      211MB       1.04      1.0
