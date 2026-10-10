@@ -152,6 +152,8 @@ public final class ClipboardStore: @unchecked Sendable {
     public private(set) var items: [ClipItem] = []
     public var maxItems: Int { didSet { prune() } }
     public var maxAge: TimeInterval? { didSet { prune() } }
+    /// Images are big (a full-screen capture is ~1.5 MB); keep fewer of them than text.
+    public var maxImages: Int = 100 { didSet { prune() } }
 
     public let directory: URL
     private var blobs: URL { directory.appendingPathComponent("blobs", isDirectory: true) }
@@ -317,6 +319,12 @@ public final class ClipboardStore: @unchecked Sendable {
             let cutoff = Date().addingTimeInterval(-maxAge)
             removed += items.filter { !$0.pinned && $0.lastCopied < cutoff }
             items.removeAll { !$0.pinned && $0.lastCopied < cutoff }
+        }
+        let images = items.filter { !$0.pinned && $0.kind == .image }
+        if images.count > maxImages {
+            let drop = Set(images.suffix(images.count - maxImages).map(\.id))
+            removed += items.filter { drop.contains($0.id) }
+            items.removeAll { drop.contains($0.id) }
         }
         let unpinned = items.filter { !$0.pinned }
         if unpinned.count > maxItems {

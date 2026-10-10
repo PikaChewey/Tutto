@@ -43,6 +43,18 @@ final class ClipboardStoreTests: XCTestCase {
         XCTAssertEqual(store.items.filter { !$0.pinned }.first?.text, "item 9")
     }
 
+    func testImageCapKeepsTextAndPinnedImages() {
+        let store = ClipboardStore(directory: directory)
+        store.maxImages = 2
+        let pinned = store.add(ClipPayload(kind: .image, image: Data([9]), imageWidth: 1, imageHeight: 1))
+        store.setPinned(pinned.id, true)
+        store.add(ClipPayload(kind: .text, text: "text survives"))
+        for i in 0..<5 { store.add(ClipPayload(kind: .image, image: Data([UInt8(i)]), imageWidth: 1, imageHeight: 1)) }
+        XCTAssertEqual(store.items.filter { $0.kind == .image && !$0.pinned }.count, 2)
+        XCTAssertTrue(store.items.contains { $0.id == pinned.id })
+        XCTAssertTrue(store.items.contains { $0.text == "text survives" })
+    }
+
     func testPersistsAcrossLaunchesWithImages() throws {
         let store = ClipboardStore(directory: directory)
         let png = Data([0x89, 0x50, 0x4E, 0x47, 1, 2, 3])

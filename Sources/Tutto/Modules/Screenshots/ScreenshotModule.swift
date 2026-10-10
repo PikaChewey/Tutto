@@ -11,7 +11,11 @@
 
 import AppKit
 import Observation
+import os
 import TuttoKit
+
+/// Capture timings, readable with: log show --predicate 'subsystem == "ca.bryanyao.Tutto"' --last 5m
+let capturePerf = Logger(subsystem: "ca.bryanyao.Tutto", category: "capture")
 
 enum CaptureMode {
     case areaToClipboard, screenToClipboard, areaToEditor
@@ -82,14 +86,23 @@ final class ScreenshotModule: ModuleController {
                 return
             }
             lastLatency = ProcessInfo.processInfo.systemUptime - started
+            capturePerf.info("captured \(shots.count, privacy: .public) display(s) in \(Int((self.lastLatency ?? 0) * 1000), privacy: .public) ms")
             switch mode {
             case .screenToClipboard:
                 guard let shot = shots.first else { return }
                 deliver(shot.image, toEditor: false)
+                capturePerf.info("shortcut → full screen on clipboard in \(Int((ProcessInfo.processInfo.systemUptime - started) * 1000), privacy: .public) ms")
             case .areaToClipboard, .areaToEditor:
                 let overlay = SelectionOverlay()
                 self.overlay = overlay
+                defer {
+                    capturePerf.info("shortcut → overlay on screen in \(Int((ProcessInfo.processInfo.systemUptime - started) * 1000), privacy: .public) ms")
+                }
                 overlay.begin(shots: shots) { [weak self] selection in
+                    let released = ProcessInfo.processInfo.systemUptime
+                    defer {
+                        capturePerf.info("selection → delivered in \(Int((ProcessInfo.processInfo.systemUptime - released) * 1000), privacy: .public) ms")
+                    }
                     guard let self else { return }
                     self.overlay = nil
                     guard let selection, let image = selection.shot.image.cropping(to: selection.rect) else {
