@@ -25,6 +25,7 @@ enum Snapshots {
         model.launch(quietly: true)
         model.system?.begin([.stats, .volumes, .energyProcesses, .cpuProcesses, .memoryProcesses])
         model.cornerClick?.beginWatching()
+        model.sensors?.begin()
         // Let readings and the first `top` samples arrive.
         RunLoop.main.run(until: Date().addingTimeInterval(only.contains("fast") ? 1.5 : 5.5))
         model.cornerClick?.applyPreview(contacts: [Contact(id: 1, x: 0.86, y: 0.14)])
