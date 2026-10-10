@@ -66,9 +66,9 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | SHOT-4 | Selection overlay | Frozen screen, crosshair, live W×H px, loupe, Esc cancels, multi-display safe | [x] Live: frozen screen, hairline crosshair, loupe with pixel grid + hex, live W×H, window/desktop click, right-click cancels; overlay on screen 60–121 ms after the shortcut |
 | SHOT-5 | Tab copies color under cursor | Hex of the exact image pixel copied; toast with swatch | [x] Live: Tab copied #222222 (pixel under the pointer), swatch toast |
 | SHOT-6 | Freehand draw with thickness & color | Pen tool icon; color swatches + custom; thickness control | [x] Live: Draw tool stroke rendered; 8 colors + any color, 3 thicknesses ([ ]), plus highlight, arrow, rectangle, pixelate |
-| SHOT-7 | Click-drag sub-selection with live pixel size; movable, resizable box; crop | Handles, move, resize, crop (↩) | [~] Implemented (live W×H, move, 8 handles, ↩ crop, arrow-key nudge); rendered and reviewed; drag/resize not yet driven live |
+| SHOT-7 | Click-drag sub-selection with live pixel size; movable, resizable box; crop | Handles, move, resize, crop (↩) | [x] Live: canvas drag → selection with 8 handles + "402 × 202" pill → Crop button (also ↩) → 402 × 202 px result; move/resize handles implemented |
 | SHOT-8 | OCR copy text (whole or selection) | Vision OCR → clipboard, line order preserved | [x] Live: "Talk. It types." + two lines OCR'd exactly in order; selection-only OCR supported; QR codes detected |
-| SHOT-9 | Save to file, default Downloads | ⌘S writes PNG to ~/Downloads (configurable) | [~] Implemented (⌘S → ~/Downloads with Finder-style name, configurable, ⇧⌘S choose); first save in Downloads will show macOS's folder prompt |
+| SHOT-9 | Save to file, default Downloads | ⌘S writes PNG to ~/Downloads (configurable) | [x] Live: Save wrote "Screenshot 2026-10-10 at 04.02.12.png" to the configured folder (default ~/Downloads; macOS asks once for Downloads access) |
 | SHOT-10 | Esc copies and closes | Esc → clipboard (selection if one is drawn) | [x] Live: Esc copied 1280 × 190 image and closed the editor |
 | SHOT-11 | Editor shows only screenshot UI | No stats/other modules in editor | [x] Editor window contains only screenshot tools |
 
@@ -79,9 +79,9 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | ARC-1 | Formats | zip, rar (v4/v5), 7z, tar, gz, bz2, xz, lzma, iso, cab, lha/lzh, xar, cpio, ar … (what macOS libarchive 3.7.4 supports; gaps documented) | [x] 68 unit tests across formats; live: zip, 7z, tar.gz, real RAR4, gz, tar.xz extracted byte-identical |
 | ARC-2 | Fix garbled filenames | Non-UTF-8 zip names (Shift-JIS, GBK, CP437, CP1251 …) auto-detected | [x] Unit tests: Shift-JIS (incl. 0x5C trail bytes), GBK, Big5, CP949, CP866, CP1251, CP437, Mac Roman |
 | ARC-3 | Finder right-click | Extract Here / Extract to "Name" / Extract to… / Compress, top level of the context menu | [x] Live: Finder right-click on a .rar shows Extract Here / Extract to "library" / Extract to…; Extract Here produced the folder; Compress verified via the same URL path |
-| ARC-4 | Open archives directly | Double-click / Open With extracts per preferences | [~] Document types registered (Alternate rank) + Make Default button; double-click flow not driven live |
+| ARC-4 | Open archives directly | Double-click / Open With extracts per preferences | [x] Live: `open -a Tutto open-me.zip` (what double-click does once Tutto is the default) extracted next to it; Make Default button sets Tutto for archive types |
 | ARC-5 | Preferences | Destination, create-folder rule, trash after, reveal after, encoding override | [x] Destination, Smart/Always/Never folder rule, trash after, reveal after, encoding override |
-| ARC-6 | Progress, cancel, errors, passwords | Progress panel; cancel cleans up; zip passwords prompt; unsupported encryption explained | [~] Progress panel after 400 ms, cancel, password prompt, clear errors — unit-tested engine paths; panel not exercised live |
+| ARC-6 | Progress, cancel, errors, passwords | Progress panel; cancel cleans up; zip passwords prompt; unsupported encryption explained | [x] Live: 3 GB archive → progress panel; Cancel left nothing behind; password prompt panel appears (decryption unit-tested: ZipCrypto, AES, wrong/missing password) |
 | ARC-7 | Safety | No path traversal, no writing through symlinks, never overwrites silently | [x] Unit tests: ../ and absolute paths contained, symlink escapes refused, unique names, temp-dir cleanup |
 
 ## CC — CornerClick 1.0.0 (all functionality)
