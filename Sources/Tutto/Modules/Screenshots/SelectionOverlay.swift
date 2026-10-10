@@ -115,7 +115,7 @@ private final class OverlayView: NSView {
     private let imageLayer = CALayer()
     private let dimLayer = CAShapeLayer()
     private let borderLayer = CAShapeLayer()
-    private let readout = PointerReadout()
+    private lazy var readout = PointerReadout(scale: shot.scale)
 
     private var start: CGPoint?
     private var current: CGPoint = .zero
@@ -153,7 +153,6 @@ private final class OverlayView: NSView {
         borderLayer.frame = bounds
         layer?.addSublayer(borderLayer)
 
-        readout.contentsScale = shot.scale
         layer?.addSublayer(readout)
         CATransaction.commit()
 
@@ -278,8 +277,8 @@ private final class OverlayView: NSView {
         if let highlight { path.addRect(highlight) }
         dimLayer.path = path
         dimLayer.fillColor = NSColor.black.withAlphaComponent(highlight == nil ? 0.18 : 0.4).cgColor
-        borderLayer.path = highlight.map { CGPath(rect: $0.insetBy(dx: -0.5, dy: -0.5), transform: nil) }
-        borderLayer.lineDashPattern = selection == nil && highlight != nil ? [4, 3] : nil
+        // A hovered window is shown by the cutout in the dimming alone; only a dragged selection gets an edge.
+        borderLayer.path = selection.map { CGPath(rect: $0.insetBy(dx: -0.5, dy: -0.5), transform: nil) }
 
         if let selection, dragging {
             let w = Int((selection.width * shot.scale).rounded()), h = Int((selection.height * shot.scale).rounded())
@@ -299,22 +298,27 @@ private final class OverlayView: NSView {
 
 // MARK: - Pointer readout
 
-/// Small white monospaced numbers with a dark halo, legible on any background. No box, no
-/// magnifier: the screen under the pointer stays visible.
-private final class PointerReadout: CATextLayer {
-    private static let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+/// Small white monospaced numbers with a solid dark outline, readable over white text and
+/// dark UI alike. No box, no magnifier: the screen under the pointer stays visible.
+private final class PointerReadout: CALayer {
+    private static let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+    private let outline = CATextLayer()
+    private let fill = CATextLayer()
     private var text = ""
 
-    override init() {
+    init(scale: CGFloat) {
         super.init()
-        font = Self.font
-        fontSize = Self.font.pointSize
-        foregroundColor = NSColor.white.cgColor
-        alignmentMode = .left
-        shadowColor = NSColor.black.cgColor
-        shadowOpacity = 0.9
-        shadowRadius = 1.5
-        shadowOffset = .zero
+        for layer in [outline, fill] {
+            layer.contentsScale = scale
+            layer.alignmentMode = .left
+            layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+            addSublayer(layer)
+        }
+        // A soft halo beyond the outline for busy backgrounds.
+        outline.shadowColor = NSColor.black.cgColor
+        outline.shadowOpacity = 0.6
+        outline.shadowRadius = 1.5
+        outline.shadowOffset = .zero
     }
 
     override init(layer: Any) { super.init(layer: layer) }
@@ -323,9 +327,18 @@ private final class PointerReadout: CATextLayer {
     func show(_ text: String) {
         guard text != self.text else { return }
         self.text = text
-        string = text
+        // The outline is a stroke drawn under the white fill. A stroke is centered on the glyph edge,
+        // so it also eats into the digits' small openings: keep it thin (about 0.8 pt shows outside).
+        outline.string = NSAttributedString(string: text, attributes: [
+            .font: Self.font, .foregroundColor: NSColor.black,
+            .strokeColor: NSColor.black, .strokeWidth: 14,
+        ])
+        fill.string = NSAttributedString(string: text, attributes: [.font: Self.font, .foregroundColor: NSColor.white])
         let measured = (text as NSString).boundingRect(with: CGSize(width: 400, height: 400), options: [.usesLineFragmentOrigin],
                                                        attributes: [.font: Self.font])
-        bounds = CGRect(x: 0, y: 0, width: ceil(measured.width) + 2, height: ceil(measured.height) + 1)
+        let size = CGSize(width: ceil(measured.width) + 6, height: ceil(measured.height) + 4)
+        bounds = CGRect(origin: .zero, size: size)
+        // Inset by the outline's reach so it isn't clipped at the layer's edge.
+        for layer in [outline, fill] { layer.frame = CGRect(x: 2, y: 1, width: size.width - 2, height: size.height - 1) }
     }
 }
