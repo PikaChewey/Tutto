@@ -52,6 +52,8 @@ Run against the release build launched from `build/`, driven with real HID event
 | Windows | Per-action shortcuts: Left Half on ⌃⌥⌘L, Maximize on ⌃⌥⌘M | ✅ (0, 33, 756 × 858) then (0, 33, 1512 × 858) |
 | Accessibility | `scripts/ax-audit.swift` over all 16 main-window pages and the menu bar panel | ✅ 0 unlabeled interactive elements (2 found and fixed: encoding picker, archive Cancel) |
 | Accessibility | Editor controls in the AX tree | ✅ Select, Draw, Highlight, Arrow, Rectangle, Pixelate, Text, Undo, Redo, Save, Copy all labeled |
+| First run | Installed app, clean settings, launched through LaunchServices (`open -a`, as Spotlight does) while a full-screen app was in front | ✅ after a fix. Bug found: the welcome window opened on another Space, so first launch looked like nothing happened; welcome, main window and editor now open on the active Space. All four steps checked with the real buttons: Tools; Access with live states (Accessibility "Allow", since the installed copy had no grant yet; Screen Recording and Finder extension "Allowed"); Keys with the five defaults; Try It showing the Accessibility card |
+| Spotlight | `mdfind` for Tutto after `scripts/build.sh --install` | ✅ after a fix. Bug found: Spotlight also listed the build folder's copy, so typing "Tutto" could open the uninstalled one. Builds now go to `build/Products.noindex`; Spotlight lists only `/Applications/Tutto.app` |
 | Performance | See [PERFORMANCE.md](PERFORMANCE.md) | ✅ all idle budgets |
 
 ## Not yet verified on device (and why)
