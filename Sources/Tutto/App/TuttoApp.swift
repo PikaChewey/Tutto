@@ -38,6 +38,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let launchedAtLogin = Self.wasLaunchedAsLoginItem()
         // `--no-shortcuts`: for measurement runs alongside other apps that own the same keys.
         model.launch(quietly: CommandLine.arguments.contains("--no-shortcuts"))
+        // Once the menu bar has settled, see whether the icon ended up behind the notch.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            MainActor.assumeIsolated {
+                model.checkMenuBarIconVisibility()
+                if model.menuBarIconHidden && model.hasCompletedOnboarding {
+                    Toast.shared.show("Tutto's menu bar icon is behind the notch",
+                                      detail: "Quit the apps Tutto replaces or ⌘-drag icons to make room. Click for details.",
+                                      duration: 6) { MainWindowController.shared.show(page: .overview) }
+                }
+            }
+        }
         if !model.hasCompletedOnboarding {
             OnboardingWindowController.shared.show()
         } else if !launchedAtLogin && !CommandLine.arguments.contains("--background") {

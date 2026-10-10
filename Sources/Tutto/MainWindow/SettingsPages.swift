@@ -17,6 +17,21 @@ struct OverviewPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             PageHeader(title: "Tutto", subtitle: "Every Mac utility you actually use, in one quiet app.")
+            if model.menuBarIconHidden {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "menubar.rectangle").font(.system(size: 18)).foregroundStyle(Color.ink2)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("The menu bar icon is hidden behind the camera notch.").font(.system(size: 13, weight: .semibold))
+                        Text("Your menu bar is full, so macOS placed Tutto's icon where the notch covers it. Quitting the apps Tutto replaces frees room; you can also hold ⌘ and drag menu bar icons to reorder them, or hide others in System Settings › Menu Bar.")
+                            .font(.system(size: 12)).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Button("Check Again") { model.checkMenuBarIconVisibility() }
+                        .buttonStyle(OutlineButtonStyle(compact: true))
+                }
+                .padding(14)
+                .background(Color.wash, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
             if let system = model.system {
                 OverviewStats(monitor: system)
                     .watching(system, [.stats])

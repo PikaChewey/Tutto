@@ -30,6 +30,8 @@ final class AppModel {
     private(set) var cornerClick: CornerClickModule?
 
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
+    /// On notched MacBooks a crowded menu bar puts new icons behind the notch, where they can't be clicked.
+    private(set) var menuBarIconHidden = false
     private(set) var hasCompletedOnboarding: Bool
 
     private let defaults = UserDefaults.standard
@@ -53,6 +55,19 @@ final class AppModel {
         if !enabled.contains(.archives) && !quietly { permissions.setFinderExtension(enabled: false) }
         if !quietly { bindShortcuts() }
         permissions.refresh()
+    }
+
+    /// Checks whether the menu bar icon landed under the camera notch (macOS hides it there).
+    func checkMenuBarIconVisibility() {
+        guard let item = NSApp.windows.first(where: { $0.className.contains("StatusBarWindow") }),
+              let screen = item.screen ?? NSScreen.main,
+              let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea else {
+            menuBarIconHidden = false
+            return
+        }
+        // Between the two usable areas is the notch.
+        let notch = CGRect(x: left.maxX, y: left.minY, width: right.minX - left.maxX, height: left.height)
+        menuBarIconHidden = item.frame.width > 0 && notch.intersects(item.frame.insetBy(dx: 2, dy: 0))
     }
 
     func shutdown() {

@@ -247,15 +247,16 @@ private struct ToastView: View {
                         Text(detail)
                             .font(.system(size: 11.5).monospacedDigit())
                             .foregroundStyle(Color.ink2)
-                            .lineLimit(1)
+                            .lineLimit(2)
                             .truncationMode(.middle)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
             .padding(.vertical, 9)
             .padding(.leading, content.image != nil || content.swatch != nil ? 9 : 14)
             .padding(.trailing, 16)
-            .frame(maxWidth: 380)
+            .frame(maxWidth: 420)
             .background(PaletteBackground())
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hairline))
         }
