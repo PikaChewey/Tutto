@@ -118,7 +118,7 @@ final class SystemMonitor {
     private func receive(_ rows: [ProcessSample], for feed: SystemFeed) {
         guard streams[feed] != nil else { return }  // stopped meanwhile
         switch feed {
-        case .energyProcesses: energyProcesses = rows
+        case .energyProcesses: energyProcesses = rows.sorted { $0.energyImpact > $1.energyImpact }
         case .cpuProcesses: cpuProcesses = rows
         case .memoryProcesses: memoryProcesses = rows
         default: break

@@ -27,8 +27,13 @@ struct MenuPanel: View {
                     Hairline().padding(.bottom, 10)
                 }
                 StatsStrip(monitor: system)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, model.sensors == nil ? 10 : 4)
                     .watching(system, system.panelFeeds)
+            }
+            if let sensors = model.sensors {
+                if model.system == nil { Hairline().padding(.bottom, 6) }
+                SensorsLine(sensors: sensors)
+                    .padding(.bottom, 8)
             }
 
             if let cornerClick = model.cornerClick {
@@ -69,10 +74,8 @@ struct MenuPanel: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.ink)
             Spacer()
-            IconButton(symbol: "macwindow", help: "Open Tutto") {
-                MainWindowController.shared.show()
-            }
         }
+        .frame(height: 22)
     }
 
     private var footer: some View {

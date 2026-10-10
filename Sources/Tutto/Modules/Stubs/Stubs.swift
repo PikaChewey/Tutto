@@ -3,14 +3,6 @@ import AppKit
 import Observation
 import TuttoKit
 
-@MainActor @Observable final class SensorsModule { func stop() {} }
-@MainActor @Observable final class WindowModule: ModuleController {
-    init(model: AppModel) {}
-    func start() {}
-    func stop() {}
-    func showPalette() {}
-    func perform(_ action: WindowAction) {}
-}
 enum CaptureMode { case areaToClipboard, screenToClipboard, areaToEditor }
 @MainActor @Observable final class ScreenshotModule: ModuleController {
     init(model: AppModel) {}
@@ -26,8 +18,6 @@ enum CaptureMode { case areaToClipboard, screenToClipboard, areaToEditor }
 
 import SwiftUI
 
-struct SensorsPage: View { var model: AppModel; var body: some View { PageHeader(title: "Sensors & Fans", subtitle: "Coming up", module: .sensors) } }
-struct WindowsPage: View { var model: AppModel; var body: some View { PageHeader(title: "Windows", subtitle: "Coming up", module: .windows) } }
 struct ScreenshotsPage: View { var model: AppModel; var body: some View { PageHeader(title: "Screenshots", subtitle: "Coming up", module: .screenshots) } }
 struct ArchivesPage: View { var model: AppModel; var body: some View { PageHeader(title: "Archives", subtitle: "Coming up", module: .archives) } }
 
