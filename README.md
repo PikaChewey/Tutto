@@ -38,12 +38,12 @@ If another app already uses one of the shortcuts below, macOS may deliver the ke
 | `⌘⇧2` | Select an area → copied to the clipboard (no editor to dismiss) |
 | `⌘⇧1` | The whole screen under the pointer → clipboard |
 | ``⌘⇧` `` | Select an area → screenshot editor |
-| `⌃⇧V` | Clipboard history: type to search, `↩` paste into the app you were in, `⌘↩` copy, `⇥` filter by type, `⇧⌘P` pin, `⌘⌫` delete |
+| `⌃⇧V` | Clipboard history: type to search, double-click or `↩` to paste into the app you were in (your clipboard stays as it was; Clipboard › "Keep pasted items on the clipboard" changes that), `⌘↩` copy, `⇥` filter by type, `⇧⌘P` pin, `⌘⌫` delete |
 | `⌘⌥B` | Window palette: type "left half", "max", "next display"…, `↩` |
 
 Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press the new keys; Esc cancels, Delete removes). Every window action can also get its own shortcut.
 
-**While selecting an area:** drag to select (live size in pixels), click a window to take just that window, click the desktop for the whole screen, `Shift` for a square, `Space`+drag to move the selection, `Tab` copies the color under the crosshair, `Esc` cancels.
+**While selecting an area:** the pointer is a crosshair with its position in pixels just below-right of it (the selection's size while you drag); drag to select, click a window to take just that window, click the desktop for the whole screen, `Shift` for a square, `Space`+drag to move the selection, `Tab` copies the color under the crosshair, `Esc` cancels.
 
 **In the screenshot editor:** with no tool, drag to make a selection box (move it, drag its handles; `↩` crops to it). `P` draw, `H` highlight, `A` arrow, `R` rectangle, `[`/`]` thickness, eight colors plus any color. `T` copies all text (in the selection if there is one) and QR codes. `Tab` copies the hovered pixel's hex color. `⌘S` saves to Downloads (configurable), `⌘C` copies, **`Esc` copies and closes**. `⌘Z` undoes.
 

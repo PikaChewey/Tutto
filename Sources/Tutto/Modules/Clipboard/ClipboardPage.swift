@@ -32,12 +32,19 @@ private struct ClipboardSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             InkGroup {
-                LabeledRow("Open clipboard history", detail: "Type to search, ↩ to paste into the app you're in, ⌘↩ to copy, ⇥ to filter by type, ⌘1–⌘9 to paste the first nine.") {
+                LabeledRow("Open clipboard history", detail: "Type to search, double-click or ↩ to paste into the app you're in, ⌘↩ to copy, ⇥ to filter by type, ⌘1–⌘9 to paste the first nine.") {
                     ShortcutRecorder(action: .clipboardHistory, model: model)
                 }
                 Hairline().opacity(0.6)
                 LabeledRow("Record new copies", detail: clipboard.isPaused ? "Paused: nothing you copy is saved." : "On") {
                     InkSwitch(isOn: Binding(get: { !clipboard.isPaused }, set: { clipboard.isPaused = !$0 }), label: "Record new copies")
+                }
+                Hairline().opacity(0.6)
+                LabeledRow("Keep pasted items on the clipboard",
+                           detail: clipboard.keepPastedOnClipboard
+                               ? "Pasting from history also replaces what's on your clipboard."
+                               : "Off: double-click or ↩ pastes, and your clipboard stays as it was.") {
+                    InkSwitch(isOn: $clipboard.keepPastedOnClipboard, label: "Keep pasted items on the clipboard")
                 }
                 Hairline().opacity(0.6)
                 LabeledRow("Keep", detail: "Pinned items are always kept.") {

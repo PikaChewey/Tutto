@@ -149,6 +149,18 @@ case "click":
     mouse(.mouseMoved, point); usleep(50_000)
     mouse(.leftMouseDown, point); usleep(40_000)
     mouse(.leftMouseUp, point)
+case "doubleclick":
+    let point = CGPoint(x: Double(args[1])!, y: Double(args[2])!)
+    mouse(.mouseMoved, point); usleep(80_000)
+    for clickState in [1, 2] {
+        for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+            let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: point, mouseButton: .left)!
+            event.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
+            event.post(tap: .cghidEventTap)
+            usleep(40_000)
+        }
+        usleep(60_000)
+    }
 case "rightclick":
     let point = CGPoint(x: Double(args[1])!, y: Double(args[2])!)
     mouse(.mouseMoved, point); usleep(80_000)

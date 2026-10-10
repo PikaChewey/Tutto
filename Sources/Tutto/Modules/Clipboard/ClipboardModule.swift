@@ -32,6 +32,8 @@ final class ClipboardModule: ModuleController {
     }
     /// Apps whose copies are never recorded (password managers and the like).
     var ignoredApps: [String] { didSet { defaults.set(ignoredApps, forKey: Keys.ignored) } }
+    /// Off (default): pasting from history leaves your clipboard as it was.
+    var keepPastedOnClipboard: Bool { didSet { defaults.set(keepPastedOnClipboard, forKey: Keys.keepPasted) } }
 
     private(set) var itemCount = 0
     private(set) var store: ClipboardStore?
@@ -60,6 +62,7 @@ final class ClipboardModule: ModuleController {
         isPaused = defaults.bool(forKey: Keys.paused)
         maxItems = defaults.integer(forKey: Keys.maxItems)
         ignoredApps = defaults.stringArray(forKey: Keys.ignored) ?? Self.defaultIgnored
+        keepPastedOnClipboard = defaults.bool(forKey: Keys.keepPasted)
     }
 
     // MARK: ModuleController
@@ -256,20 +259,46 @@ final class ClipboardModule: ModuleController {
         return ok
     }
 
-    /// Copies the item and pastes it into the app you were in.
+    /// Pastes the item into the app you were in. Unless "keep pasted items" is on, your clipboard
+    /// goes back to what it held before once the app has taken the paste.
     func paste(_ item: ClipItem, into target: NSRunningApplication?, plainText: Bool = false) {
+        guard AXIsProcessTrusted() else {
+            // Can't press ⌘V for you, so leave it on the clipboard to paste by hand.
+            if copy(item, plainText: plainText) {
+                Toast.shared.show("Copied", detail: "Press ⌘V to paste · allow Accessibility to paste directly")
+            } else {
+                Toast.shared.show("Not available", detail: "The original file or image is gone")
+            }
+            return
+        }
+        let saved = keepPastedOnClipboard ? nil : PasteboardSnapshot(NSPasteboard.general)
         guard copy(item, plainText: plainText) else {
+            saved?.restore(to: NSPasteboard.general)
+            markOwnChange()
             Toast.shared.show("Not available", detail: "The original file or image is gone")
             return
         }
-        guard AXIsProcessTrusted() else {
-            Toast.shared.show("Copied", detail: "Press ⌘V to paste · allow Accessibility to paste directly")
-            return
-        }
+        let pasted = NSPasteboard.general.changeCount
         target?.activate()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) {
             Self.postCommandV()
         }
+        guard let saved else { return }
+        // Apps read the clipboard when they handle ⌘V; give slow ones (Electron, remote sessions)
+        // time before putting the old contents back. Skip it if you've copied something since.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            MainActor.assumeIsolated {
+                guard NSPasteboard.general.changeCount == pasted else { return }
+                saved.restore(to: NSPasteboard.general)
+                self?.markOwnChange()
+            }
+        }
+    }
+
+    /// Our own pasteboard write: not a new copy to record.
+    private func markOwnChange() {
+        ownChangeCount = NSPasteboard.general.changeCount
+        lastChangeCount = NSPasteboard.general.changeCount
     }
 
     func setPinned(_ item: ClipItem, _ pinned: Bool) {
@@ -301,5 +330,27 @@ final class ClipboardModule: ModuleController {
         static let paused = "clipboard.paused"
         static let maxItems = "clipboard.maxItems"
         static let ignored = "clipboard.ignoredApps"
+        static let keepPasted = "clipboard.keepPasted"
+    }
+}
+
+/// Everything on a pasteboard (every item, every type), to put back after a paste.
+struct PasteboardSnapshot {
+    private let items: [[(NSPasteboard.PasteboardType, Data)]]
+
+    init(_ pasteboard: NSPasteboard) {
+        items = (pasteboard.pasteboardItems ?? []).map { item in
+            item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
+        }
+    }
+
+    func restore(to pasteboard: NSPasteboard) {
+        pasteboard.clearContents()
+        let restored = items.map { entries -> NSPasteboardItem in
+            let item = NSPasteboardItem()
+            for (type, data) in entries { item.setData(data, forType: type) }
+            return item
+        }
+        if !restored.isEmpty { pasteboard.writeObjects(restored) }
     }
 }

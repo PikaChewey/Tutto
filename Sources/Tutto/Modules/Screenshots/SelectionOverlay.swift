@@ -3,8 +3,8 @@
 //  Tutto
 //
 //  The capture overlay. The screen is frozen first (so menus and hover states stay put),
-//  then drawn back full-screen with a crosshair, a loupe with the exact pixel and its hex,
-//  and a live W × H in pixels. Drag to select, click a window to take just that window,
+//  then drawn back full-screen. The pointer is a plain crosshair with its position in pixels
+//  just below-right of it (the selection's W × H while dragging). Drag to select, click a window to take just that window,
 //  click the desktop for the whole screen, Tab copies the color under the pointer, Esc
 //  cancels. Everything is Core Animation layers, so following the pointer costs almost
 //  nothing. It appears with no animation: it was opened from the keyboard.
@@ -115,10 +115,7 @@ private final class OverlayView: NSView {
     private let imageLayer = CALayer()
     private let dimLayer = CAShapeLayer()
     private let borderLayer = CAShapeLayer()
-    private let crossH = CALayer()
-    private let crossV = CALayer()
-    private let loupe = LoupeLayer()
-    private let sizeLabel = PillLabel()
+    private let readout = PointerReadout()
 
     private var start: CGPoint?
     private var current: CGPoint = .zero
@@ -156,18 +153,8 @@ private final class OverlayView: NSView {
         borderLayer.frame = bounds
         layer?.addSublayer(borderLayer)
 
-        for line in [crossH, crossV] {
-            line.backgroundColor = NSColor.white.withAlphaComponent(0.7).cgColor
-            line.shadowColor = NSColor.black.cgColor
-            line.shadowOpacity = 0.5
-            line.shadowRadius = 0
-            line.shadowOffset = CGSize(width: 1, height: 1)
-            layer?.addSublayer(line)
-        }
-        loupe.configure(scale: shot.scale)
-        layer?.addSublayer(loupe)
-        addSubview(sizeLabel)
-        sizeLabel.isHidden = true
+        readout.contentsScale = shot.scale
+        layer?.addSublayer(readout)
         CATransaction.commit()
 
         let tracking = NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect, .cursorUpdate],
@@ -294,136 +281,51 @@ private final class OverlayView: NSView {
         borderLayer.path = highlight.map { CGPath(rect: $0.insetBy(dx: -0.5, dy: -0.5), transform: nil) }
         borderLayer.lineDashPattern = selection == nil && highlight != nil ? [4, 3] : nil
 
-        let showCross = !dragging
-        crossH.isHidden = !showCross
-        crossV.isHidden = !showCross
-        let line = 1 / max(shot.scale, 1)
-        crossH.frame = CGRect(x: 0, y: current.y.rounded(.down), width: bounds.width, height: line)
-        crossV.frame = CGRect(x: current.x.rounded(.down), y: 0, width: line, height: bounds.height)
-
-        let pixel = CGPoint(x: Int(current.x * shot.scale), y: Int(current.y * shot.scale))
-        loupe.update(image: shot.image, pixel: pixel, color: shot.image.color(atX: Int(pixel.x), y: Int(pixel.y)))
-        var loupeOrigin = CGPoint(x: current.x + 22, y: current.y + 22)
-        if loupeOrigin.x + loupe.bounds.width > bounds.width - 8 { loupeOrigin.x = current.x - 22 - loupe.bounds.width }
-        if loupeOrigin.y + loupe.bounds.height > bounds.height - 8 { loupeOrigin.y = current.y - 22 - loupe.bounds.height }
-        loupe.frame.origin = loupeOrigin
-        loupe.isHidden = dragging && (selection?.width ?? 0) > 160
-        CATransaction.commit()
-
-        if let selection, dragging || selection.width > 0 {
+        if let selection, dragging {
             let w = Int((selection.width * shot.scale).rounded()), h = Int((selection.height * shot.scale).rounded())
-            sizeLabel.text = "\(w) × \(h)"
-            sizeLabel.isHidden = false
-            let size = sizeLabel.fittingSize
-            var origin = CGPoint(x: selection.maxX - size.width, y: selection.maxY + 8)
-            if origin.y + size.height > bounds.height - 4 { origin.y = selection.maxY - size.height - 8 }
-            origin.x = max(4, origin.x)
-            sizeLabel.frame = CGRect(origin: origin, size: size)
+            readout.show("\(w) × \(h)")
         } else {
-            sizeLabel.isHidden = true
+            readout.show("\(Int(current.x * shot.scale))\n\(Int(current.y * shot.scale))")
         }
+        // Just below-right of the crosshair; flipped to the other side near the screen's edges.
+        let size = readout.bounds.size
+        var origin = CGPoint(x: current.x + 12, y: current.y + 14)
+        if origin.x + size.width > bounds.width - 4 { origin.x = current.x - 12 - size.width }
+        if origin.y + size.height > bounds.height - 4 { origin.y = current.y - 14 - size.height }
+        readout.frame.origin = origin
+        CATransaction.commit()
     }
 }
 
-// MARK: - Loupe
+// MARK: - Pointer readout
 
-/// Magnified pixels around the pointer with a pixel grid, the center pixel outlined, and its hex.
-private final class LoupeLayer: CALayer {
-    private let pixels = CALayer()
-    private let grid = CAShapeLayer()
-    private let center = CAShapeLayer()
-    private let label = CATextLayer()
-    private let span = 13          // pixels across
-    private let cell: CGFloat = 9  // points per magnified pixel
+/// Small white monospaced numbers with a dark halo, legible on any background. No box, no
+/// magnifier: the screen under the pointer stays visible.
+private final class PointerReadout: CATextLayer {
+    private static let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+    private var text = ""
 
-    func configure(scale: CGFloat) {
-        let side = CGFloat(span) * cell
-        bounds = CGRect(x: 0, y: 0, width: side, height: side + 24)
-        anchorPoint = .zero
-        backgroundColor = NSColor.black.withAlphaComponent(0.82).cgColor
-        cornerRadius = 10
-        cornerCurve = .continuous
-        masksToBounds = true
-        borderColor = NSColor.white.withAlphaComponent(0.25).cgColor
-        borderWidth = 1
-
-        pixels.frame = CGRect(x: 0, y: 0, width: side, height: side)
-        pixels.magnificationFilter = .nearest
-        pixels.contentsGravity = .resize
-        addSublayer(pixels)
-
-        let path = CGMutablePath()
-        for i in 1..<span {
-            let v = CGFloat(i) * cell
-            path.move(to: CGPoint(x: v, y: 0)); path.addLine(to: CGPoint(x: v, y: side))
-            path.move(to: CGPoint(x: 0, y: v)); path.addLine(to: CGPoint(x: side, y: v))
-        }
-        grid.path = path
-        grid.strokeColor = NSColor.black.withAlphaComponent(0.18).cgColor
-        grid.lineWidth = 0.5
-        grid.frame = pixels.frame
-        addSublayer(grid)
-
-        let mid = CGFloat(span / 2) * cell
-        center.path = CGPath(rect: CGRect(x: mid, y: mid, width: cell, height: cell), transform: nil)
-        center.fillColor = nil
-        center.strokeColor = NSColor.white.cgColor
-        center.lineWidth = 1.5
-        center.shadowColor = NSColor.black.cgColor
-        center.shadowOpacity = 0.8
-        center.shadowRadius = 0.5
-        center.shadowOffset = .zero
-        center.frame = pixels.frame
-        addSublayer(center)
-
-        label.frame = CGRect(x: 8, y: side + 5, width: side - 16, height: 16)
-        label.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
-        label.fontSize = 11
-        label.foregroundColor = NSColor.white.cgColor
-        label.contentsScale = scale
-        label.alignmentMode = .center
-        addSublayer(label)
+    override init() {
+        super.init()
+        font = Self.font
+        fontSize = Self.font.pointSize
+        foregroundColor = NSColor.white.cgColor
+        alignmentMode = .left
+        shadowColor = NSColor.black.cgColor
+        shadowOpacity = 0.9
+        shadowRadius = 1.5
+        shadowOffset = .zero
     }
 
-    func update(image: CGImage, pixel: CGPoint, color: NSColor?) {
-        let half = span / 2
-        let rect = CGRect(x: Int(pixel.x) - half, y: Int(pixel.y) - half, width: span, height: span)
-        pixels.contents = image.cropping(to: rect.intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height)))
-        label.string = "\(color?.hexString ?? "—")   \(Int(pixel.x)), \(Int(pixel.y))"
-    }
-}
-
-// MARK: - Size pill
-
-private final class PillLabel: NSView {
-    private let field = NSTextField(labelWithString: "")
-
-    var text: String {
-        get { field.stringValue }
-        set { field.stringValue = newValue }
-    }
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.78).cgColor
-        layer?.cornerRadius = 6
-        layer?.cornerCurve = .continuous
-        field.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
-        field.textColor = .white
-        addSubview(field)
-    }
-
+    override init(layer: Any) { super.init(layer: layer) }
     required init?(coder: NSCoder) { fatalError() }
 
-    override var fittingSize: NSSize {
-        let size = field.fittingSize
-        return NSSize(width: size.width + 16, height: size.height + 8)
-    }
-
-    override func layout() {
-        super.layout()
-        let size = field.fittingSize
-        field.frame = CGRect(x: 8, y: (bounds.height - size.height) / 2, width: size.width, height: size.height)
+    func show(_ text: String) {
+        guard text != self.text else { return }
+        self.text = text
+        string = text
+        let measured = (text as NSString).boundingRect(with: CGSize(width: 400, height: 400), options: [.usesLineFragmentOrigin],
+                                                       attributes: [.font: Self.font])
+        bounds = CGRect(x: 0, y: 0, width: ceil(measured.width) + 2, height: ceil(measured.height) + 1)
     }
 }
