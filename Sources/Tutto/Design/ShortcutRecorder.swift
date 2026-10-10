@@ -106,28 +106,29 @@ struct ShortcutRecorder: View {
             liveModifiers = modifiers
             return
         }
-        switch Int(event.keyCode) {
-        case kVK_Escape where modifiers.isEmpty:
+        let outcome = ShortcutRecording.interpret(keyCode: event.keyCode, modifiers: modifiers) { shortcut in
+            model.shortcuts.conflict(for: shortcut, excluding: action)?.title
+        }
+        let shortcut: KeyShortcut
+        switch outcome {
+        case .cancel:
             stop()
             return
-        case kVK_Delete where modifiers.isEmpty, kVK_ForwardDelete where modifiers.isEmpty:
+        case .remove:
             stop()
             model.setShortcut(nil, for: action)
             flash("Removed")
             return
-        default:
-            break
-        }
-        let shortcut = KeyShortcut(keyCode: event.keyCode, modifiers: modifiers)
-        guard shortcut.isValidGlobalShortcut else {
+        case .needsModifier:
             NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
             flash("Add ⌘, ⌃ or ⌥")
             return
-        }
-        if let other = model.shortcuts.conflict(for: shortcut, excluding: action) {
+        case .conflict(let other):
             NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
-            flash("Already used by “\(other.title)”")
+            flash("Already used by “\(other)”")
             return
+        case .record(let recorded):
+            shortcut = recorded
         }
         stop()
         model.setShortcut(shortcut, for: action)
