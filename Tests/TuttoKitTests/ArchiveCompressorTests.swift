@@ -27,7 +27,7 @@ final class ArchiveCompressorTests: XCTestCase {
         for format in ArchiveCompressionFormat.allCases {
             let output = tmp.url.appendingPathComponent("out/Bundle.\(format.fileExtension)")
             try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let counter = Counter()
+            let counter = ArchiveCallCounter()
             let written = try ArchiveCompressor.compress([album, loose], to: output, format: format,
                                                          progress: { counter.record($0) }, isCancelled: { false })
             XCTAssertEqual(written, output, "\(format)")
@@ -105,7 +105,7 @@ final class ArchiveCompressorTests: XCTestCase {
         let big = tmp.write("src/big.bin", Data(count: 8 << 20))
         let outDir = tmp.sub("out")
         for format in ArchiveCompressionFormat.allCases {
-            let counter = Counter()
+            let counter = ArchiveCallCounter()
             XCTAssertThrowsArchiveError(.cancelled) {
                 _ = try ArchiveCompressor.compress([big], to: outDir.appendingPathComponent("big.\(format.fileExtension)"), format: format,
                                                    progress: { _ in }, isCancelled: { counter.increment() > 3 })

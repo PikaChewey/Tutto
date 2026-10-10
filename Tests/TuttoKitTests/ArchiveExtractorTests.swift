@@ -11,7 +11,7 @@ import Foundation
 import XCTest
 @testable import TuttoKit
 
-final class Counter: @unchecked Sendable {
+final class ArchiveCallCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var value = 0
     private(set) var fractions: [Double] = []
@@ -330,7 +330,7 @@ final class ArchiveExtractorTests: XCTestCase {
             if name.hasSuffix(".zip") { args.insert(contentsOf: ["--format", "zip"], at: 0) }
             try Tool.bsdtar(args)
             let dest = tmp.sub("dest-\(name)")
-            let counter = Counter()
+            let counter = ArchiveCallCounter()
             XCTAssertThrowsArchiveError(.cancelled) {
                 _ = try ArchiveExtractor(url: archive).extract(
                     to: dest, options: ArchiveExtractionOptions(), progress: { _ in },
@@ -351,7 +351,7 @@ final class ArchiveExtractorTests: XCTestCase {
         let archive = tmp.url.appendingPathComponent("big.tar.gz")
         try Tool.bsdtar(["-czf", archive.path, "-C", staging.path, "random.bin"])
         let dest = tmp.sub("dest")
-        let counter = Counter()
+        let counter = ArchiveCallCounter()
         let start = ProcessInfo.processInfo.systemUptime
         _ = try ArchiveExtractor(url: archive).extract(to: dest, options: ArchiveExtractionOptions(),
                                                        progress: { counter.record($0) }, isCancelled: { false })
@@ -540,7 +540,7 @@ final class ArchiveExtractorTests: XCTestCase {
         let archive = tmp.url.appendingPathComponent("Shared.tar.xz")
         try Tool.bsdtar(["-cJf", archive.path, "-C", staging.path, "Project", "notes.txt"])
         let dests = (0..<6).map { tmp.sub("dest\($0)") }
-        let failures = Counter()
+        let failures = ArchiveCallCounter()
         DispatchQueue.concurrentPerform(iterations: dests.count) { i in
             do {
                 let result = try ArchiveExtractor(url: archive).extract(to: dests[i], options: ArchiveExtractionOptions(),
