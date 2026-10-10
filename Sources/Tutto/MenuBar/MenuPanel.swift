@@ -170,7 +170,7 @@ private struct BatterySummary: View {
 
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 0) {
                 GridRow {
-                    Readout(caption: "Health", value: Format.percent(battery.health), unit: "%")
+                    Readout(caption: "Health", value: Format.percent(battery.health, digits: 1), unit: "%")
                     Readout(caption: "Cycles", value: Format.number(battery.cycleCount))
                     VStack(alignment: .leading, spacing: 3) {
                         Caption("Max · Design")

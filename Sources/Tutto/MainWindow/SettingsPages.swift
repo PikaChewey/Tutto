@@ -79,7 +79,7 @@ private struct OverviewStats: View {
     var body: some View {
         HStack(spacing: 0) {
             if let battery = monitor.battery {
-                stat("Battery", "\(battery.percent)", "%", detail: "health \(Format.percent(battery.health))%", page: .battery)
+                stat("Battery", "\(battery.percent)", "%", detail: "health \(Format.percent(battery.health, digits: 1))%", page: .battery)
                 Hairline(vertical: true).padding(.vertical, 8)
             }
             stat("CPU", Format.percent(monitor.cpu.total), "%", detail: CPUReader.topology.brand, page: .cpu)

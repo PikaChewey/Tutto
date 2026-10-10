@@ -114,7 +114,7 @@ struct BatteryPage: View {
                 hero(battery)
                 HStack(alignment: .top, spacing: 18) {
                     InkGroup("Health") {
-                        ValueRow(label: "Maximum capacity", value: "\(Format.percent(battery.health))%",
+                        ValueRow(label: "Maximum capacity", value: "\(Format.percent(battery.health, digits: 1))%",
                                  detail: "of when it was new")
                         ValueRow(label: "Full charge holds", value: "\(Format.number(battery.maxCapacity)) mAh")
                         ValueRow(label: "Designed to hold", value: "\(Format.number(battery.designCapacity)) mAh")
@@ -173,7 +173,7 @@ struct BatteryPage: View {
             }
             Spacer()
             HStack(spacing: 28) {
-                Readout(caption: "Health", value: Format.percent(battery.health), unit: "%", large: true)
+                Readout(caption: "Health", value: Format.percent(battery.health, digits: 1), unit: "%", large: true)
                 Readout(caption: "Cycles", value: Format.number(battery.cycleCount), large: true)
                 Readout(caption: "Power", value: Format.watts(battery.powerDraw), unit: "W", large: true)
             }
