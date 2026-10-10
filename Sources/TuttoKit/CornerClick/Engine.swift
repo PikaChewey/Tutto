@@ -23,7 +23,7 @@ public enum EngineStatus: Equatable, Sendable {
 
 @MainActor
 public final class Engine {
-    private(set) var status: EngineStatus = .off {
+    public private(set) var status: EngineStatus = .off {
         didSet { if status != oldValue { onStatusChange?(status) } }
     }
 
@@ -97,7 +97,16 @@ public final class Engine {
     public func stop() {
         wantsRunning = false
         stopListening()
+        disarmHotplugNotifications()
         status = .off
+    }
+
+    /// Tutto releases the engine when CornerClick is switched off; leave nothing behind.
+    isolated deinit {
+        stopListening()
+        disarmHotplugNotifications()
+        let center = NSWorkspace.shared.notificationCenter
+        observers.forEach { center.removeObserver($0) }
     }
 
     /// Re-evaluates permission and restarts if needed (after the user grants access).
@@ -192,6 +201,16 @@ public final class Engine {
     }
 
     // MARK: Trackpad plug / unplug
+
+    private func disarmHotplugNotifications() {
+        hotplugIterators.forEach { IOObjectRelease($0) }
+        hotplugIterators.removeAll()
+        if let port = notificationPort {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), IONotificationPortGetRunLoopSource(port).takeUnretainedValue(), .commonModes)
+            IONotificationPortDestroy(port)
+            notificationPort = nil
+        }
+    }
 
     private func armHotplugNotifications() {
         guard notificationPort == nil, let port = IONotificationPortCreate(kIOMainPortDefault) else { return }

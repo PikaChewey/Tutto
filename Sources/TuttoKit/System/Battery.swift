@@ -46,11 +46,15 @@ public struct BatteryInfo: Equatable, Sendable {
     /// Battery health as a percentage, like System Settings.
     public var health: Double { designCapacity > 0 ? Double(maxCapacity) / Double(designCapacity) : 0 }
 
-    /// Watts into (positive) or out of (negative) the battery, from voltage × current.
+    /// Watts into (positive) or out of (negative) the battery, from the power telemetry when
+    /// reported (consistent with `systemPower`), else voltage × current.
     public var batteryPower: Double? {
+        if let telemetryBatteryPower { return telemetryBatteryPower }
         guard let voltage, let amperage else { return nil }
         return voltage * amperage
     }
+
+    public var telemetryBatteryPower: Double?
 
     /// The single number most people mean by "power": what the Mac is using.
     public var powerDraw: Double? {
@@ -108,6 +112,7 @@ public enum BatteryReader {
         let telemetry = d["PowerTelemetryData"] as? [String: Any]
         let systemLoad = (telemetry?["SystemLoad"] as? NSNumber)?.doubleValue
         let systemIn = (telemetry?["SystemPowerIn"] as? NSNumber)?.doubleValue
+        let batteryTelemetry = (telemetry?["BatteryPower"] as? NSNumber).map { Double(Int64(truncatingIfNeeded: $0.int64Value)) / 1000 }
         let adapter = d["AdapterDetails"] as? [String: Any]
         let plugged = bool("ExternalConnected")
         let voltage = int("Voltage").map { Double($0) / 1000 }
@@ -134,7 +139,8 @@ public enum BatteryReader {
             minutesToEmpty: nil,
             minutesToFull: nil,
             condition: nil,
-            serial: d["Serial"] as? String
+            serial: d["Serial"] as? String,
+            telemetryBatteryPower: telemetry == nil ? nil : batteryTelemetry
         )
     }
 
