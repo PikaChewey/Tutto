@@ -14,7 +14,7 @@ Tools: `scripts/measure.sh` (CPU % = CPU-time delta from `ps` over wall time; fo
 | PERF-4 | All modules off: CPU ≤ 0.02 %, wake-ups ≤ 0.5 /s | **0 %**, **0.02 /s**, 13 MB | ✅ |
 | PERF-5 | Menu bar panel open (1 Hz updates): CPU ≤ 3 % | **1.5 %**, 32 MB, 0.67 wake-ups/s (30 s) | ✅ (after fix, see below) |
 | PERF-6 | Lighter than the apps it replaces combined | see comparison | ✅ |
-| PERF-7 | Hotkey → overlay ≤ 200 ms; mouse-up → clipboard ≤ 150 ms | ⌘⇧1 full-screen capture to clipboard measured end-to-end in the live test; overlay latency still to be timed | partial |
+| PERF-7 | Hotkey → overlay ≤ 200 ms; mouse-up → clipboard ≤ 150 ms | display capture **57–97 ms**; shortcut → overlay on screen **60–121 ms**; mouse-up → clipboard/editor **0–72 ms** (3 live runs, `os_log` timings) | ✅ |
 | PERF-8 | App bundle ≤ 15 MB | **7.9 MB** (release, arm64) | ✅ |
 
 ## Per-module idle cost (90 s each, user away, `scripts/measure-modules.sh`)
