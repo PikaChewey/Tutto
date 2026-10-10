@@ -57,6 +57,7 @@ struct MenuPanel: View {
         .padding(.top, 12)
         .padding(.bottom, 8)
         .frame(width: 320)
+        .fixedSize(horizontal: false, vertical: true)
         .animation(Motion.smooth, value: cornerExpanded)
     }
 
@@ -154,7 +155,6 @@ private struct BatterySummary: View {
                         HStack(alignment: .firstTextBaseline, spacing: 2) {
                             Text(Format.watts(battery.powerDraw))
                                 .font(.system(size: 17, weight: .medium).monospacedDigit())
-                                .contentTransition(.numericText())
                             Text("W")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(Color.ink3)
@@ -223,7 +223,6 @@ private struct EnergyList: View {
                 }
             }
         }
-        .animation(Motion.snappy, value: processes.map(\.pid))
     }
 }
 
@@ -244,7 +243,6 @@ struct ProcessRow: View {
             Text(value)
                 .font(.mono(11, weight: .medium))
                 .foregroundStyle(Color.ink2)
-                .contentTransition(.numericText())
         }
         .frame(height: 18)
         .accessibilityElement(children: .combine)
@@ -256,7 +254,7 @@ struct AppIcon: View {
     var pid: Int32
 
     var body: some View {
-        if let icon = NSRunningApplication(processIdentifier: pid)?.icon {
+        if let icon = AppIconCache.icon(for: pid) {
             Image(nsImage: icon).resizable().interpolation(.high)
         } else {
             Image(systemName: "gearshape")
@@ -265,6 +263,25 @@ struct AppIcon: View {
                 .foregroundStyle(Color.ink4)
                 .padding(1.5)
         }
+    }
+}
+
+/// App icons for process rows, looked up once per process while a list is visible.
+@MainActor
+enum AppIconCache {
+    private static var icons: [Int32: NSImage] = [:]
+    private static var misses: Set<Int32> = []
+
+    static func icon(for pid: Int32) -> NSImage? {
+        if let icon = icons[pid] { return icon }
+        if misses.contains(pid) { return nil }
+        if let icon = NSRunningApplication(processIdentifier: pid)?.icon {
+            if icons.count > 64 { icons.removeAll() }
+            icons[pid] = icon
+            return icon
+        }
+        misses.insert(pid)
+        return nil
     }
 }
 
@@ -281,7 +298,7 @@ struct BatteryGlyph: View {
                     .strokeBorder(Color.ink.opacity(0.55), lineWidth: 1.2)
                 GeometryReader { geo in
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(alert ? Color.alert : Color.ink)
+                        .fill(alert ? Color.alert : Color.solidInk)
                         .frame(width: max(2, (geo.size.width) * min(max(level, 0), 1)))
                         .animation(Motion.snappy, value: level)
                 }
@@ -336,7 +353,6 @@ private struct StatsStrip: View {
                     Text(Format.percent(value))
                         .font(.system(size: 15, weight: .medium).monospacedDigit())
                         .foregroundStyle(alert ? Color.alert : Color.ink)
-                        .contentTransition(.numericText(value: value))
                     Text("%")
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(Color.ink3)
@@ -550,14 +566,14 @@ private struct Notices: View {
                         model.permissions.request(permission)
                     }
                 }
-                ForEach(clashes) { app in
-                    NoticeRow(symbol: "exclamationmark.triangle", text: "\(app.name) also uses your shortcuts", help: app.advice, button: "Quit") {
-                        model.quit(app)
-                    }
-                }
-                if let raycast {
-                    NoticeRow(symbol: "exclamationmark.triangle", text: "Raycast may also use ⌃⇧V / ⌘⌥B", help: raycast.advice, button: "Got It") {
+                let names = (clashes + (raycast.map { [$0] } ?? [])).map(\.name)
+                if !names.isEmpty {
+                    NoticeRow(symbol: "exclamationmark.triangle",
+                              text: names.count == 1 ? "\(names[0]) is still running" : "\(names.count) replaced apps still running",
+                              help: (clashes + (raycast.map { [$0] } ?? [])).map { "\($0.name): \($0.advice)" }.joined(separator: "\n"),
+                              button: "Review") {
                         raycastNoticeDismissed = true
+                        MainWindowController.shared.show(page: .overview)
                     }
                 }
             }

@@ -30,7 +30,8 @@ struct Meter: View {
             }
         }
         .frame(height: height)
-        .animation(Motion.snappy, value: value)
+        // Live values update without animation: on a glass panel every animated frame is
+        // re-rendered on the CPU, and a 1 Hz value would keep it animating constantly.
         .accessibilityHidden(true)
     }
 }
@@ -152,7 +153,6 @@ struct Readout: View {
                 Text(value)
                     .font(.system(size: large ? 22 : 15, weight: large ? .semibold : .medium).monospacedDigit())
                     .foregroundStyle(Color.ink)
-                    .contentTransition(.numericText())
                 if let unit {
                     Text(unit)
                         .font(.system(size: large ? 12 : 11, weight: .medium))

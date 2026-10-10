@@ -61,7 +61,18 @@ final class SystemMonitor {
     var isSampling: Bool { timer != nil }
 
     /// Desktops have no battery; decided once.
-    let hasBattery = BatteryReader.read() != nil
+    let hasBattery: Bool
+
+    init() {
+        // One cheap read up front so views lay out at their final size the first time they
+        // appear (the menu bar window doesn't grow later).
+        let initial = BatteryReader.read()
+        hasBattery = initial != nil
+        battery = initial
+        memory = MemoryReader.read()
+        gpu = GPUReader.read().first
+        rootVolume = DiskReader.rootVolume()
+    }
 
     /// What the menu bar panel needs while it's open.
     var panelFeeds: Set<SystemFeed> { hasBattery ? [.stats, .energyProcesses] : [.stats] }

@@ -22,6 +22,12 @@ extension Color {
     static let hairline = Color.primary.opacity(0.12)
     static let wash = Color.primary.opacity(0.06)
 
+    /// Ink that ignores the menu bar material's vibrancy, for solid fills (vibrant `.primary`
+    /// renders large filled shapes as a dim gray on the glass panel).
+    static let solidInk = Color(nsColor: NSColor(name: "solidInk") { appearance in
+        appearance.isDark ? NSColor(white: 0.96, alpha: 1) : NSColor(white: 0.08, alpha: 1)
+    })
+
     /// The opposite of ink, for marks drawn on top of solid ink.
     static let paper = Color(nsColor: NSColor(name: "paper") { appearance in
         appearance.isDark ? .black : .white

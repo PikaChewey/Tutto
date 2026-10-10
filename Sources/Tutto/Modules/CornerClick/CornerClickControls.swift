@@ -139,6 +139,7 @@ struct CornerClickEditor: View {
                          editable: module.isEnabled,
                          dimmed: !module.status.isRunning,
                          onResize: { if !module.zoneIsCustom { module.zoneIsCustom = true } })
+                .frame(height: compact ? 292 * module.trackpadSize.height / module.trackpadSize.width : nil)
             if compact {
                 // Menu bar: the same controls in two rows.
                 HStack(spacing: 8) {

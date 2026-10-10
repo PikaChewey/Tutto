@@ -72,7 +72,6 @@ struct ValueRow: View {
             Text(value)
                 .font(.system(size: 12.5, weight: .medium).monospacedDigit())
                 .foregroundStyle(Color.ink)
-                .contentTransition(.numericText())
         }
         .frame(minHeight: 28)
         .overlay(alignment: .bottom) { Hairline().opacity(0.6) }
@@ -100,7 +99,6 @@ struct ProcessTable: View {
                 }
             }
         }
-        .animation(Motion.snappy, value: processes.map(\.pid))
     }
 }
 
@@ -232,7 +230,6 @@ private struct CoreGrid: View {
                             }
                         }
                         .frame(height: 54)
-                        .animation(Motion.snappy, value: value)
                         Text(Format.percent(value))
                             .font(.mono(9.5))
                             .foregroundStyle(Color.ink3)
@@ -327,7 +324,6 @@ private struct MemoryBar: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
             }
             .frame(height: 12)
-            .animation(Motion.snappy, value: memory.used)
             HStack(spacing: 18) {
                 ForEach(parts, id: \.0) { part in
                     HStack(spacing: 6) {

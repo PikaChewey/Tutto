@@ -79,6 +79,12 @@ case "click":
     mouse(.mouseMoved, point); usleep(50_000)
     mouse(.leftMouseDown, point); usleep(40_000)
     mouse(.leftMouseUp, point)
+case "rightclick":
+    let point = CGPoint(x: Double(args[1])!, y: Double(args[2])!)
+    mouse(.mouseMoved, point); usleep(80_000)
+    CGEvent(mouseEventSource: source, mouseType: .rightMouseDown, mouseCursorPosition: point, mouseButton: .right)!.post(tap: .cghidEventTap)
+    usleep(50_000)
+    CGEvent(mouseEventSource: source, mouseType: .rightMouseUp, mouseCursorPosition: point, mouseButton: .right)!.post(tap: .cghidEventTap)
 case "drag":
     let a = CGPoint(x: Double(args[1])!, y: Double(args[2])!)
     let b = CGPoint(x: Double(args[3])!, y: Double(args[4])!)
@@ -122,6 +128,25 @@ case "pasteboard":
         print("png pixels", rep.pixelsWide, "x", rep.pixelsHigh)
     }
     if let text = pb.string(forType: .string) { print("text:", text.prefix(200)) }
+case "statusitem":
+    // Presses an app's menu bar extra through Accessibility (works even when the notch hides it).
+    let name = args[1]
+    guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }) else { print("not running"); break }
+    let element = AXUIElementCreateApplication(app.processIdentifier)
+    var bar: CFTypeRef?
+    AXUIElementCopyAttributeValue(element, "AXExtrasMenuBar" as CFString, &bar)
+    guard let bar else { print("no extras menu bar"); break }
+    var children: CFTypeRef?
+    AXUIElementCopyAttributeValue(bar as! AXUIElement, kAXChildrenAttribute as CFString, &children)
+    let items = children as? [AXUIElement] ?? []
+    print("items", items.count)
+    for item in items {
+        var position: CFTypeRef?
+        AXUIElementCopyAttributeValue(item, kAXPositionAttribute as CFString, &position)
+        var p = CGPoint.zero
+        if let position { AXValueGetValue(position as! AXValue, .cgPoint, &p) }
+        print("item at", Int(p.x), Int(p.y), "press:", AXUIElementPerformAction(item, kAXPressAction as CFString).rawValue)
+    }
 case "pbsave":
     // Saves every item and type on the clipboard, so tests can put it back exactly.
     let items = (NSPasteboard.general.pasteboardItems ?? []).map { item in

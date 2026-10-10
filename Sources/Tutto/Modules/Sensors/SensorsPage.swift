@@ -257,7 +257,6 @@ struct SensorsLine: View {
             Text(Format.temperature(celsius))
                 .font(.system(size: 12, weight: .medium).monospacedDigit())
                 .foregroundStyle((celsius ?? 0) >= 95 ? Color.alert : Color.ink)
-                .contentTransition(.numericText())
         }
     }
 }
