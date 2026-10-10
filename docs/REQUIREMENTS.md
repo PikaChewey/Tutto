@@ -133,3 +133,37 @@ Baseline of the apps Tutto replaces, idle for 3 minutes on the test machine (202
 | PERF-6 | Lighter than the apps it replaces combined (Stats + Raycast + Shottr + CornerClick) | [x] 0.011 % / 13–30 MB vs 1.788 % / 421 MB combined |
 | PERF-7 | Hotkey → selection overlay ≤ 200 ms; mouse-up → clipboard ≤ 150 ms | [x] overlay 60–121 ms; mouse-up → clipboard 0–72 ms |
 | PERF-8 | App bundle ≤ 15 MB | [x] 8.0 MB |
+
+## Spec traceability
+
+Every request in the specification (re-read in full 2026-10-10, 2,673 words) mapped to requirements above.
+
+| Spec says | Covered by |
+|---|---|
+| Stats: click the menu bar icon to see stats; battery, max capacity, designed capacity, health %, cycles, power, top processes using battery | APP-1, SYS-1, SYS-2 |
+| Macs Fan Control: view temperatures, edit fan power for heavy tasks | FAN-1 … FAN-4 |
+| Raycast clipboard history on ⌃⇧V (Control, not Command); images, text and more in a clean UI; search, paste, pin, content-type filter | CLIP-1 … CLIP-6, APP-5 |
+| Raycast window management: ⌘⌥B, type "left half"/"right half"; halves, thirds, quarters, center, maximize, between displays | WIN-1 … WIN-3 (moving between displays is unit-tested only: this Mac has one display) |
+| ⌘⇧2 select area → clipboard (no editor to dismiss) | SHOT-1 |
+| ⌘⇧1 whole screen | SHOT-2 |
+| ⌘⇧` select area → editor | SHOT-3, SHOT-4 |
+| Tab copies the color under the cursor | SHOT-5 |
+| Freehand draw from an icon, with brush thickness and color | SHOT-6 |
+| No tool: drag a box with live pixel size, move and resize it, crop | SHOT-7 |
+| Copy all text in the screenshot (or the selected part) easily | SHOT-8 |
+| Save to a file, defaulting to Downloads | SHOT-9 |
+| Esc copies the screenshot, like Shottr | SHOT-10 |
+| Editor is screenshot-only (no battery etc.) | SHOT-11 |
+| The Unarchiver: RAR, 7z, zip, tar/gz/xz, ISO, CAB…; garbled filenames fixed; right-click options like WinRAR | ARC-1 … ARC-7 |
+| All of CornerClick: corner click/tap → right-click, either bottom corner, two-finger kept, S/M/L/custom drag, tap-to-click, pause, open at login, log file, Accessibility | CC-1 … CC-10, APP-6 |
+| CornerClick UI in the menu bar panel, without the right-click counter | CC-9 |
+| Menu bar icon looks good; panel shows very brief battery/CPU/GPU/RAM/disk with a way to go deeper; CornerClick; optional clipboard settings | APP-1, SYS-1, SYS-3, CC-9, CLIP (pause + count in panel) |
+| Open the app from Spotlight as a full app with in-depth CPU, GPU, RAM, disk, fans | APP-2, SYS-3, FAN-1/2 |
+| Change shortcuts there, with recording | APP-4 |
+| Settings for anything necessary | APP-6 |
+| Turn off every feature, and an off feature must not waste battery | APP-3, PERF-4 |
+| Clean, minimal, smooth, professional; smooth animation; clear on first look and install | UX-1 … UX-3, APP-8 |
+| Research X / social posts on UI/UX trends | UX-4 (`docs/research/ui-ux-research.md`) |
+| Very light on CPU/memory/battery; as good as or better than the apps it replaces | PERF-1 … PERF-8 (`docs/PERFORMANCE.md`) |
+| Investigate CornerClick source and macOS APIs; modular architecture; measurable acceptance criteria; identify permissions and OS limits | This file; `docs/research/macos-api-research.md`; README › Permissions / Limitations |
+| Test everything before finishing | `docs/TEST_RESULTS.md` |
