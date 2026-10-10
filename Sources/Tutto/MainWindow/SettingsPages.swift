@@ -22,7 +22,7 @@ struct OverviewPage: View {
                     Image(systemName: "menubar.rectangle").font(.system(size: 18)).foregroundStyle(Color.ink2)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("The menu bar icon is hidden behind the camera notch.").font(.system(size: 13, weight: .semibold))
-                        Text("Your menu bar is full, so macOS placed Tutto's icon where the notch covers it. Quitting the apps Tutto replaces frees room; you can also hold ⌘ and drag menu bar icons to reorder them, or hide others in System Settings › Menu Bar.")
+                        Text("Your menu bar is full, so macOS placed Tutto's icon where the notch covers it. Quit a menu bar app you no longer need, hold ⌘ and drag menu bar icons to reorder them, or hide others in System Settings › Menu Bar. Everything in the panel is also here in the app.")
                             .font(.system(size: 12)).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
@@ -34,7 +34,7 @@ struct OverviewPage: View {
             }
             if let system = model.system {
                 OverviewStats(monitor: system)
-                    .watching(system, [.stats])
+                    .watching(system, [.load])
             }
             InkGroup("Tools") {
                 ForEach(ModuleID.allCases) { module in
@@ -55,7 +55,6 @@ struct OverviewPage: View {
                     .overlay(alignment: .bottom) { if module != ModuleID.allCases.last { Hairline().opacity(0.6) } }
                 }
             }
-            ReplacedAppsNote(model: model)
         }
     }
 
@@ -114,39 +113,6 @@ private struct OverviewStats: View {
     }
 }
 
-/// The apps Tutto replaces that are still running, with what to do about each.
-struct ReplacedAppsNote: View {
-    var model: AppModel
-    @State private var tick = 0
-
-    var body: some View {
-        let running = model.runningReplacedApps()
-        if !running.isEmpty {
-            InkGroup("Still running", trailing: AnyView(Caption("replaced by Tutto"))) {
-                ForEach(running) { app in
-                    HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(app.name).font(.system(size: 13, weight: .medium))
-                            Text(app.advice).font(.system(size: 11.5)).foregroundStyle(Color.ink3)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
-                        if app.canQuit {
-                            Button("Quit \(app.name)") {
-                                model.quit(app)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { tick += 1 }
-                            }
-                            .buttonStyle(OutlineButtonStyle(compact: true))
-                        }
-                    }
-                    .padding(.vertical, 8)
-                }
-            }
-            .id(tick)
-        }
-    }
-}
-
 // MARK: - Shortcuts
 
 struct ShortcutsPage: View {
@@ -156,10 +122,13 @@ struct ShortcutsPage: View {
         VStack(alignment: .leading, spacing: 22) {
             PageHeader(title: "Shortcuts", subtitle: "Click a shortcut, then press the keys you want. Esc cancels, Delete removes it.")
             group("Everyday", [.captureArea, .captureScreen, .captureAreaEdit, .clipboardHistory, .windowPalette])
-            group("App", [.openTutto, .toggleCornerClick])
+            group("App", [.openTutto, .toggleCorner])
             group("Window actions", WindowAction.allCases.map { .window($0) })
-            HStack {
-                Spacer()
+            HStack(alignment: .top) {
+                Text("If another app uses the same keys, macOS may deliver them to both. Change the shortcut here or in that app.")
+                    .font(.system(size: 11.5)).foregroundStyle(Color.ink3)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 16)
                 Button("Restore Defaults") { model.resetShortcuts() }
                     .buttonStyle(OutlineButtonStyle(compact: true))
                     .disabled(!model.shortcuts.isCustomized)
@@ -178,8 +147,6 @@ struct ShortcutsPage: View {
                             Text("\(module.title) is off").font(.system(size: 11)).foregroundStyle(Color.ink3)
                         } else if model.hotkeys.failed.contains(action.id) {
                             Text("macOS didn't accept this shortcut").font(.system(size: 11)).foregroundStyle(Color.alert)
-                        } else if let owner = ExternalShortcuts.runningOwner(of: model.shortcuts.shortcut(for: action)) {
-                            Text("\(owner) is running and may also respond to this").font(.system(size: 11)).foregroundStyle(Color.ink2)
                         }
                     }
                     Spacer()
@@ -285,12 +252,11 @@ struct GeneralPage: View {
                     InkSwitch(isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }),
                               label: "Open at login")
                 }
-                LabeledRow("Welcome tour", detail: "Permissions, shortcuts and the CornerClick test again.") {
+                LabeledRow("Welcome tour", detail: "Permissions, shortcuts and the Trackpad Corner test again.") {
                     Button("Show") { OnboardingWindowController.shared.show() }
                         .buttonStyle(OutlineButtonStyle(compact: true))
                 }
             }
-            ReplacedAppsNote(model: model)
             AboutFooter()
         }
     }
@@ -312,39 +278,39 @@ extension Bundle {
     var shortVersion: String { infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0" }
 }
 
-// MARK: - CornerClick
+// MARK: - Trackpad Corner
 
-struct CornerClickPage: View {
+struct CornerPage: View {
     @Bindable var model: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            PageHeader(title: "CornerClick",
+            PageHeader(title: "Trackpad Corner",
                        subtitle: "Click or tap a bottom corner of the trackpad to right-click. Two-finger right-click keeps working.",
-                       module: .cornerClick)
-            if let module = model.cornerClick {
-                CornerClickPageContent(module: module)
+                       module: .corner)
+            if let module = model.corner {
+                CornerPageContent(module: module)
             } else {
-                ModuleOffView(module: .cornerClick, model: model)
+                ModuleOffView(module: .corner, model: model)
             }
         }
     }
 }
 
-private struct CornerClickPageContent: View {
-    @Bindable var module: CornerClickModule
+private struct CornerPageContent: View {
+    @Bindable var module: CornerModule
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             if module.status == .needsPermission {
-                AccessibilityCard(purpose: "CornerClick needs Accessibility access to turn a corner click into a right-click. It never reads what you type, and nothing leaves your Mac.")
+                AccessibilityCard(purpose: "Trackpad Corner needs Accessibility access to turn a corner press into a right-click. It never reads what you type, and nothing leaves your Mac.")
             }
             HStack(alignment: .top, spacing: 28) {
-                CornerClickEditor(module: module)
+                CornerEditor(module: module)
                     .frame(maxWidth: 420)
                 VStack(alignment: .leading, spacing: 14) {
                     LabeledRow("Active", detail: module.statusText) {
-                        InkSwitch(isOn: $module.isEnabled, label: "CornerClick",
+                        InkSwitch(isOn: $module.isEnabled, label: "Trackpad Corner",
                                   active: module.status.isRunning || !module.isEnabled)
                     }
                     Hairline()
@@ -352,17 +318,17 @@ private struct CornerClickPageContent: View {
                         .font(.system(size: 12))
                         .foregroundStyle(Color.ink2)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button("Set Up & Test…") { OnboardingWindowController.shared.show(step: .cornerClick) }
+                    Button("Set Up & Test…") { OnboardingWindowController.shared.show(step: .corner) }
                         .buttonStyle(OutlineButtonStyle(compact: true))
                 }
             }
             InkGroup("Troubleshooting") {
                 LabeledRow("Diagnostics log",
-                           detail: "One line per trackpad click (finger positions and decisions only) in ~/Library/Logs/CornerClick/clicks.log.") {
+                           detail: "One line per trackpad click (finger positions and decisions only) in ~/Library/Logs/Tutto/corner.log.") {
                     HStack(spacing: 8) {
                         if module.diagnostics {
                             Button("Reveal") {
-                                NSWorkspace.shared.activateFileViewerSelecting([CornerClickDiagnostics.fileURL])
+                                NSWorkspace.shared.activateFileViewerSelecting([CornerDiagnostics.fileURL])
                             }
                             .buttonStyle(OutlineButtonStyle(compact: true))
                         }

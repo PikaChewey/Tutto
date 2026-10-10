@@ -1,10 +1,10 @@
 //
-//  CornerClickModule.swift
+//  CornerModule.swift
 //  Tutto
 //
-//  CornerClick, folded into Tutto: click or tap a bottom corner of the trackpad to
-//  right-click while two-finger secondary click keeps working. The engine is the
-//  original one (TuttoKit/CornerClick); this is its settings and live state.
+//  Trackpad Corner: click or tap a bottom corner of the trackpad to right-click while
+//  two-finger secondary click keeps working. The engine lives in TuttoKit/TrackpadCorner;
+//  this is its settings and live state.
 //
 
 import AppKit
@@ -14,7 +14,7 @@ import TuttoKit
 
 @MainActor
 @Observable
-final class CornerClickModule: ModuleController {
+final class CornerModule: ModuleController {
     // MARK: Settings (persisted)
 
     /// Paused from the menu bar = false. Independent of the module switch in General.
@@ -36,7 +36,7 @@ final class CornerClickModule: ModuleController {
     private(set) var status: EngineStatus = .off
     private(set) var contacts: [Contact] = []
     private(set) var trackpadSize: TrackpadSize = .macBookPro14
-    /// Bumps every time a corner click/tap becomes a right-click (drives the zone flash).
+    /// Bumps every time a corner press or tap becomes a right-click (drives the zone flash).
     private(set) var pulse = 0
     private(set) var lastTrigger: Trigger?
 
@@ -48,7 +48,6 @@ final class CornerClickModule: ModuleController {
     var isTrusted: Bool { engine.isTrusted }
 
     init() {
-        Self.migrateFromCornerClickApp()
         defaults.register(defaults: [Keys.enabled: true, Keys.click: true, Keys.tap: true])
         isEnabled = defaults.bool(forKey: Keys.enabled)
         clickEnabled = defaults.bool(forKey: Keys.click)
@@ -133,7 +132,7 @@ final class CornerClickModule: ModuleController {
 
     private func applyDiagnostics() {
         engine.setDiagnostics(diagnostics)
-        engine.onDiagnostic = diagnostics ? { line in CornerClickDiagnostics.write(line) } : nil
+        engine.onDiagnostic = diagnostics ? { line in CornerDiagnostics.write(line) } : nil
     }
 
     private func save() {
@@ -172,19 +171,6 @@ final class CornerClickModule: ModuleController {
         return TrackpadSize(width: Double(info.surfaceWidth) / 100, height: Double(info.surfaceHeight) / 100)
     }
 
-    /// First run: carry over the corner, size and triggers chosen in the standalone CornerClick app.
-    private static func migrateFromCornerClickApp() {
-        let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: Keys.migrated) else { return }
-        defaults.set(true, forKey: Keys.migrated)
-        guard let old = UserDefaults(suiteName: "ca.bryanyao.CornerClick"), old.object(forKey: "zone.v4") != nil else { return }
-        if let zone = old.data(forKey: "zone.v4") { defaults.set(zone, forKey: Keys.zone) }
-        for (from, to) in [("clickEnabled", Keys.click), ("tapEnabled", Keys.tap), ("zoneIsCustom", Keys.custom)]
-        where old.object(forKey: from) != nil {
-            defaults.set(old.bool(forKey: from), forKey: to)
-        }
-    }
-
     #if DEBUG
     /// Fake live state for offscreen renders (`--snapshot`). Never used in release builds.
     func applyPreview(contacts: [Contact], running: Bool = true) {
@@ -194,13 +180,12 @@ final class CornerClickModule: ModuleController {
     #endif
 
     private enum Keys {
-        static let enabled = "cornerclick.enabled"
-        static let click = "cornerclick.clickEnabled"
-        static let tap = "cornerclick.tapEnabled"
-        static let zone = "cornerclick.zone.v4"
-        static let custom = "cornerclick.zoneIsCustom"
-        static let diagnostics = "cornerclick.diagnostics"
-        static let migrated = "cornerclick.migrated"
+        static let enabled = "corner.enabled"
+        static let click = "corner.clickEnabled"
+        static let tap = "corner.tapEnabled"
+        static let zone = "corner.zone.v4"
+        static let custom = "corner.zoneIsCustom"
+        static let diagnostics = "corner.diagnostics"
     }
 }
 
@@ -213,7 +198,7 @@ extension EngineStatus {
     }
 }
 
-extension CornerClickModule {
+extension CornerModule {
     var statusText: String {
         switch status {
         case .off: return "Paused"
@@ -225,7 +210,7 @@ extension CornerClickModule {
         }
     }
 
-    var problem: CornerClickProblem? {
+    var problem: CornerProblem? {
         switch status {
         case .eventTapFailed: .couldNotStart
         case .noTrackpad: .noTrackpad
@@ -237,14 +222,14 @@ extension CornerClickModule {
     var cornerName: String { zone.corner == .bottomRight ? "bottom-right" : "bottom-left" }
 }
 
-enum CornerClickProblem: Equatable {
+enum CornerProblem: Equatable {
     case couldNotStart
     case noTrackpad
     case unavailable
 
     var message: String {
         switch self {
-        case .couldNotStart: "CornerClick couldn't start."
+        case .couldNotStart: "Trackpad Corner couldn't start."
         case .noTrackpad: "No trackpad found. Connect one and it'll start on its own."
         case .unavailable: "This macOS version blocks reading the trackpad."
         }
@@ -254,9 +239,9 @@ enum CornerClickProblem: Equatable {
 // MARK: - Diagnostics
 
 /// Troubleshooting only, off by default. Appends one line per trackpad click to
-/// ~/Library/Logs/CornerClick/clicks.log (trackpad positions and decisions, nothing else).
+/// ~/Library/Logs/Tutto/corner.log (trackpad positions and decisions, nothing else).
 @MainActor
-enum CornerClickDiagnostics {
+enum CornerDiagnostics {
     private static var handle: FileHandle?
     private static let formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -265,7 +250,7 @@ enum CornerClickDiagnostics {
     }()
 
     static var fileURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/CornerClick/clicks.log")
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Tutto/corner.log")
     }
 
     static func write(_ line: String) {

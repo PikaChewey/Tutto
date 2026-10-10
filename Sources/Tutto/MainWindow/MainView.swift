@@ -12,7 +12,7 @@ import TuttoKit
 enum MainPage: String, Hashable, CaseIterable, Identifiable {
     case overview
     case battery, cpu, gpu, memory, disk, network, sensors
-    case clipboard, windows, screenshots, archives, cornerClick
+    case clipboard, windows, screenshots, archives, corner
     case shortcuts, permissions, general
 
     var id: String { rawValue }
@@ -31,7 +31,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .windows: "Windows"
         case .screenshots: "Screenshots"
         case .archives: "Archives"
-        case .cornerClick: "CornerClick"
+        case .corner: "Trackpad Corner"
         case .shortcuts: "Shortcuts"
         case .permissions: "Permissions"
         case .general: "General"
@@ -52,7 +52,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .windows: ModuleID.windows.symbol
         case .screenshots: ModuleID.screenshots.symbol
         case .archives: ModuleID.archives.symbol
-        case .cornerClick: ModuleID.cornerClick.symbol
+        case .corner: ModuleID.corner.symbol
         case .shortcuts: "command"
         case .permissions: "lock.shield"
         case .general: "gearshape"
@@ -67,13 +67,13 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .windows: .windows
         case .screenshots: .screenshots
         case .archives: .archives
-        case .cornerClick: .cornerClick
+        case .corner: .corner
         case .overview, .shortcuts, .permissions, .general: nil
         }
     }
 
     static let systemPages: [MainPage] = [.battery, .cpu, .gpu, .memory, .disk, .network, .sensors]
-    static let toolPages: [MainPage] = [.clipboard, .windows, .screenshots, .archives, .cornerClick]
+    static let toolPages: [MainPage] = [.clipboard, .windows, .screenshots, .archives, .corner]
     static let settingsPages: [MainPage] = [.shortcuts, .permissions, .general]
 }
 
@@ -141,7 +141,7 @@ struct MainView: View {
         case .windows: WindowsPage(model: model)
         case .screenshots: ScreenshotsPage(model: model)
         case .archives: ArchivesPage(model: model)
-        case .cornerClick: CornerClickPage(model: model)
+        case .corner: CornerPage(model: model)
         case .shortcuts: ShortcutsPage(model: model)
         case .permissions: PermissionsPage(model: model)
         case .general: GeneralPage(model: model)

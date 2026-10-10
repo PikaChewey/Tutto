@@ -42,8 +42,8 @@ final class SensorTemperatureTests: XCTestCase {
     func testCPUAndGPUFromSMCOnM5() throws {
         guard let chip = TemperatureSensors.currentChip, chip.generation == 5 else { throw XCTSkip("not an M5") }
         let smc = TemperatureSensors.readSMC()
-        XCTAssertFalse(smc.filter { $0.group == .cpu }.isEmpty, "Stats' M5 Tp keys")
-        XCTAssertFalse(smc.filter { $0.group == .gpu }.isEmpty, "Stats' M5 Tg keys")
+        XCTAssertFalse(smc.filter { $0.group == .cpu }.isEmpty, "documented M5 Tp keys")
+        XCTAssertFalse(smc.filter { $0.group == .gpu }.isEmpty, "documented M5 Tg keys")
         XCTAssertTrue(smc.allSatisfy { $0.source == .smc && $0.id.hasPrefix("smc:") })
         XCTAssertTrue(smc.contains { $0.label == "CPU 1" })
         XCTAssertTrue(smc.contains { $0.label == "GPU 1" })
@@ -131,7 +131,7 @@ final class SensorTemperatureTests: XCTestCase {
         let present: Set<String> = ["Tp00", "Tp04", "Tp0C", "Tp0G", "Tp0O", "Tp0R", "Tp0X", "Tp0a", "Tp0p", "Tp0u", "Tp0y",
                                     "Tg0U", "Tg0X", "Tg0d", "Tg0g", "Tg0j", "Tg1Y", "Tg1c", "Tg1g", "Te04"]
         let keys = TemperatureSensors.presentKeys(candidates, keyExists: present.contains)
-        XCTAssertEqual(keys.count, 19, "Te04 is not in Stats' M5 map, so it is not labelled")
+        XCTAssertEqual(keys.count, 19, "Te04 is not in the documented M5 map, so it is not labelled")
         XCTAssertEqual(keys.first, .init(key: "Tp00", group: .cpu, label: "CPU 1"))
         XCTAssertEqual(keys.first { $0.key == "Tp0y" }?.label, "CPU 11")
         XCTAssertEqual(keys.first { $0.key == "Tg1g" }?.label, "GPU 8")

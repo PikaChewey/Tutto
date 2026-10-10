@@ -1,6 +1,6 @@
 //
 //  MultitouchBridge.c
-//  Tutto (from CornerClick)
+//  Tutto
 //
 
 #include "MultitouchBridge.h"

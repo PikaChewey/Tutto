@@ -23,12 +23,12 @@ enum Snapshots {
 
         let model = AppModel.shared
         model.launch(quietly: true)
-        model.system?.begin([.stats, .volumes, .energyProcesses, .cpuProcesses, .memoryProcesses])
-        model.cornerClick?.beginWatching()
+        model.system?.begin([.load, .volumes, .energyProcesses, .cpuProcesses, .memoryProcesses])
+        model.corner?.beginWatching()
         model.sensors?.begin()
         // Let readings and the first `top` samples arrive.
         RunLoop.main.run(until: Date().addingTimeInterval(only.contains("fast") ? 1.5 : 5.5))
-        model.cornerClick?.applyPreview(contacts: [Contact(id: 1, x: 0.86, y: 0.14)])
+        model.corner?.applyPreview(contacts: [Contact(id: 1, x: 0.86, y: 0.14)])
 
         for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {
             if only.isEmpty || only.contains("panel") {

@@ -1,6 +1,6 @@
 //
 //  EngineCore.swift
-//  Tutto (CornerClick engine)
+//  Tutto (trackpad corner engine)
 //
 //  The hot path. Two inputs meet here:
 //   • raw trackpad frames from MultitouchSupport (background thread, only while a finger is down)
@@ -31,7 +31,7 @@ public enum EngineEvent: Sendable {
 }
 
 public final class EngineCore: @unchecked Sendable {
-    /// Marks events CornerClick synthesizes so it never reacts to its own clicks.
+    /// Marks events Trackpad Corner synthesizes so it never reacts to its own clicks.
     public static let syntheticMarker: Int64 = 0x436F_726E_6572_436C  // "CornerCl"
 
     private struct Shared {
@@ -75,7 +75,7 @@ public final class EngineCore: @unchecked Sendable {
         }
     }
 
-    /// Troubleshooting only: describe every trackpad click and what CornerClick decided.
+    /// Troubleshooting only: describe every trackpad click and what Trackpad Corner decided.
     public func setDiagnostics(_ on: Bool) {
         shared.withLock { $0.diagnostics = on }
     }
@@ -136,7 +136,7 @@ public final class EngineCore: @unchecked Sendable {
             report(.frame(TouchFrame(deviceIndex: deviceIndex, contacts: frame)))
         }
         // With "Tap to click" on, macOS sends a click for this tap and the event tap converts it.
-        // With it off, no click is coming, so CornerClick makes the right-click itself.
+        // With it off, no click is coming, so Trackpad Corner makes the right-click itself.
         guard cornerTap else { return }
         let tapToClick = system.tapToClickEnabled(deviceIndex)
         let typing = system.recentlyTyped()
@@ -162,7 +162,7 @@ public final class EngineCore: @unchecked Sendable {
 
     // MARK: Mouse events (event tap thread)
 
-    /// Returns the event to deliver. Never returns nil: CornerClick only ever
+    /// Returns the event to deliver. Never returns nil: Trackpad Corner only ever
     /// rewrites a click, it never swallows one.
     public func handleMouseEvent(type: CGEventType, event: CGEvent) -> CGEvent {
         if event.getIntegerValueField(.eventSourceUserData) == Self.syntheticMarker {
@@ -353,7 +353,7 @@ public final class EngineCore: @unchecked Sendable {
 public enum SystemTrackpad {
     /// Whether "Tap to click" is on for this trackpad. Read live from the trackpad's driver,
     /// which holds the settings macOS actually applies (saved preferences can be stale, and
-    /// the built-in and Bluetooth trackpads keep separate copies). CornerClick only reads it.
+    /// the built-in and Bluetooth trackpads keep separate copies). Trackpad Corner only reads it.
     public static func tapToClickEnabled(deviceIndex: Int) -> Bool {
         let service = CCMultitouchDeviceService(Int32(deviceIndex))
         if service != 0,

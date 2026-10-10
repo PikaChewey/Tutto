@@ -1,8 +1,8 @@
 //
-//  CornerClickControls.swift
-//  Tutto (from CornerClick)
+//  CornerControls.swift
+//  Tutto
 //
-//  The CornerClick controls: size presets worked out in millimetres for your
+//  The Trackpad Corner controls: size presets worked out in millimetres for your
 //  trackpad, custom width × height, corner side, and click/tap triggers.
 //
 
@@ -21,7 +21,7 @@ enum ZonePreset: String, CaseIterable, Identifiable {
     var help: String {
         switch self {
         case .small: "Small: a compact corner"
-        case .medium: "Medium: close to macOS's own corner click, a little roomier"
+        case .medium: "Medium: close to macOS's own bottom-corner secondary click, a little roomier"
         case .large: "Large: a generous corner for big hands and quick taps"
         }
     }
@@ -55,7 +55,7 @@ private enum SizeChoice: Hashable {
 }
 
 struct ZonePresetPicker: View {
-    @Bindable var module: CornerClickModule
+    @Bindable var module: CornerModule
 
     var body: some View {
         let current: SizeChoice = module.zoneIsCustom
@@ -92,7 +92,7 @@ struct ZonePresetPicker: View {
 
 /// Width and height in millimetres, for people who want exactly their own corner.
 struct CustomSizeRow: View {
-    @Bindable var module: CornerClickModule
+    @Bindable var module: CornerModule
 
     var body: some View {
         let size = module.trackpadSize
@@ -119,10 +119,10 @@ struct CustomSizeRow: View {
     }
 }
 
-/// The full CornerClick editor: live drawing, readout and controls. Used in the menu bar panel
-/// (compact) and on the CornerClick page.
-struct CornerClickEditor: View {
-    @Bindable var module: CornerClickModule
+/// The full Trackpad Corner editor: live drawing, readout and controls. Used in the menu bar panel
+/// (compact) and on the Trackpad Corner page.
+struct CornerEditor: View {
+    @Bindable var module: CornerModule
     var compact = false
     @State private var triggerNote: String?
 
@@ -218,9 +218,9 @@ struct CornerClickEditor: View {
         .animation(.easeOut(duration: 0.15), value: module.zoneIsCustom)
     }
 
-    /// Click and Tap can't both be off: that would leave CornerClick on but doing nothing.
-    private func triggerBinding(_ key: ReferenceWritableKeyPath<CornerClickModule, Bool>,
-                                other: ReferenceWritableKeyPath<CornerClickModule, Bool>) -> Binding<Bool> {
+    /// Click and Tap can't both be off: that would leave Trackpad Corner on but doing nothing.
+    private func triggerBinding(_ key: ReferenceWritableKeyPath<CornerModule, Bool>,
+                                other: ReferenceWritableKeyPath<CornerModule, Bool>) -> Binding<Bool> {
         Binding(
             get: { module[keyPath: key] },
             set: { newValue in
@@ -248,7 +248,7 @@ struct CornerClickEditor: View {
 }
 
 struct ProblemRow: View {
-    var problem: CornerClickProblem
+    var problem: CornerProblem
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -309,7 +309,7 @@ enum Relaunch {
 }
 
 /// Reports whether the hosting window is actually on screen, so live views
-/// (trackpad preview, stats) only work while someone can see them.
+/// (trackpad preview, readouts) only work while someone can see them.
 struct VisibilityReader: NSViewRepresentable {
     var onChange: (Bool) -> Void
 

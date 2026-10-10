@@ -2,7 +2,7 @@
 //  MenuPanel.swift
 //  Tutto
 //
-//  The menu bar panel: a glance at the battery and the machine, CornerClick's corner,
+//  The menu bar panel: a glance at the battery and the machine, Trackpad Corner's corner,
 //  and one-click access to every tool. Each part appears only if its module is on.
 //  Readings run only while this panel is open.
 //
@@ -13,7 +13,7 @@ import TuttoKit
 
 struct MenuPanel: View {
     @Bindable var model: AppModel
-    @AppStorage("panel.cornerClickExpanded") private var cornerExpanded = true
+    @AppStorage("panel.cornerExpanded") private var cornerExpanded = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -36,9 +36,9 @@ struct MenuPanel: View {
                     .padding(.bottom, 8)
             }
 
-            if let cornerClick = model.cornerClick {
+            if let corner = model.corner {
                 Hairline().padding(.bottom, 8)
-                CornerClickSection(module: cornerClick, expanded: $cornerExpanded)
+                CornerSection(module: corner, expanded: $cornerExpanded)
                     .padding(.bottom, 10)
             }
 
@@ -402,10 +402,10 @@ private struct StatsStrip: View {
     }
 }
 
-// MARK: - CornerClick
+// MARK: - Trackpad Corner
 
-private struct CornerClickSection: View {
-    @Bindable var module: CornerClickModule
+private struct CornerSection: View {
+    @Bindable var module: CornerModule
     @Binding var expanded: Bool
 
     var body: some View {
@@ -415,7 +415,7 @@ private struct CornerClickSection: View {
                     expanded.toggle()
                 } label: {
                     HStack(spacing: 6) {
-                        Caption("CornerClick")
+                        Caption("Trackpad Corner")
                         Image(systemName: "chevron.right")
                             .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(Color.ink3)
@@ -424,7 +424,7 @@ private struct CornerClickSection: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(expanded ? "Hide CornerClick settings" : "Show CornerClick settings")
+                .accessibilityLabel(expanded ? "Hide Trackpad Corner settings" : "Show Trackpad Corner settings")
                 if !module.status.isRunning || !expanded {
                     Text(summary)
                         .font(.system(size: 11))
@@ -433,13 +433,13 @@ private struct CornerClickSection: View {
                         .transition(.opacity)
                 }
                 Spacer()
-                InkSwitch(isOn: $module.isEnabled, label: "CornerClick",
+                InkSwitch(isOn: $module.isEnabled, label: "Trackpad Corner",
                           active: module.status.isRunning || !module.isEnabled)
             }
             if module.status == .needsPermission {
-                AccessibilityCard(purpose: "CornerClick needs Accessibility access to turn a corner click into a right-click. It never reads what you type, and nothing leaves your Mac.")
+                AccessibilityCard(purpose: "Trackpad Corner needs Accessibility access to turn a corner press into a right-click. It never reads what you type, and nothing leaves your Mac.")
             } else if expanded {
-                CornerClickEditor(module: module, compact: true)
+                CornerEditor(module: module, compact: true)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -544,11 +544,9 @@ private struct ClipboardLine: View {
 
 // MARK: - Notices
 
-/// Only things that need the user: a missing permission for a module that's on, and running
-/// apps that actually clash (same shortcuts, double right-clicks). One line each.
+/// Only what needs the user: a permission missing for a module that's on. One line each.
 private struct Notices: View {
     var model: AppModel
-    @AppStorage("notice.raycastDismissed") private var raycastNoticeDismissed = false
 
     var body: some View {
         let missing = Permission.allCases.filter { permission in
@@ -556,24 +554,11 @@ private struct Notices: View {
             guard permission.modules.contains(where: { model.isEnabled($0) }) else { return false }
             return model.permissions.isGranted(permission) == false
         }
-        let clashes = model.runningReplacedApps().filter { ["cc.ffitch.shottr", "ca.bryanyao.CornerClick"].contains($0.bundleID) }
-        let raycast = model.runningReplacedApps().first { $0.bundleID == "com.raycast.macos" }
-            .flatMap { app in raycastNoticeDismissed ? nil : app }
-        if !missing.isEmpty || !clashes.isEmpty || raycast != nil {
+        if !missing.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(missing) { permission in
                     NoticeRow(symbol: "lock", text: "\(permission.title) needed", help: permission.powers, button: "Allow") {
                         model.permissions.request(permission)
-                    }
-                }
-                let names = (clashes + (raycast.map { [$0] } ?? [])).map(\.name)
-                if !names.isEmpty {
-                    NoticeRow(symbol: "exclamationmark.triangle",
-                              text: names.count == 1 ? "\(names[0]) is still running" : "\(names.count) replaced apps still running",
-                              help: (clashes + (raycast.map { [$0] } ?? [])).map { "\($0.name): \($0.advice)" }.joined(separator: "\n"),
-                              button: "Review") {
-                        raycastNoticeDismissed = true
-                        MainWindowController.shared.show(page: .overview)
                     }
                 }
             }

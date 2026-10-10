@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 model.checkMenuBarIconVisibility()
                 if model.menuBarIconHidden && model.hasCompletedOnboarding {
                     Toast.shared.show("Tutto's menu bar icon is behind the notch",
-                                      detail: "Quit the apps Tutto replaces or ⌘-drag icons to make room. Click for details.",
+                                      detail: "Quit a menu bar app you don't need or ⌘-drag icons to make room. Click for details.",
                                       duration: 6) { MainWindowController.shared.show(page: .overview) }
                 }
             }
@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Opening Tutto again (Spotlight, Finder, Raycast) brings up the main window.
+    /// Opening Tutto again (Spotlight, Finder, the Dock) brings up the main window.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         MainWindowController.shared.show()
         return false
@@ -100,8 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 /// `tutto://open/<page>` shows a page of the app; `tutto://do/<action>` runs an action, for
-/// automation (Shortcuts, Raycast scripts, Stream Deck…).
-///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows screenshots archives cornerClick shortcuts permissions general
+/// automation (Shortcuts, scripts, Stream Deck…).
+///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows screenshots archives corner shortcuts permissions general
 ///   actions: capture-area capture-screen capture-edit clipboard windows quit
 @MainActor
 enum DeepLinks {

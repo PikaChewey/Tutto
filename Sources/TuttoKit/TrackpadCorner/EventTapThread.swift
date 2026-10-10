@@ -1,6 +1,6 @@
 //
 //  EventTapThread.swift
-//  Tutto (CornerClick engine)
+//  Tutto (trackpad corner engine)
 //
 //  The event tap sits in front of every left click on the Mac, so it gets its own
 //  high-priority thread. Nothing on the main thread (UI, SwiftUI layout, system
@@ -57,7 +57,7 @@ public final class EventTapThread: @unchecked Sendable {
             CFRunLoopRun()
             CFRunLoopRemoveSource(loop, source, .commonModes)
         }
-        thread.name = "CornerClick event tap"
+        thread.name = "Trackpad Corner event tap"
         thread.qualityOfService = QualityOfService.userInteractive
         lock.withLock { self.port = port }
         thread.start()

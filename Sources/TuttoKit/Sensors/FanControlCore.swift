@@ -163,7 +163,7 @@ public enum FanSMC {
 
 /// Puts fans into manual mode at a target RPM, and back to automatic.
 ///
-/// Sequence, following Stats (exelban/stats `SMC/smc.swift`, PRs #2924 and #3051):
+/// Sequence (the known-good write order for Apple silicon SMCs):
 /// - Manual: write mode key = 1. On M5 this works directly. If it fails and `Ftst`
 ///   exists (M3/M4), write `Ftst` = 1, wait about 3 s for thermalmonitord to yield,
 ///   then retry the mode write. Then write the target (`F<n>Tg`) clamped to [Mn, Mx].

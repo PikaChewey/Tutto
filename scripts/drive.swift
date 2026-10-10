@@ -204,7 +204,7 @@ case "statusitem":
         print("item at", Int(p.x), Int(p.y), "press:", AXUIElementPerformAction(item, kAXPressAction as CFString).rawValue)
     }
 case "taps":
-    // Event taps installed by a process (CornerClick's lives only while the module is on).
+    // Event taps installed by a process (Trackpad Corner's lives only while the module is on).
     var count: UInt32 = 0
     CGGetEventTapList(0, nil, &count)
     var taps = [CGEventTapInformation](repeating: CGEventTapInformation(), count: Int(count))

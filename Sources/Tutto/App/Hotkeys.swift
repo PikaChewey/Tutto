@@ -20,7 +20,7 @@ enum ShortcutAction: Hashable, Identifiable {
     case captureScreen
     case captureAreaEdit
     case openTutto
-    case toggleCornerClick
+    case toggleCorner
     case window(WindowAction)
 
     var id: String {
@@ -31,7 +31,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureScreen: "screenshot.screen"
         case .captureAreaEdit: "screenshot.edit"
         case .openTutto: "app.open"
-        case .toggleCornerClick: "cornerclick.toggle"
+        case .toggleCorner: "corner.toggle"
         case .window(let action): "windows.\(action.rawValue)"
         }
     }
@@ -44,7 +44,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureScreen: "Capture full screen to clipboard"
         case .captureAreaEdit: "Capture area and edit"
         case .openTutto: "Open Tutto"
-        case .toggleCornerClick: "Pause or resume CornerClick"
+        case .toggleCorner: "Pause or resume Trackpad Corner"
         case .window(let action): action.title
         }
     }
@@ -54,12 +54,12 @@ enum ShortcutAction: Hashable, Identifiable {
         case .clipboardHistory: .clipboard
         case .windowPalette, .window: .windows
         case .captureArea, .captureScreen, .captureAreaEdit: .screenshots
-        case .toggleCornerClick: .cornerClick
+        case .toggleCorner: .corner
         case .openTutto: nil
         }
     }
 
-    /// The shortcuts from the spec (Raycast's and Shottr's, as used on this Mac).
+    /// The shortcuts Tutto starts with.
     var defaultShortcut: KeyShortcut? {
         switch self {
         case .clipboardHistory: .ctrlShift(kVK_ANSI_V)
@@ -67,12 +67,12 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureArea: .cmdShift(kVK_ANSI_2)
         case .captureScreen: .cmdShift(kVK_ANSI_1)
         case .captureAreaEdit: .cmdShift(kVK_ANSI_Grave)
-        case .openTutto, .toggleCornerClick, .window: nil
+        case .openTutto, .toggleCorner, .window: nil
         }
     }
 
     static var fixed: [ShortcutAction] {
-        [.clipboardHistory, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .openTutto, .toggleCornerClick]
+        [.clipboardHistory, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .openTutto, .toggleCorner]
     }
 
     static var all: [ShortcutAction] { fixed + WindowAction.allCases.map { .window($0) } }
@@ -210,25 +210,5 @@ final class HotkeyCenter {
 
     private func fire(_ number: UInt32) {
         registrations[number]?.handler()
-    }
-}
-
-/// Apps that, when running, also respond to some of Tutto's default shortcuts. macOS delivers a
-/// shared global shortcut to every app that registered it (verified with Shottr on macOS 26.5),
-/// so both would react.
-@MainActor
-enum ExternalShortcuts {
-    static func runningOwner(of shortcut: KeyShortcut?) -> String? {
-        guard let shortcut else { return nil }
-        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
-        if running.contains("cc.ffitch.shottr"),
-           [KeyShortcut.cmdShift(kVK_ANSI_1), .cmdShift(kVK_ANSI_2)].contains(shortcut) {
-            return "Shottr"
-        }
-        if running.contains("com.raycast.macos"),
-           [KeyShortcut.ctrlShift(kVK_ANSI_V), .cmdOption(kVK_ANSI_B)].contains(shortcut) {
-            return "Raycast"
-        }
-        return nil
     }
 }

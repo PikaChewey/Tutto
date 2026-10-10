@@ -27,7 +27,7 @@ final class AppModel {
     private(set) var windows: WindowModule?
     private(set) var screenshots: ScreenshotModule?
     private(set) var archives: ArchiveModule?
-    private(set) var cornerClick: CornerClickModule?
+    private(set) var corner: CornerModule?
 
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
     /// On notched MacBooks a crowded menu bar puts new icons behind the notch, where they can't be clicked.
@@ -107,9 +107,9 @@ final class AppModel {
         case .archives:
             if archives == nil { archives = ArchiveModule(model: self) }
             archives?.start()
-        case .cornerClick:
-            if cornerClick == nil { cornerClick = CornerClickModule() }
-            cornerClick?.start()
+        case .corner:
+            if corner == nil { corner = CornerModule() }
+            corner?.start()
         }
     }
 
@@ -133,9 +133,9 @@ final class AppModel {
         case .archives:
             archives?.stop()
             archives = nil
-        case .cornerClick:
-            cornerClick?.stop()
-            cornerClick = nil
+        case .corner:
+            corner?.stop()
+            corner = nil
         }
     }
 
@@ -169,8 +169,8 @@ final class AppModel {
         case .captureScreen: screenshots?.capture(.screenToClipboard)
         case .captureAreaEdit: screenshots?.capture(.areaToEditor)
         case .openTutto: MainWindowController.shared.show()
-        case .toggleCornerClick:
-            if let cornerClick { cornerClick.isEnabled.toggle() }
+        case .toggleCorner:
+            if let corner { corner.isEnabled.toggle() }
         case .window(let windowAction): windows?.perform(windowAction)
         }
     }
@@ -192,46 +192,6 @@ final class AppModel {
     func completeOnboarding() {
         hasCompletedOnboarding = true
         defaults.set(true, forKey: Keys.onboarded)
-    }
-
-    // MARK: Apps Tutto replaces
-
-    struct ReplacedApp: Identifiable {
-        var id: String { bundleID }
-        var bundleID: String
-        var name: String
-        var module: ModuleID
-        var advice: String
-        var canQuit: Bool
-    }
-
-    static let replacedApps: [ReplacedApp] = [
-        ReplacedApp(bundleID: "eu.exelban.Stats", name: "Stats", module: .system,
-                    advice: "Samples continuously to update its menu bar. Tutto reads only while you look.", canQuit: true),
-        ReplacedApp(bundleID: "com.crystalidea.macsfancontrol", name: "Macs Fan Control", module: .sensors,
-                    advice: "Two apps controlling one fan will fight. Quit it before setting speeds here.", canQuit: true),
-        ReplacedApp(bundleID: "com.raycast.macos", name: "Raycast", module: .clipboard,
-                    advice: "Keep it as your launcher, but clear its ⌃⇧V and ⌘⌥B hotkeys in Raycast Settings › Extensions so Tutto gets them.",
-                    canQuit: false),
-        ReplacedApp(bundleID: "cc.ffitch.shottr", name: "Shottr", module: .screenshots,
-                    advice: "Also listens for ⌘⇧1 and ⌘⇧2, so only one app would take the screenshot.", canQuit: true),
-        ReplacedApp(bundleID: "com.macpaw.site.theunarchiver", name: "The Unarchiver", module: .archives,
-                    advice: "Fine to keep, but you no longer need it.", canQuit: true),
-        ReplacedApp(bundleID: "ca.bryanyao.CornerClick", name: "CornerClick", module: .cornerClick,
-                    advice: "Running both turns some corner taps into two right-clicks. Quit it; Tutto has everything it did.",
-                    canQuit: true),
-    ]
-
-    /// Replaced apps that are running right now and clash with a module that's on.
-    func runningReplacedApps() -> [ReplacedApp] {
-        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
-        return Self.replacedApps.filter { running.contains($0.bundleID) && enabled.contains($0.module) }
-    }
-
-    func quit(_ app: ReplacedApp) {
-        for running in NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID) {
-            running.terminate()
-        }
     }
 
     private enum Keys {

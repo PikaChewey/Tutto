@@ -1,6 +1,6 @@
 //
-//  CornerClickEngineTests.swift (ported verbatim from CornerClick)
-//  CornerClickTests
+//  CornerEngineTests.swift
+//  CornerTests
 //
 
 import CoreGraphics
@@ -78,7 +78,7 @@ struct ClickTests {
     }
 
     @Test func fingerThatSlidIntoTheCornerAndPressesRightClicks() {
-        // Same as macOS's own corner click: where you press is what counts.
+        // Same as macOS's own bottom-corner secondary click: where you press is what counts.
         var s = Scenario()
         s.frame(0, finger(1, middle.x, middle.y))
         s.frame(400, finger(1, corner.x, corner.y))
@@ -151,7 +151,7 @@ struct ClickTests {
     }
 
     @Test func tinyNudgeAfterRightClickIsALeftClick() {
-        // Even a 3 mm nudge (one menu item over) after a corner click means "pointing now".
+        // Even a 3 mm nudge (one menu item over) after a corner press means "pointing now".
         var s = Scenario()
         s.frame(0, finger(1, 0.90, 0.10))
         #expect(s.click(at: 150) == .click)
@@ -212,7 +212,7 @@ struct ClickTests {
         #expect(s.click(at: 150) == .click)
     }
 
-    @Test func restingThumbDoesNotBlockCornerClick() {
+    @Test func restingThumbDoesNotBlockCornerPress() {
         var s = Scenario()
         s.frame(0, finger(1, 0.3, 0.05))                                  // thumb resting bottom-left
         s.frame(2000, finger(1, 0.3, 0.05), finger(2, corner.x, corner.y)) // index presses the corner

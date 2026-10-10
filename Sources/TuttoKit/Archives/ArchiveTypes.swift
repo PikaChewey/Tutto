@@ -2,7 +2,7 @@
 //  ArchiveTypes.swift
 //  TuttoKit — archives (requirements ARC-1 … ARC-7)
 //
-//  Public API of the archive backend that replaces The Unarchiver 4.3.9. Everything here is
+//  Public API of Tutto's archive backend. Everything here is
 //  Foundation-only, uses the libarchive that ships with macOS (/usr/lib/libarchive.2.dylib,
 //  libarchive 3.7.4 on macOS 26) and keeps no global state: every call creates and frees its
 //  own libarchive objects, so all entry points are safe to call from any background thread.
@@ -32,12 +32,12 @@
 //    paths ≥ PATH_MAX where libarchive would chdir() process-wide) are skipped and listed in
 //    `ArchiveExtractionResult.skippedEntries`; the rest of the archive still extracts.
 //  • Afterwards every extracted folder gets u+rwx and every file u+rw (other bits preserved),
-//    like The Unarchiver — otherwise 0555 folders from ISOs can't be moved into place or trashed.
+//    otherwise 0555 folders from ISOs can't be moved into place or trashed.
 //  • The folder rule is applied and results are moved into place with renamex_np(RENAME_EXCL)
 //    under Finder-style unique names, so nothing in the destination is ever overwritten.
 //    The temporary folder is removed on success, failure and cancellation.
 //  • A com.apple.quarantine attribute on the archive is copied to everything extracted
-//    (what Archive Utility and The Unarchiver do, so Gatekeeper still sees downloaded apps).
+//    (as Archive Utility does, so Gatekeeper still sees downloaded apps).
 //
 //  Verified support matrix on this Mac (macOS 26.5.2, Apple M5; libarchive 3.7.4 "zlib/1.2.12
 //  liblzma/5.4.3 bz2lib/1.0.8"; every row is exercised by ArchiveFormatTests/ArchiveExtractorTests)
@@ -95,7 +95,7 @@ import Foundation
 
 /// Whether extraction wraps the results in a folder named after the archive.
 public enum ArchiveFolderRule: String, Codable, Sendable, CaseIterable {
-    /// Create a folder only when the archive has more than one top-level item (The Unarchiver's default).
+    /// Create a folder only when the archive has more than one top-level item (the default).
     case smart
     /// Always create a folder named after the archive.
     case always

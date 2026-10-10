@@ -118,7 +118,7 @@ helper?.resetAllFans { status in }
 3. **Sleep.** The helper resets every fan on `kIOMessageSystemWillSleep` by itself. On `NSWorkspace.didWakeNotification`, re-read `Fans.read()` and show "Automatic". FAN-3 says sleep resets to automatic, so don't re-apply silently.
 4. **Interrupted connection.** Treat fan state as unknown. Reconnect and either re-apply the user's choice or call `resetAllFans`.
 5. **Display.** Show `Fans.read()` (current, min, max, target, mode) for the UI. Don't trust what you last sent.
-6. **Clashes.** If Macs Fan Control or Stats' fan helper is active, they will fight Tutto over the same keys (APP-9).
+6. **Clashes.** If another fan-control tool or its privileged helper is active, it will fight Tutto over the same keys (APP-9).
 
 ## What the helper does
 
@@ -128,7 +128,7 @@ helper?.resetAllFans { status in }
 anchor apple generic and identifier "ca.bryanyao.Tutto" and certificate leaf[subject.OU] = "8WA5T6YMPK"
 ```
 
-**`setFan(i, mode: 1, rpm)`, manual.**
+**`setFan(i, mode: 1, rpm)`, manual.** This follows the known-good write sequence for Apple silicon SMCs (from published open-source SMC research):
 1. Validate the fan index against `FNum`.
 2. Find the mode key: `F<i>md` (M5), falling back to `F<i>Md`.
 3. Clamp `rpm` to [`F<i>Mn`, `F<i>Mx`] read from the SMC.
@@ -167,13 +167,13 @@ A fan that is already automatic gets no writes.
 - Call `TemperatureSensors.release()` when the page closes and after wake.
 - **Junk filtering.** Readings outside −20…130 °C are dropped. IOHID services that share a name are averaged; this M5 has six "gas gauge battery" services.
 - **CPU/GPU labels on the M5.**
-  - Labels come from Stats' M5 SMC map: `Tp*` becomes "CPU n" (11 keys present) and `Tg*` becomes "GPU n" (8 keys).
+  - Labels come from a published open-source M5 SMC key map: `Tp*` becomes "CPU n" (11 keys present) and `Tg*` becomes "GPU n" (8 keys).
   - Both were checked under load. GPU keys rose 22–26 °C under a Metal load. CPU keys rose 10–15 °C under a Super-core load and did not move under an Efficiency-only load.
-  - Stats names some of the M5 keys "performance core", but this M5 has no performance cores, so the labels stay neutral. Tutto makes no per-core claim.
+  - That map names some of the M5 keys "performance core", but this M5 has no performance cores, so the labels stay neutral. Tutto makes no per-core claim.
 - **IOHID labels.**
   - "PMU tdie*" is shown as "SoC die n". It responds to both CPU and GPU load.
   - "PMU2 tdie*" barely moves under either load, so it stays in `.other`.
-- **Other chips.** The M1–M4 SMC tables are copied from Stats and are unverified.
+- **Other chips.** The M1–M4 SMC tables come from published open-source SMC research and are unverified.
 - `Fans.read()` returns `[FanReading]`: index, current, min, max, target, and mode (`.auto`, `.manual` or `.unknown`). Use `Fans.count` and `Fans.modeKey(for:)` for the rest.
 
 ## Debugging

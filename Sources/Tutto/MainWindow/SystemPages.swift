@@ -109,7 +109,7 @@ struct BatteryPage: View {
 
     var body: some View {
         SystemPage(model: model, title: "Battery", subtitle: "Health, charge and power, read straight from the battery.",
-                   feeds: [.stats, .energyProcesses]) { monitor in
+                   feeds: [.load, .energyProcesses]) { monitor in
             if let battery = monitor.battery {
                 hero(battery)
                 HStack(alignment: .top, spacing: 18) {
@@ -187,7 +187,7 @@ struct CPUPage: View {
     var model: AppModel
 
     var body: some View {
-        SystemPage(model: model, title: "CPU", subtitle: CPUReader.topology.brand, feeds: [.stats, .cpuProcesses]) { monitor in
+        SystemPage(model: model, title: "CPU", subtitle: CPUReader.topology.brand, feeds: [.load, .cpuProcesses]) { monitor in
             HStack(alignment: .bottom, spacing: 28) {
                 Readout(caption: "Total", value: Format.percent(monitor.cpu.total), unit: "%", large: true)
                 Readout(caption: "User", value: Format.percent(monitor.cpu.user), unit: "%", large: true)
@@ -254,7 +254,7 @@ struct GPUPage: View {
     var body: some View {
         SystemPage(model: model, title: "GPU",
                    subtitle: model.system?.gpu.map { "\($0.model)\($0.cores.map { " · \($0) cores" } ?? "")" } ?? "Graphics",
-                   feeds: [.stats]) { monitor in
+                   feeds: [.load]) { monitor in
             let gpu = monitor.gpu
             HStack(alignment: .bottom, spacing: 28) {
                 Readout(caption: "Utilization", value: Format.percent(gpu?.utilization ?? 0), unit: "%", large: true)
@@ -281,7 +281,7 @@ struct MemoryPage: View {
 
     var body: some View {
         SystemPage(model: model, title: "Memory", subtitle: "Unified memory, as Activity Monitor counts it.",
-                   feeds: [.stats, .memoryProcesses]) { monitor in
+                   feeds: [.load, .memoryProcesses]) { monitor in
             if let memory = monitor.memory {
                 HStack(alignment: .bottom, spacing: 28) {
                     let used = Format.bytesParts(Int64(memory.used), style: .memory)
@@ -344,7 +344,7 @@ struct DiskPage: View {
 
     var body: some View {
         SystemPage(model: model, title: "Disk", subtitle: "Free space and how fast your disks are working.",
-                   feeds: [.stats, .volumes]) { monitor in
+                   feeds: [.load, .volumes]) { monitor in
             HStack(alignment: .bottom, spacing: 28) {
                 Readout(caption: "Reading", value: Format.rate(monitor.diskRead), large: true)
                 Readout(caption: "Writing", value: Format.rate(monitor.diskWrite), large: true)
@@ -384,7 +384,7 @@ struct NetworkPage: View {
 
     var body: some View {
         SystemPage(model: model, title: "Network", subtitle: "Throughput across Wi-Fi and Ethernet. Nothing is sent anywhere.",
-                   feeds: [.stats]) { monitor in
+                   feeds: [.load]) { monitor in
             HStack(alignment: .bottom, spacing: 28) {
                 Readout(caption: "Download", value: Format.rate(monitor.networkIn), large: true)
                 Readout(caption: "Upload", value: Format.rate(monitor.networkOut), large: true)

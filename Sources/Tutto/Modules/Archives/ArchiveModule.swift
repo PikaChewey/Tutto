@@ -2,7 +2,7 @@
 //  ArchiveModule.swift
 //  Tutto
 //
-//  The Unarchiver's job: open RAR, 7z, zip, tar, ISO, CAB and friends from Finder's
+//  Archives: open RAR, 7z, zip, tar, ISO, CAB and friends from Finder's
 //  right-click menu or by double-clicking, with filenames in any language decoded
 //  correctly. Extraction runs off the main thread; a small progress panel appears only
 //  if a job takes longer than 400 ms. Nothing runs between jobs.

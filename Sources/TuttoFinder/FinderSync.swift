@@ -2,8 +2,7 @@
 //  FinderSync.swift
 //  TuttoFinder
 //
-//  Adds Extract and Compress to Finder's right-click menu, like WinRAR and The
-//  Unarchiver. The extension is sandboxed and tiny: it only builds the menu and hands
+//  Adds Extract and Compress to Finder's right-click menu. The extension is sandboxed and tiny: it only builds the menu and hands
 //  the selected files to Tutto through a tutto:// URL. Tutto does the work.
 //
 

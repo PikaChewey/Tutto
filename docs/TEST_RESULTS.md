@@ -8,7 +8,7 @@ Machine: MacBook Pro 14" (Apple M5), macOS 26.5.2, Xcode 26.6 / Swift 6.3.3. Dat
 
 | Suite | Tests | Covers |
 |---|---|---|
-| CornerClick engine (ported verbatim from CornerClick) | 48 | zone geometry, physical clicks, taps with Tap-to-click on/off, multi-finger rejection, re-click rule, menus, real CGEvents through the tap handler |
+| Trackpad Corner engine (unchanged) | 48 | zone geometry, physical clicks, taps with Tap-to-click on/off, multi-finger rejection, re-click rule, menus, real CGEvents through the tap handler |
 | Archives | 68 | zip (store/deflate, ZipCrypto, AES-128/256, splits), 7z (LZMA/LZMA2/PPMd/bzip2, splits), RAR4 + RAR5 stored and multi-volume (hand-built fixtures), tar/pax/ustar with gz/bz2/xz/lzma/lz/Z, cpio, ISO, xar, ar, WARC, CAB, LHA; legacy filename encodings (Shift-JIS incl. 0x5C trail bytes, GBK, Big5, CP949, CP866, CP1251, CP437, Mac Roman…); folder rules; unique naming; path traversal / absolute paths / symlink escapes contained; cancellation cleanup; passwords; refusal of encrypted RAR/7z and zstd/lz4; compress→extract round trips |
 | Sensors & fans | 47 | IOHID + SMC readings plausible, junk filtering, grouping/labels, fan reading (1 fan, 2317–6550 rpm here), command clamping, SMC float encoding, mode-key detection, helper protocol and code-signing requirements |
 | System readers | 5 | CPU tick deltas incl. 32-bit wrap, live readers, battery parsing (health 94 % = System Settings), `top` parsing |
@@ -32,11 +32,11 @@ Run against the release build launched from `build/`, driven with real HID event
 | Clipboard | Text, link, image, file captured; repeat moves to top (count 2) | ✅ |
 | Clipboard | Item marked `org.nspasteboard.ConcealedType` (password managers) | ✅ not recorded |
 | Screenshots | ⌘⇧1 → full display on clipboard | ✅ 3024 × 1964 PNG, toast shown (found 23 MB eager TIFF; now lazy) |
-| Screenshots | Shared shortcut with Shottr running | ⚠️ macOS delivers ⌘⇧1 to **both** apps (Shottr opened its editor too). Tutto now warns per shortcut and in the panel; quit Shottr when switching |
+| Screenshots | Shared shortcut, with another app registered for the same keys | ⚠️ macOS delivers ⌘⇧1 to **both** apps (the other app opened its own capture UI too). Tutto does not name or detect other apps; the Shortcuts page has a general tip to change the shortcut in Tutto or in the other app |
 | Menu bar | Panel opens (via the status item's Accessibility press — the icon was behind the notch) | ✅ after two fixes: first layout too short (trackpad collapsed to 0 pt) and 15.5 % CPU while open |
 | Menu bar | Sampling stops when closed | ✅ `top` 1 → 0 processes; CPU back to 0.03 % |
 | Main window | Opens on reopen (as from Spotlight/Finder); sidebar, overview, pages render | ✅ |
-| Modules | CornerClick switch off/on from Overview | ✅ event tap 1 → 0 → 1, setting persisted |
+| Modules | Trackpad Corner switch off/on from Overview | ✅ event tap 1 → 0 → 1, setting persisted |
 | Screenshots | Area → clipboard via (test) shortcut, mouse selection | ✅ 800 × 600 PNG; overlay 60–121 ms after the shortcut; mouse-up → clipboard ≤ 72 ms; TIFF generated only when an app asks |
 | Screenshots | Overlay visuals | ✅ hairline crosshair, loupe with pixel grid + center outline + hex, live size pill; right-click cancels |
 | Screenshots | Area → editor; editor keyboard: Tab, T, Esc | ✅ Tab copied `#222222` under the pointer; T copied the recognized text; Esc copied the 1280 × 190 image and closed. Bug found: Finder stayed frontmost so keys went to Finder → editor is now a key-capable panel |
@@ -50,7 +50,7 @@ Run against the release build launched from `build/`, driven with real HID event
 | Archives | Password-protected zip | ✅ prompt appears (now a focus-taking panel; the first version, an alert, could leave typing going to the previous app). Decryption itself covered by unit tests (ZipCrypto, AES) |
 | Clipboard | ⌃⇧V-style palette (test shortcut) → type "paste test" → ↩ with TextEdit in front | ✅ "tutto paste test 123" (the older of two clips) pasted into TextEdit, read back via Accessibility; footer showed "Paste to TextEdit" |
 | Windows | Per-action shortcuts: Left Half on ⌃⌥⌘L, Maximize on ⌃⌥⌘M | ✅ (0, 33, 756 × 858) then (0, 33, 1512 × 858) |
-| CornerClick | Physical press in the bottom-right corner with every module on (diagnostics log) | ✅ `decided=click result=right` for the touch at (0.740, 0.183), inside the saved 44 × 19 mm zone; ordinary clicks elsewhere stayed left clicks |
+| Trackpad Corner | Physical press in the bottom-right corner with every module on (diagnostics log) | ✅ `decided=click result=right` for the touch at (0.740, 0.183), inside the saved 44 × 19 mm zone; ordinary clicks elsewhere stayed left clicks |
 | Shortcuts | Recorder in the running app: press "Open Tutto" recorder (Accessibility), then real key events into Tutto (`drive keyto`) | ✅ ⌃⌥⌘J recorded (stored `{"app.open":{"modifiers":11,"keyCode":38}}`, VoiceOver value "Control Option Command J"); the same keys on another action → "Already used by “Open Tutto”", nothing stored; bare J → "Add ⌘, ⌃ or ⌥"; Esc → unchanged; Delete → removed (`null`); Restore Defaults → five defaults back, custom list empty |
 | Accessibility | `scripts/ax-audit.swift` over all 16 main-window pages and the menu bar panel | ✅ 0 unlabeled interactive elements (2 found and fixed: encoding picker, archive Cancel) |
 | Accessibility | Editor controls in the AX tree | ✅ Select, Draw, Highlight, Arrow, Rectangle, Pixelate, Text, Undo, Redo, Save, Copy all labeled |

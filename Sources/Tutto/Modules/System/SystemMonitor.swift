@@ -14,7 +14,7 @@ import TuttoKit
 
 enum SystemFeed: Hashable, CaseIterable {
     /// CPU, GPU, memory, disk, network, battery numbers (1 Hz).
-    case stats
+    case load
     /// Every mounted volume (refreshed every 10 s).
     case volumes
     /// Top processes by energy impact (a streaming `top`).
@@ -75,7 +75,7 @@ final class SystemMonitor {
     }
 
     /// What the menu bar panel needs while it's open.
-    var panelFeeds: Set<SystemFeed> { hasBattery ? [.stats, .energyProcesses] : [.stats] }
+    var panelFeeds: Set<SystemFeed> { hasBattery ? [.load, .energyProcesses] : [.load] }
 
     // MARK: Watching
 
@@ -98,10 +98,10 @@ final class SystemMonitor {
     private func watching(_ feed: SystemFeed) -> Bool { (watchers[feed] ?? 0) > 0 }
 
     private func update() {
-        let wantsStats = watching(.stats) || watching(.volumes)
-        if wantsStats && timer == nil {
+        let wantsLoad = watching(.load) || watching(.volumes)
+        if wantsLoad && timer == nil {
             startTimer()
-        } else if !wantsStats, let timer {
+        } else if !wantsLoad, let timer {
             timer.cancel()
             self.timer = nil
             lastTicks = []

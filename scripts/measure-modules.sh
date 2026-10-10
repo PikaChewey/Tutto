@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Measures Tutto's idle cost with different sets of modules on (launches the build in
-# build/Products.noindex/Tutto.app without global shortcuts, so it can run beside Shottr/Raycast).
+# build/Products.noindex/Tutto.app without global shortcuts, so it can run beside apps that use the same keys).
 #   scripts/measure-modules.sh [seconds-per-run]
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -17,5 +17,5 @@ run() {
 run "none"
 run "system+sensors+windows+screenshots+archives" system sensors windows screenshots archives
 run "clipboard only" clipboard
-run "cornerClick only" cornerClick
-run "all" system sensors clipboard windows screenshots archives cornerClick
+run "corner only" corner
+run "all" system sensors clipboard windows screenshots archives corner

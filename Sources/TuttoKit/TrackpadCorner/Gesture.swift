@@ -1,11 +1,11 @@
 //
 //  Gesture.swift
-//  Tutto (CornerClick engine)
+//  Tutto (trackpad corner engine)
 //
 //  Pure, allocation-light gesture logic. No AppKit, no private API, fully unit-tested.
 //
 //  The key idea: macOS already decides *whether* something is a click or a tap
-//  (including palm rejection and "Tap to click"). CornerClick only answers
+//  (including palm rejection and "Tap to click"). Trackpad Corner only answers
 //  *where* the finger was when macOS produced that left click.
 //
 
@@ -147,7 +147,7 @@ public struct TouchTracker: Sendable {
         /// A physical click happened while this finger was down, so its lift is not a tap.
         var pressed = false
         /// Where this finger was when it last right-clicked in the corner, and how far it has
-        /// moved since (mm). After a corner click it stays "the button" only while it stays put.
+        /// moved since (mm). After a corner press it stays "the button" only while it stays put.
         var clickX: Double?
         var clickY: Double?
         var travelSinceClick = 0.0
@@ -318,7 +318,7 @@ public enum ClickDecider {
     /// A click can arrive just after the finger's lift frame; use where it was this recently.
     public static let liftGrace: UInt64 = 100_000_000
 
-    /// Like macOS's own corner click: what counts is where the pressing finger is at the
+    /// Like macOS's own bottom-corner secondary click: what counts is where the pressing finger is at the
     /// moment you press. The one exception is a finger that just right-clicked in the corner
     /// and then moved: it's pointing at something now (a menu item), so it gets a normal click.
     public static func isButtonPress(_ finger: TouchTracker.Track) -> Bool {
@@ -339,7 +339,7 @@ public enum ClickDecider {
     }
 
     /// Called for every left mouse-down macOS produces. Decides whether it was a
-    /// corner click/tap that should become a right-click.
+    /// corner press or tap that should become a right-click.
     public static func decide(trackers: [TouchTracker], now: UInt64, rules: RuleSet) -> Decision {
         var newest: (track: TouchTracker.Track, size: TrackpadSize)?
         var latestTap: (index: Int, tap: TouchTracker.Tap)?

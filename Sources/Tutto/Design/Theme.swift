@@ -1,6 +1,6 @@
 //
 //  Theme.swift
-//  Tutto (design system, grown from CornerClick)
+//  Tutto (design system)
 //
 //  Monochrome. One ink (black in light mode, white in dark mode) at a few
 //  opacities, hairlines instead of shadows, SF Pro with monospaced numbers.
@@ -313,7 +313,7 @@ struct QuietButton: View {
 
 // MARK: - Marks
 
-/// The CornerClick mark: a trackpad outline with its corner filled in.
+/// The Trackpad Corner mark: a trackpad outline with its corner filled in.
 struct CornerMark: View {
     var lit = true
     var size: CGFloat = 16
@@ -338,7 +338,7 @@ struct CornerMark: View {
 /// Template images for the menu bar (tinted by macOS for light and dark menu bars).
 enum MenuBarGlyph {
     /// Tutto's mark: a rounded tile split into four, its bottom-right quarter filled —
-    /// four tools in one, and the corner that CornerClick made a right-click.
+    /// four tools in one, and the corner that Trackpad Corner made a right-click.
     static func image() -> NSImage {
         let size = NSSize(width: 18, height: 16)
         let image = NSImage(size: size, flipped: false) { _ in

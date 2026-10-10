@@ -15,7 +15,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
     case windows
     case screenshots
     case archives
-    case cornerClick
+    case corner
 
     var id: String { rawValue }
 
@@ -27,7 +27,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .windows: "Windows"
         case .screenshots: "Screenshots"
         case .archives: "Archives"
-        case .cornerClick: "CornerClick"
+        case .corner: "Trackpad Corner"
         }
     }
 
@@ -39,7 +39,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .windows: "rectangle.split.2x1"
         case .screenshots: "viewfinder"
         case .archives: "archivebox"
-        case .cornerClick: "rectangle.inset.bottomright.filled"
+        case .corner: "rectangle.inset.bottomright.filled"
         }
     }
 
@@ -52,7 +52,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .windows: "Snap windows to halves, thirds and quarters from a palette."
         case .screenshots: "Capture to clipboard, edit, draw, pick colors, copy text."
         case .archives: "Open RAR, 7z, zip and more, right from Finder."
-        case .cornerClick: "Click or tap a trackpad corner to right-click."
+        case .corner: "Click or tap a trackpad corner to right-click."
         }
     }
 
@@ -63,20 +63,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .clipboard: "Checks the clipboard about once a second, coalesced with other system work."
         case .windows, .screenshots: "Nothing. Registered shortcuts wait for a key press."
         case .archives: "Nothing in Tutto. Finder loads the small menu extension."
-        case .cornerClick: "Nothing until a finger touches the trackpad."
-        }
-    }
-
-    /// The app this module replaces, for the migration notes.
-    var replaces: String {
-        switch self {
-        case .system: "Stats"
-        case .sensors: "Macs Fan Control"
-        case .clipboard: "Raycast Clipboard History"
-        case .windows: "Raycast Window Management"
-        case .screenshots: "Shottr"
-        case .archives: "The Unarchiver"
-        case .cornerClick: "CornerClick"
+        case .corner: "Nothing until a finger touches the trackpad."
         }
     }
 }

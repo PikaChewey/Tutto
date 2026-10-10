@@ -3,7 +3,7 @@
 //  Tutto
 //
 //  First run in four short steps: what's inside (switch anything off), the two
-//  permissions that matter with live status, the shortcuts, and CornerClick's magic
+//  permissions that matter with live status, the shortcuts, and Trackpad Corner's magic
 //  moment — press the corner and watch the right-click land.
 //
 
@@ -12,14 +12,14 @@ import SwiftUI
 import TuttoKit
 
 enum OnboardingStep: Int, CaseIterable {
-    case welcome, permissions, shortcuts, cornerClick
+    case welcome, permissions, shortcuts, corner
 
     var label: String {
         switch self {
         case .welcome: "Tools"
         case .permissions: "Access"
         case .shortcuts: "Keys"
-        case .cornerClick: "Try it"
+        case .corner: "Try it"
         }
     }
 }
@@ -78,7 +78,7 @@ struct OnboardingView: View {
                 Caption("0\(step.rawValue + 1) / 0\(OnboardingStep.allCases.count)  \(step.label)")
                     .contentTransition(.numericText())
                 Spacer()
-                if step != .cornerClick {
+                if step != .corner {
                     Button("Skip") { finish() }
                         .buttonStyle(.plain)
                         .font(.system(size: 11.5))
@@ -93,7 +93,7 @@ struct OnboardingView: View {
                 case .welcome: welcome
                 case .permissions: permissions
                 case .shortcuts: shortcuts
-                case .cornerClick: cornerClick
+                case .corner: corner
                 }
             }
             .id(step)
@@ -111,11 +111,11 @@ struct OnboardingView: View {
         .animation(Motion.smooth, value: step)
         .onAppear {
             step = start
-            if step == .cornerClick, model.cornerClick == nil { step = .shortcuts }
+            if step == .corner, model.corner == nil { step = .shortcuts }
         }
         .onChange(of: step) { _, newValue in
             pollPermissions(newValue == .permissions)
-            if newValue == .cornerClick { pulseAtStart = model.cornerClick?.pulse }
+            if newValue == .corner { pulseAtStart = model.corner?.pulse }
         }
         .onDisappear { pollPermissions(false) }
     }
@@ -128,7 +128,7 @@ struct OnboardingView: View {
                 Text("One app, all of it.")
                     .font(.system(size: 30, weight: .semibold))
                     .tracking(-0.6)
-                Text("Seven tools that used to be six apps. Keep what you use — anything you switch off uses nothing.")
+                Text("Seven quiet tools in your menu bar. Keep what you use — anything you switch off uses nothing.")
                     .font(.system(size: 13.5))
                     .foregroundStyle(Color.ink2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -139,7 +139,7 @@ struct OnboardingView: View {
                         Image(systemName: module.symbol).frame(width: 20).foregroundStyle(Color.ink2)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(module.title).font(.system(size: 13, weight: .medium))
-                            Text("Replaces \(module.replaces)").font(.system(size: 11)).foregroundStyle(Color.ink3)
+                            Text(module.summary).lineLimit(1).font(.system(size: 11)).foregroundStyle(Color.ink3)
                         }
                         Spacer()
                         InkSwitch(isOn: Binding(get: { model.isEnabled(module) }, set: { model.setEnabled(module, $0) }),
@@ -197,15 +197,15 @@ struct OnboardingView: View {
                     .overlay(alignment: .bottom) { if action != .windowPalette { Hairline().opacity(0.6) } }
                 }
             }
-            Text("Click the menu bar icon any time for battery, stats, CornerClick and these shortcuts.")
+            Text("Click the menu bar icon any time for battery, system load, Trackpad Corner and these shortcuts.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(Color.ink3)
         }
     }
 
     @ViewBuilder
-    private var cornerClick: some View {
-        if let module = model.cornerClick {
+    private var corner: some View {
+        if let module = model.corner {
             let landed = pulseAtStart.map { module.pulse > $0 } ?? false
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -221,7 +221,7 @@ struct OnboardingView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if module.status == .needsPermission {
-                    AccessibilityCard(purpose: "CornerClick needs Accessibility access to turn a corner click into a right-click.")
+                    AccessibilityCard(purpose: "Trackpad Corner needs Accessibility access to turn a corner press into a right-click.")
                 } else {
                     TrackpadView(contacts: module.contacts, zone: Binding(get: { module.zone }, set: { module.zone = $0 }),
                                  size: module.trackpadSize, pulse: module.pulse, editable: false, lit: landed)
@@ -262,14 +262,14 @@ struct OnboardingView: View {
 
     private var nextTitle: String {
         switch step {
-        case .cornerClick: "Done"
-        case .shortcuts: model.cornerClick == nil ? "Done" : "Continue"
+        case .corner: "Done"
+        case .shortcuts: model.corner == nil ? "Done" : "Continue"
         default: "Continue"
         }
     }
 
     private func advance() {
-        if step == .cornerClick || (step == .shortcuts && model.cornerClick == nil) {
+        if step == .corner || (step == .shortcuts && model.corner == nil) {
             finish()
         } else if let next = OnboardingStep(rawValue: step.rawValue + 1) {
             step = next

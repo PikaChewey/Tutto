@@ -2,7 +2,7 @@
 //  SensorsModule.swift
 //  Tutto
 //
-//  Temperatures and fans (Macs Fan Control's job). Reading needs no privileges and
+//  Temperatures and fans. Reading needs no privileges and
 //  happens only while a view shows it. Setting a fan speed goes through TuttoHelper,
 //  a tiny root LaunchDaemon the user approves once. Tutto keeps one connection to it
 //  open while any fan is under manual control; when that connection ends (quit,

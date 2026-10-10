@@ -91,8 +91,8 @@ enum FileSystem {
         }
     }
 
-    /// Ensures the owner can always read/write what was extracted (folders u+rwx, files u+rw),
-    /// like The Unarchiver. Without this, archives from read-only media (ISO: 0555 folders)
+    /// Ensures the owner can always read/write what was extracted (folders u+rwx, files u+rw).
+    /// Without this, archives from read-only media (ISO: 0555 folders)
     /// produce folders that can't be renamed into place, trashed or cleaned up.
     static func ensureOwnerAccess(below root: URL) {
         func fix(_ path: String) {

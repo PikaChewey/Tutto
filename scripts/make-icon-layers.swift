@@ -1,6 +1,6 @@
 // Renders the Icon Composer layers for Tutto (full-bleed 1024 canvas; macOS applies the shape and glass).
 // A 2×2 grid of rounded tiles: three frosted, the bottom-right one solid — four tools in one,
-// and the corner CornerClick turned into a right-click.
+// and the corner Trackpad Corner turned into a right-click.
 // Usage: swift scripts/make-icon-layers.swift Resources/AppIcon.icon/Assets
 import AppKit
 

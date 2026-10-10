@@ -1,6 +1,6 @@
 //
 //  TrackpadView.swift
-//  Tutto (from CornerClick)
+//  Tutto
 //
 //  A live, to-scale mirror of your trackpad, drawn like an instrument:
 //  a faint dot grid, a hatched right-click zone, and your fingers as dots.

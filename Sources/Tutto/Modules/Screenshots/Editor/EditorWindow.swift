@@ -3,7 +3,7 @@
 //  Tutto
 //
 //  The screenshot editor (⌘⇧`). Only screenshot things live here: tools, colors,
-//  thickness, copy text, copy, save. Esc copies and closes, like Shottr.
+//  thickness, copy text, copy, save. Esc copies and closes.
 //
 
 import AppKit

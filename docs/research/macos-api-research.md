@@ -29,7 +29,7 @@ typedef struct { UInt32 key; SMCVers vers; SMCPLimit pLimitData; SMCKeyInfo keyI
 // sizeof=80; keyInfo@28 result@40 data8@42 data32@44 bytes@48  (offsets checked with offsetof on this Mac)
 ```
 
-In Swift, pass `MemoryLayout<SMCKeyData_t>.stride` (Stats `SMC/smc.swift`).
+In Swift, pass `MemoryLayout<SMCKeyData_t>.stride`.
 
 ### Fan keys on this M5 [V-local]
 - `FNum` (`ui8`) = **1**. This base 14" M5 has one fan.
@@ -47,14 +47,14 @@ In Swift, pass `MemoryLayout<SMCKeyData_t>.stride` (Stats `SMC/smc.swift`).
 - `F0Md` (uppercase) and **`Ftst` do not exist** on this machine.
 - `flt ` is a 4-byte **little-endian IEEE-754** float. `fpe2` (14.2 fixed-point, big-endian) appears only on Intel.
 
-### Write sequence (Stats `master`, `SMC/smc.swift`) [V-src]
-Stats PRs [#2924](https://github.com/exelban/stats/pull/2924) (M3/M4) and [#3051](https://github.com/exelban/stats/pull/3051) (M5) establish this sequence.
+### Write sequence [V-src]
+Published open-source fan-control code (with separate changes for M3/M4 and for M5) establishes this sequence.
 
 1. **Pick the mode key.** Read `F0md`; if it exists, use `F%dmd`, otherwise use `F%dMd`.
 2. **Unlock manual mode.**
    - Write mode = `1` (`ui8`). This works directly on M1 and M5.
    - If that write fails and `Ftst` exists (M3/M4): write `Ftst=1`, sleep about 3 s while `thermalmonitord` yields, then retry the mode write every 100 ms for up to 300 tries.
-3. **Set the speed.** Write `F%dTg` as a `Float` (4 bytes LE). Stats clamps the value to `F%dMx`. Hardware accepts values below `Mn` and above `Mx` ([macos-smc-fan research.md](https://github.com/agoodkind/macos-smc-fan/blob/main/docs/research.md)).
+3. **Set the speed.** Write `F%dTg` as a `Float` (4 bytes LE). Clamp the value to `F%dMx`; independent reverse-engineering notes report that the hardware itself accepts values below `Mn` and above `Mx`.
 4. **Reset to automatic.**
    - Write mode = `0` and `F%dTg = 0.0`.
    - If `Ftst` exists and equals 1, write `Ftst=0` after the last fan returns to auto.
@@ -62,48 +62,44 @@ Stats PRs [#2924](https://github.com/exelban/stats/pull/2924) (M3/M4) and [#3051
 
 Mode values: `0` = auto, `1` = manual, `3` = "system". On M4, mode 3 means `thermalmonitord` mitigation and firmware rejects mode writes with `0x82`.
 
-Other behaviour reported by macos-smc-fan:
+Other behaviour reported in those reverse-engineering notes:
 - On M4, control is reclaimed within seconds after the controlling process exits.
 - Firmware resets `Ftst` on sleep, so manual control must be re-applied on wake.
 - Whether manual mode persists on **M5** after the helper exits is **[U]**. The helper must restore auto when the XPC client invalidates, on SIGTERM, and before sleep.
 
 ### Root requirement [V-src]
 - Reads work unprivileged. All the reads above ran as uid 501. [V-local]
-- Writes to fan keys return `kIOReturnNotPrivileged` (`0xe00002c2`) unless the caller is root. Per macos-smc-fan this is enforced through per-key attributes.
-- Every shipping tool uses a root daemon:
-  - Stats: `eu.exelban.Stats.SMC.Helper`
-  - Macs Fan Control: `com.crystalidea.macsfancontrol.smcwrite`. Its 1.5.20 release added M5.
-  - TG Pro: `com.tunabellysoftware.TGFanHelper`
-  - smcFanControl (Intel era): used a setuid-root `smc` binary, which is legacy.
+- Writes to fan keys return `kIOReturnNotPrivileged` (`0xe00002c2`) unless the caller is root. Independent research notes attribute this to per-key attributes.
+- Every shipping fan-control utility uses a root launchd daemon for writes. Intel-era tools used a setuid-root `smc` binary, which is legacy.
 
-### How Stats installs and talks to its helper [V-src]
-Source: `Kit/helpers.swift` (`SMCHelper`) and `SMC/Helper/*`.
+### Common privileged-helper pattern [V-src]
+This is how an existing open-source menu bar monitor installs and talks to its helper. Labels below are shown with Tutto's own identifiers.
 
 **Installation**
-- On macOS 13 and later: `SMAppService.daemon(plistName: "eu.exelban.Stats.SMC.Helper.plist").register()`. On `.requiresApproval` it calls `SMAppService.openSystemSettingsLoginItems()`.
-- Older systems fall back to `SMJobBless` (helper `Info.plist` `SMAuthorizedClients`), and Stats cleans up the legacy `/Library/PrivilegedHelperTools` install.
+- On macOS 13 and later: `SMAppService.daemon(plistName: "ca.bryanyao.Tutto.helper.plist").register()`. On `.requiresApproval`, call `SMAppService.openSystemSettingsLoginItems()`.
+- Older systems fall back to `SMJobBless` (helper `Info.plist` `SMAuthorizedClients`), and the app cleans up any legacy `/Library/PrivilegedHelperTools` install.
 - The daemon plist is copied to `Contents/Library/LaunchDaemons`:
 ```xml
-<key>Label</key><string>eu.exelban.Stats.SMC.Helper</string>
-<key>BundleProgram</key><string>Contents/Library/LaunchServices/eu.exelban.Stats.SMC.Helper</string>
-<key>MachServices</key><dict><key>eu.exelban.Stats.SMC.Helper</key><true/></dict>
-<key>AssociatedBundleIdentifiers</key><array><string>eu.exelban.Stats</string></array>
+<key>Label</key><string>ca.bryanyao.Tutto.helper</string>
+<key>BundleProgram</key><string>Contents/Library/LaunchServices/ca.bryanyao.Tutto.helper</string>
+<key>MachServices</key><dict><key>ca.bryanyao.Tutto.helper</key><true/></dict>
+<key>AssociatedBundleIdentifiers</key><array><string>ca.bryanyao.Tutto</string></array>
 ```
 
 **Connection and caller check**
-- The client connects with `NSXPCConnection(machServiceName: "eu.exelban.Stats.SMC.Helper", options: .privileged)`, using an `@objc protocol HelperProtocol`.
+- The client connects with `NSXPCConnection(machServiceName: "ca.bryanyao.Tutto.helper", options: .privileged)`, using an `@objc protocol HelperProtocol`.
 - The helper's `shouldAcceptNewConnection` checks the caller:
   1. Reads the audit token with `connection.value(forKey: "auditToken")` (private KVC).
   2. Calls `SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributeAudit: tokenData], …)` and then `SecCodeCopyStaticCode`.
   3. Compares `kSecCodeInfoCertificates` with its own certificates.
-- The helper does not write the SMC itself. It runs the bundled `smc` CLI (`Contents/Resources/smc`) after a signature check, and exits when idle.
+- In that pattern the helper does not write the SMC itself. It runs a bundled `smc` CLI after a signature check, and exits when idle.
 
 ### Recommended modern design for Tutto [V-src APIs]
 - **Plist.** Put `Contents/Library/LaunchDaemons/<label>.plist` in the bundle. Include `Label`, `BundleProgram` (relative to the app bundle, for example `Contents/MacOS/TuttoHelper`), `MachServices`, and `AssociatedBundleIdentifiers`. The `plistName` argument must include `.plist` ([forum 792826](https://developer.apple.com/forums/thread/792826)).
 - **Do SMC writes in-process in the helper.** Expose a small API: `setFan(id:rpm:)`, `setAuto(id:)`, `resetAll()`. Validate the id against `FNum` and clamp the RPM.
 - **Check callers.** Either API works:
-  - macOS 13+: `listener.setConnectionCodeSigningRequirement("anchor apple generic and identifier \"com.bryan.Tutto\" and certificate leaf[subject.OU] = \"TEAMID\"")`. On the client, call `connection.setCodeSigningRequirement(…)` before `resume()`. A malformed requirement traps in Swift, and calling it twice is an error.
-  - macOS 26: `XPCListener(service: "com.bryan.Tutto.helper", requirement: .isFromSameTeam(andMatchesSigningIdentifier: "com.bryan.Tutto"), incomingSessionHandler:)`, paired with `XPCSession(machService:options: .privileged, requirement:)`.
+  - macOS 13+: `listener.setConnectionCodeSigningRequirement("anchor apple generic and identifier \"ca.bryanyao.Tutto\" and certificate leaf[subject.OU] = \"TEAMID\"")`. On the client, call `connection.setCodeSigningRequirement(…)` before `resume()`. A malformed requirement traps in Swift, and calling it twice is an error.
+  - macOS 26: `XPCListener(service: "ca.bryanyao.Tutto.helper", requirement: .isFromSameTeam(andMatchesSigningIdentifier: "ca.bryanyao.Tutto"), incomingSessionHandler:)`, paired with `XPCSession(machService:options: .privileged, requirement:)`.
   - Lower level: `xpc_connection_set_peer_code_signing_requirement` (12.0) and `…_team_identity_requirement` (14.4).
 - **Approval flow on macOS 26** [V-local strings, V-src docs]:
   1. `register()` posts a "Background Items Added" notification. It typically throws `Operation not permitted` with status `.requiresApproval`.
@@ -116,14 +112,14 @@ Source: `Kit/helpers.swift` (`SMCHelper`) and `SMC/Helper/*`.
 - **Signing [U]:**
   - Apple DTS guidance in the forums: sign the app and the daemon with the *same Apple-issued identity*. Ad-hoc ("Sign to Run Locally") breaks registration.
   - Developer ID is only required for *distribution*; SMAppService adds no constraints beyond that ([forum 751439](https://developer.apple.com/forums/thread/751439)).
-  - An **Apple Development**-signed, non-notarized, locally built (non-quarantined) app should work, but no Apple statement confirms it. macos-smc-fan's README claims a Developer ID is mandatory, which conflicts with that guidance. Verify early.
+  - An **Apple Development**-signed, non-notarized, locally built (non-quarantined) app should work, but no Apple statement confirms it. One open-source fan-control project's README claims a Developer ID is mandatory, which conflicts with that guidance. Verify early.
 
 ---
 
 ## 2. Temperature sensors without root
 
 ### HID route
-Declarations, from Stats `Modules/Sensors/bridge.h`, derived from MenuMeters:
+Private declarations, as used by published open-source sensor readers:
 
 ```c
 #include <IOKit/hidsystem/IOHIDEventSystemClient.h>
@@ -142,7 +138,7 @@ double IOHIDEventGetFloatValue(IOHIDEventRef, int32_t field);              // fi
 How to read them:
 - Match on `{"PrimaryUsagePage": 0xff00, "PrimaryUsage": 5}`.
 - Get services with `IOHIDEventSystemClientCopyServices`, then call `CopyEvent(svc, 15, 0, 0)` on each.
-- Stats re-discovers services every 60 s and resets on wake.
+- Re-discover services every 60 s and reset on wake, as existing monitors do.
 
 **Names on this M5** [V-local, 47 services]:
 - `PMU tdie1…14`, `PMU tdev1…8`, `PMU tcal`
@@ -152,16 +148,16 @@ How to read them:
 
 Caveats:
 - `PMU tdev1` returned −9202 (garbage), so filter values to 0–110 °C.
-- **No names say CPU or GPU.** Stats only maps the M1-era `pACC/eACC/GPU/SOC MTR Temp` names, so on M5 its HID mode adds nothing to the CPU/GPU averages. HID is also off by default in Stats (`Sensors_hid`).
+- **No names say CPU or GPU.** Published sensor tables only map the M1-era `pACC/eACC/GPU/SOC MTR Temp` names, so on M5 the HID route adds nothing to the CPU/GPU averages.
 - The 0xff08 voltage/current pages returned implausible values (~16000) with field `25<<16`, so treat them as unusable.
 
-### SMC route (what Stats uses for CPU/GPU) [V-src, V-local]
-Stats `Modules/Sensors/values.swift` defines the M5 set (`Platform.m5Gen`):
+### SMC route (what existing monitors use for CPU/GPU) [V-src, V-local]
+Published open-source SMC key tables define the M5 set:
 - **CPU "super core 1–6":** `Tp00 Tp04 Tp08 Tp0C Tp0G Tp0K`
 - **CPU "performance core 1–12":** `Tp0O Tp0R Tp0U Tp0X Tp0a Tp0d Tp0g Tp0j Tp0m Tp0p Tp0u Tp0y`
 - **GPU 1–8:** `Tg0U Tg0X Tg0d Tg0g Tg0j Tg1Y Tg1c Tg1g`
 
-Stats skips missing keys. "Average CPU" is the mean of the present CPU keys flagged `average:true`, and "Hottest CPU" is their max; GPU works the same way.
+Skip missing keys. "Average CPU" is the mean of the present CPU keys flagged `average:true`, and "Hottest CPU" is their max; GPU works the same way.
 
 On this base M5:
 - These exist: `Tp00 Tp04 Tp0C Tp0G Tp0O Tp0R Tp0X Tp0a Tp0p Tp0u Tp0y`, plus all eight GPU keys.
@@ -174,7 +170,7 @@ On this base M5:
   - `TPD*`, `TRD*`, `TD*`
 - All of these are `flt ` LE. Ignore the `ioft` and `si32` T-keys.
 
-Labels: sysctl reports `hw.perflevel0.name = "Super"` and `perflevel1 = "Efficiency"` [V-local], while Stats labels the small cores "performance". **Recommendation:** label groups by `hw.perflevelN.name` and treat the per-core key mapping as heuristic.
+Labels: sysctl reports `hw.perflevel0.name = "Super"` and `perflevel1 = "Efficiency"` [V-local], while some existing tools label the small cores "performance". **Recommendation:** label groups by `hw.perflevelN.name` and treat the per-core key mapping as heuristic.
 
 ---
 
@@ -196,7 +192,7 @@ Labels: sysctl reports `hw.perflevel0.name = "Super"` and `perflevel1 = "Efficie
 
 - `ioreg` prints negative numbers as two's-complement unsigned; read them as `Int64`.
 - **"Maximum Capacity" matches `NominalChargeCapacity / DesignCapacity`.** `system_profiler SPPowerDataType` shows **94%**, and 5871/6249 = 93.95%.
-- **Stats computes it differently.** It uses `AppleRawMaxCapacity / DesignCapacity`, which gives 91.5% → 92%, so it disagrees with Apple. Stats also takes its power figures from SMC `PPBR` (battery W) and `PDTR` (DC-in W).
+- **Don't use `AppleRawMaxCapacity / DesignCapacity`.** Some existing monitors do; it gives 91.5% → 92% here and disagrees with Apple. SMC `PPBR` (battery W) and `PDTR` (DC-in W) are an alternative source for power figures.
 - **`AdapterDetails`:**
   - `Watts` (68 for a 70 W adapter), `AdapterVoltage` (mV), `Current` (mA), `Name`, `Manufacturer`, `IsWireless`
   - `UsbHvcMenu` (the PD profiles) and `UsbHvcHvcIndex`
@@ -209,7 +205,7 @@ Labels: sysctl reports `hw.perflevel0.name = "Super"` and `perflevel1 = "Efficie
 - **`ChargerData`:** `NotChargingReason`, `ChargingCurrent`, `ChargingVoltage`.
 
 ### Top energy processes
-- **What Stats does** [V-src]: it runs `/usr/bin/top -o power -l 2 -n N -stats pid,command,power` and parses the second sample. That takes about 1 s per refresh.
+- **What existing monitors do** [V-src]: run `/usr/bin/top -o power -l 2 -n N -stats pid,command,power` and parse the second sample. That takes about 1 s per refresh.
 - **Why `top` can see everything** [V-local]: `/usr/bin/top` is **setuid root** and has `com.apple.system-task-ports.read`.
 - **`proc_pid_rusage` from a non-root, unsandboxed process** [V-local]: it succeeded for exactly the 360 uid-501 processes and returned **EPERM for every other-uid process** (169), including WindowServer and launchd.
 - **Fields worth using** (`struct rusage_info_v6`, `RUSAGE_INFO_V6`):
@@ -227,10 +223,10 @@ Labels: sysctl reports `hw.perflevel0.name = "Super"` and `perflevel1 = "Efficie
 - Read `IOServiceMatching("IOAccelerator")` → `PerformanceStatistics`. This works as a normal user:
   - `Device Utilization %` (16), `Renderer Utilization %` (16), `Tiler Utilization %` (10)
   - `In use system memory` (bytes, 955 MB), `Alloc system memory`, `Allocated PB Size`, `recoveryCount`
-- Stats additionally reads `Temperature(C)`, `Core Clock(MHz)`, etc., which exist on discrete/Intel GPUs only.
+- `Temperature(C)`, `Core Clock(MHz)`, etc. exist on discrete/Intel GPUs only.
 
 ### IOReport [V-local]
-Link `-lIOReport` and declare the functions yourself (copy from Stats `Modules/Sensors/bridge.h`):
+Link `-lIOReport` and declare the private functions yourself:
 
 ```c
 CFMutableDictionaryRef IOReportCopyChannelsInGroup(CFStringRef group, CFStringRef subgroup, uint64_t, uint64_t, uint64_t);
@@ -254,24 +250,21 @@ What a subscription returns, as uid 501:
 
 **Computing average frequency:** Σ(residencyᵢ·fᵢ) / Σ(active residency), skipping `IDLE`, `DOWN` and `OFF`. Residency ticks are 24 MHz.
 
-The GPU has 15 P-states but only 13 non-zero table entries. **[U]** Map these the way macmon does ([`src/sources.rs`, `src/metrics.rs`](https://github.com/vladkens/macmon)). macmon also handles M5 Pro/Max `acc-clusters` and M6 `pmgr-child`.
+The GPU has 15 P-states but only 13 non-zero table entries. **[U]** The state-to-frequency mapping needs verification against open-source Apple Silicon monitors. M5 Pro/Max add `acc-clusters` and M6 adds `pmgr-child` to the `pmgr` layout, so handle those too.
 
 `powermetrics` needs root; IOReport doesn't.
 
 ---
 
-## 5. Finder integration (Finder Sync) and The Unarchiver's model
+## 5. Finder integration (Finder Sync) and extraction preferences
 
 ### Finder Sync: monitoring all files [V-src]
-- Set `FIFinderSyncController.default().directoryURLs = ["/"] + mountedVolumeURLs` and update it on `NSWorkspace.didMount`, `didUnmount` and `didRenameVolume`. Open-source examples:
-  - RClick: `FinderSyncExt.swift`, `Shared/MountedVolumeObserver.swift`
-  - FiScript
-  - OpenInTerminal
+- Set `FIFinderSyncController.default().directoryURLs = ["/"] + mountedVolumeURLs` and update it on `NSWorkspace.didMount`, `didUnmount` and `didRenameVolume`. Several open-source Finder Sync extensions use this pattern with a mounted-volume observer.
 - Apple DTS says this "menu everywhere" use is unsupported ([forum 766680](https://developer.apple.com/forums/thread/766680)).
 - Known costs:
   - Some locations never get menus (for example `/Applications`).
   - When another sync extension claims a folder, one of them wins.
-  - Registering volume roots can replace sidebar volume icons (RClick #155).
+  - Registering volume roots can replace sidebar volume icons (reported in an open-source extension's issue tracker).
   - Extra extension instances are spawned for Open/Save panels, so keep `init` and `menu(for:)` free of I/O.
 - In `menu(for: .contextualMenuForItems)`, read `selectedItemURLs()` and show items only for archive extensions. The `FIMenuKind` values are 0–3.
 - The action is sent to the principal object. Route on `tag`, because `representedObject` is unreliable.
@@ -305,18 +298,18 @@ pluginkit -m -v -p com.apple.FinderSync
 - Call `FIFinderSyncController.isExtensionEnabled` and `showExtensionManagementInterface()` (10.14+) from the app.
 
 ### Handing files to the main app [V-src]
-- **Use a custom URL scheme.** For example, `tutto://extract?file=…&file=…&dest=…` built with `URLComponents` and opened with `NSWorkspace.shared.open(url)` (M7Archiver pattern). It needs no app group and launches the app if needed.
+- **Use a custom URL scheme.** For example, `tutto://extract?file=…&file=…&dest=…` built with `URLComponents` and opened with `NSWorkspace.shared.open(url)`. It needs no app group and launches the app if needed.
 - The app must treat incoming paths as untrusted. Never trash an archive based only on a URL request.
 - Alternatives and their problems:
   - Sandboxed distributed notifications drop `userInfo`.
   - An app group needs proper Team-ID group IDs on 15+.
   - A regular app can't publish an XPC service.
-- **NSServices** is also available (The Unarchiver 4.3.9 uses it):
+- **NSServices** is also available (some existing extraction utilities use it):
   - Keys: `NSSendFileTypes` (UTIs) plus a mandatory `NSRequiredContext`.
   - Services appear at the bottom of the context menu, or in a Services submenu. They are never top-level like Finder Sync items.
 
-### The Unarchiver's preferences [V-src]
-Sources: the app's `MainMenu.strings` and the open-source `TUController.m` / `TUArchiveController.m`.
+### Extraction preferences baseline [V-src]
+The settings that comparable utilities converge on, with sensible defaults:
 
 | Setting | Options | Default |
 |---|---|---|
@@ -330,7 +323,7 @@ Sources: the app's `MainMenu.strings` and the open-source `TUController.m` / `TU
 | Detection threshold | % confidence | 80 |
 
 - Holding ⌥ or ⇧ while opening an archive forces "ask".
-- **How detection works** (XADMaster `XADString.m`):
+- **How encoding detection typically works** (open-source unarchiving libraries):
   - Pure-ASCII names skip detection. Otherwise all names in the archive are fed to Mozilla's UniversalDetector.
   - If detection fails, windows-1252 is used (MacRoman for Mac archives).
   - The detected charset is used when `confidence ≥ threshold` and the bytes decode cleanly. Otherwise a picker with a live preview is shown.
@@ -373,7 +366,7 @@ Sources: the app's `MainMenu.strings` and the open-source `TUController.m` / `TU
 - Practical approach:
   1. Collect the raw names.
   2. If the bytes are valid UTF-8, use them. Otherwise detect the encoding with `NSString.stringEncoding(for:encodingOptions:convertedString:usedLossyConversion:)`, suggesting CP437, Shift-JIS, GBK, Big5, EUC-KR and CP1251.
-  3. Apply a confidence threshold like The Unarchiver's.
+  3. Apply a confidence threshold (80% is a common default).
 
 ---
 
@@ -441,17 +434,8 @@ Sources: the app's `MainMenu.strings` and the open-source `TUController.m` / `TU
 ---
 
 ### Key sources
-- Stats source files:
-  - [Stats `SMC/smc.swift`](https://github.com/exelban/stats/blob/master/SMC/smc.swift)
-  - [`SMC/Helper/main.swift`](https://github.com/exelban/stats/blob/master/SMC/Helper/main.swift)
-  - [`Kit/helpers.swift`](https://github.com/exelban/stats/blob/master/Kit/helpers.swift)
-  - [`Modules/Sensors/values.swift`](https://github.com/exelban/stats/blob/master/Modules/Sensors/values.swift)
-  - [`Modules/Sensors/reader.m`](https://github.com/exelban/stats/blob/master/Modules/Sensors/reader.m)
-  - [`Modules/Battery/readers.swift`](https://github.com/exelban/stats/blob/master/Modules/Battery/readers.swift)
-- [agoodkind/macos-smc-fan research](https://github.com/agoodkind/macos-smc-fan/blob/main/docs/research.md)
-- [vladkens/macmon](https://github.com/vladkens/macmon)
+- Published open-source SMC key tables, sensor readers and fan-control research notes (not linked)
 - [libarchive v3.7.4 sources](https://github.com/libarchive/libarchive/tree/v3.7.4/libarchive)
-- [MacPaw/XADMaster](https://github.com/MacPaw/XADMaster)
 - Apple documentation: [SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice), [XPCPeerRequirement](https://developer.apple.com/documentation/xpc/xpcpeerrequirement), [NSXPCListener.setConnectionCodeSigningRequirement](https://developer.apple.com/documentation/foundation/nsxpclistener/setconnectioncodesigningrequirement(_:))
 - Apple Developer Forums threads: [756846](https://developer.apple.com/forums/thread/756846), [761249](https://developer.apple.com/forums/thread/761249), [765103](https://developer.apple.com/forums/thread/765103), [766680](https://developer.apple.com/forums/thread/766680)
 - [Chromium `energy_impact_mac.h`](https://chromium.googlesource.com/chromium/src/+/9e001703a2/components/power_metrics/energy_impact_mac.h)

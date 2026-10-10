@@ -1,7 +1,7 @@
 # Tutto — requirements checklist & acceptance criteria
 
 Source of truth: `~/Documents/Codex/2026-10-10/this/outputs/macos-app-specification.md`.
-Status legend: `[ ]` not started · `[~]` implemented, not yet verified on device · `[x]` implemented **and** verified (how is noted) · `[!]` blocked / OS-limited (reason noted).
+Status legend: `[ ]` not started · `[~]` implemented, not yet verified on device · `[x]` implemented **and** verified (how is noted) · `[!]` blocked / OS-limited (reason noted) · `[-]` removed by design (reason noted).
 
 Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core GPU, one fan), macOS 26.5.2, Xcode 26.6.
 
@@ -11,15 +11,15 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 |---|---|---|---|
 | APP-1 | Menu bar icon (aesthetic) opens a compact panel | Template glyph renders in light/dark menu bar; click opens panel ≤ 150 ms | [x] Live: panel opens from the status item (AX press; 832 pt, glass material, real readings). ⚠️ on this crowded notched menu bar the icon sits behind the notch — Tutto detects this and explains (toast + Overview) |
 | APP-2 | Main app window opens like a normal app (Spotlight "Tutto", Finder, `open`) | Launch or reopen shows main window, Dock icon while open, hides from Dock when closed | [x] Live: reopen (`open Tutto.app`) shows the main window with sidebar; Dock icon while open. Spotlight launch of the installed copy still to be confirmed by the user |
-| APP-3 | Every module can be turned off independently | Toggle in General + each page header; disabled module stops all timers/taps/hotkeys/extension; verified by measuring CPU/wakeups and checking taps/hotkeys removed | [x] Live: CornerClick switch → event tap 1→0→1; Archives off → Finder extension `-`; all modules off → 0 % CPU, 0.02 wakeups/s; per-module idle costs measured |
-| APP-4 | Shortcut recording & customization | Click recorder → press combo → saved & live; Esc cancels, ⌫ clears; duplicate & system-conflict warnings; "Reset to defaults" | [x] Live in the running app: ⌃⌥⌘J recorded and stored, conflict refused ("Already used by “Open Tutto”"), bare key refused ("Add ⌘, ⌃ or ⌥"), Esc cancels, Delete removes, Restore Defaults restores; custom shortcuts fire globally (⌃⌥⌘2/3/B/V/L/M verified); reserved-shortcut and running-app clash warnings; 5 unit tests |
-| APP-5 | Default shortcuts preserved | ⌃⇧V clipboard, ⌘⌥B window palette, ⌘⇧2 area→clipboard, ⌘⇧1 full screen→clipboard, ⌘⇧` area→editor | [x] Defaults set in code and shown in the UI; ⌘⇧1 verified live (also fires Shottr while Shottr runs — warned) |
+| APP-3 | Every module can be turned off independently | Toggle in General + each page header; disabled module stops all timers/taps/hotkeys/extension; verified by measuring CPU/wakeups and checking taps/hotkeys removed | [x] Live: Trackpad Corner switch → event tap 1→0→1; Archives off → Finder extension `-`; all modules off → 0 % CPU, 0.02 wakeups/s; per-module idle costs measured |
+| APP-4 | Shortcut recording & customization | Click recorder → press combo → saved & live; Esc cancels, ⌫ clears; duplicate & system-conflict warnings; "Reset to defaults" | [x] Live in the running app: ⌃⌥⌘J recorded and stored, conflict refused ("Already used by “Open Tutto”"), bare key refused ("Add ⌘, ⌃ or ⌥"), Esc cancels, Delete removes, Restore Defaults restores; custom shortcuts fire globally (⌃⌥⌘2/3/B/V/L/M verified); reserved-shortcut warnings; the Shortcuts page carries a general tip that macOS may deliver keys shared with another app to both; 5 unit tests |
+| APP-5 | Default shortcuts preserved | ⌃⇧V clipboard, ⌘⌥B window palette, ⌘⇧2 area→clipboard, ⌘⇧1 full screen→clipboard, ⌘⇧` area→editor | [x] Defaults set in code and shown in the UI; ⌘⇧1 verified live (if another app registers the same keys, macOS delivers them to both — see the tip on the Shortcuts page) |
 | APP-6 | Settings for everything necessary | Open at login, per-module options, reset, about | [x] Open at login (SMAppService), per-module settings pages, Restore Defaults, About |
 | APP-7 | Permissions overview | Live status + request button for Accessibility, Screen Recording, Finder extension, fan helper; says exactly which features need which | [x] Live: Permissions page shows live status; first capture without permission opened System Settings › Screen & System Audio Recording with Tutto listed |
 | APP-8 | Clear on first look & install | First-run welcome: modules, permissions, shortcuts cheat sheet | [x] Installed app from clean settings via LaunchServices, over a full-screen app: welcome window on screen and centered where you land (two Space bugs found and fixed); four steps walked with live permission states; close button completes first run without adding a login item; Done (which also turns on Open at login when its box is ticked) was not pressed, to avoid adding a login item on this Mac; Spotlight lists only the installed copy (duplicate found, fixed) |
-| APP-9 | Replaces the old apps cleanly | Detects running Stats / Raycast / Shottr / Macs Fan Control / The Unarchiver / CornerClick and explains clashes; one-click quit where sensible | [x] Detects Stats/Raycast/Shottr/Macs Fan Control/The Unarchiver/CornerClick; one merged notice + Overview list with Quit (Raycast: advice instead of quit) |
+| APP-9 | ~~Notices about other running apps~~ | — | [-] Removed by design: Tutto no longer detects or lists other apps (menu bar notice, Overview list and per-shortcut clash warnings all removed). The menu bar panel shows only missing-permission notices; the Shortcuts page has a general tip: "If another app uses the same keys, macOS may deliver them to both. Change the shortcut here or in that app." |
 
-## SYS — system & battery monitor (Stats 3.0.4)
+## SYS — system & battery monitor
 
 | ID | Requirement | Acceptance criteria | Status |
 |---|---|---|---|
@@ -28,16 +28,16 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | SYS-3 | Go deeper for each: CPU, GPU, RAM, disk, battery (+network) | Main-window pages: per-core CPU (Super/Efficiency), load, top CPU processes; GPU utilization/renderer/tiler/memory; RAM breakdown + pressure + swap + top memory; volumes + read/write throughput; network rates; full battery/adapter detail | [x] Pages for Battery, CPU (Super/Efficiency cores, load, top CPU), GPU, Memory (breakdown, pressure, swap, top memory), Disk (volumes, read/write), Network; rendered with live data |
 | SYS-4 | No idle cost | Sampling runs only while panel/page visible; stops ≤ 1 s after hiding (verified by wakeups) | [x] Live: `top` 1→0 on close, CPU back to 0.03 %, wakeups 0.12/s |
 
-## FAN — temperatures & fans (Macs Fan Control 1.5.19)
+## FAN — temperatures & fans
 
 | ID | Requirement | Acceptance criteria | Status |
 |---|---|---|---|
-| FAN-1 | View temperatures | All valid IOHID/SMC sensors, junk readings (e.g. −9201 °C) filtered, honest labels | [x] 40+ IOHID/SMC sensors, junk (−9201 °C) filtered; CPU/GPU labels from Stats' M5 keys confirmed under load by test; shown in panel and page |
+| FAN-1 | View temperatures | All valid IOHID/SMC sensors, junk readings (e.g. −9201 °C) filtered, honest labels | [x] 40+ IOHID/SMC sensors, junk (−9201 °C) filtered; CPU/GPU labels from published SMC key tables (M5) confirmed under load by test; shown in panel and page |
 | FAN-2 | View fans | Current / min / max RPM from SMC | [x] 1 fan, 2317–6550 rpm, current speed (0 = stopped) read without root |
 | FAN-3 | Edit fan power for heavy tasks | Auto / custom speed / Max via privileged helper; resets to Auto on quit, sleep, module off, or app crash | [!] Implemented (helper + XPC + resets on quit/sleep/disconnect/module off); non-root writes verified refused; actual speed change needs the user to approve the helper (App Background Activity) |
 | FAN-4 | Honest support states | Shows "needs helper approval", "no fans on this Mac", etc. Never fakes a reading | [x] States for helper not installed / awaiting approval / no fans; never fakes readings |
 
-## CLIP — clipboard history (Raycast 1.104)
+## CLIP — clipboard history
 
 | ID | Requirement | Acceptance criteria | Status |
 |---|---|---|---|
@@ -48,7 +48,7 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | CLIP-5 | Privacy | Skips password-manager (concealed/transient) items; pause capture; ignore list | [x] Live: concealed (password-manager) item not recorded; pause switch; ignore list with password managers by default |
 | CLIP-6 | Persistence | Survives relaunch; size/age limits | [x] Unit tests: persistence with blobs, 500-item limit, 100-image cap, pinned kept |
 
-## WIN — window management (Raycast)
+## WIN — window management
 
 | ID | Requirement | Acceptance criteria | Status |
 |---|---|---|---|
@@ -56,7 +56,7 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | WIN-2 | Halves, thirds, quarters, center, maximize, displays | All actions work on the test machine incl. restore | [x] Live: right half, left half, center, restore, thirds (Finder's 536 pt min width respected); geometry unit-tested for all actions incl. displays |
 | WIN-3 | Per-action hotkeys | Optional recordable shortcut per action | [x] Live: Left Half on ⌃⌥⌘L → (0, 33, 756 × 858); Maximize on ⌃⌥⌘M → (0, 33, 1512 × 858); every action recordable on the Windows and Shortcuts pages |
 
-## SHOT — screenshots (Shottr 1.9.3)
+## SHOT — screenshots
 
 | ID | Requirement | Acceptance criteria | Status |
 |---|---|---|---|
@@ -70,9 +70,9 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | SHOT-8 | OCR copy text (whole or selection) | Vision OCR → clipboard, line order preserved | [x] Live: "Talk. It types." + two lines OCR'd exactly in order; selection-only OCR supported; QR codes detected |
 | SHOT-9 | Save to file, default Downloads | ⌘S writes PNG to ~/Downloads (configurable) | [x] Live: Save wrote "Screenshot 2026-10-10 at 04.02.12.png" to the configured folder (default ~/Downloads; macOS asks once for Downloads access) |
 | SHOT-10 | Esc copies and closes | Esc → clipboard (selection if one is drawn) | [x] Live: Esc copied 1280 × 190 image and closed the editor |
-| SHOT-11 | Editor shows only screenshot UI | No stats/other modules in editor | [x] Editor window contains only screenshot tools |
+| SHOT-11 | Editor shows only screenshot UI | No system readings or other modules in editor | [x] Editor window contains only screenshot tools |
 
-## ARC — archives (The Unarchiver 4.3.9)
+## ARC — archives (full archive extraction)
 
 | ID | Requirement | Acceptance criteria | Status |
 |---|---|---|---|
@@ -84,20 +84,20 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | ARC-6 | Progress, cancel, errors, passwords | Progress panel; cancel cleans up; zip passwords prompt; unsupported encryption explained | [x] Live: 3 GB archive → progress panel; Cancel left nothing behind; password prompt panel appears (decryption unit-tested: ZipCrypto, AES, wrong/missing password) |
 | ARC-7 | Safety | No path traversal, no writing through symlinks, never overwrites silently | [x] Unit tests: ../ and absolute paths contained, symlink escapes refused, unique names, temp-dir cleanup |
 
-## CC — CornerClick 1.0.0 (all functionality)
+## TC — Trackpad Corner (click or tap in a corner → right-click)
 
 | ID | Requirement | Acceptance criteria | Status |
 |---|---|---|---|
-| CC-1 | Corner click/tap → right-click, bottom-left or bottom-right | Same engine & tests as CornerClick (ported unit tests pass) | [x] Engine ported verbatim; 48 original tests pass. Live: a physical press in the saved bottom-right zone (touch at 0.740, 0.183) was logged by Tutto as `decided=click result=right`, while presses elsewhere stayed left clicks |
-| CC-2 | Two-finger right-click untouched | — | [x] Engine passes native right-click through untouched (unit test with real CGEvents) |
-| CC-3 | S / M / L / Custom (mm), drag to size, click other corner to switch | — | [x] S/M/L/Custom mm steppers, drag-to-size, click other corner — CornerClick's own UI code |
-| CC-4 | Tap to click on/off, tap-to-drag timing | — | [x] Tap-to-click on/off and tap-to-drag windows (unit tests + live preference reading) |
-| CC-5 | Pause from menu bar, open at login | — | [x] Pause switch in panel/page; open at login (app-wide) |
-| CC-6 | Diagnostics log `~/Library/Logs/CornerClick/clicks.log` | Opt-in toggle, reveal log | [x] Diagnostics toggle + Reveal; same log path |
-| CC-7 | Accessibility flow + Set Up & Test | — | [~] The installed copy without a grant shows the Accessibility card in the welcome window (verified); with a grant (test copy run under an approved process) the corner works. Granting the installed copy is the user's switch in System Settings |
-| CC-8 | Robustness: sleep/wake, hot-plug, stale stream, trust watchdog, menus, typing | — | [x] Engine's sleep/wake, hot-plug, stale-stream, watchdog, menu and typing rules kept; engine now also releases IOKit notifications when switched off |
-| CC-9 | Panel section more minimal (no right-click counter) | — | [x] Panel shows no right-click counter |
-| CC-10 | Migrates CornerClick settings; warns if CornerClick.app also runs | — | [x] Live: migrated the user's zone (S, 44 × 19 mm) and triggers from CornerClick's settings; warns while CornerClick.app runs |
+| TC-1 | Click or tap in a corner → right-click, bottom-left or bottom-right | Engine unchanged; its unit tests pass | [x] Engine unchanged; 48 engine tests pass. Live: a physical press in the saved bottom-right zone (touch at 0.740, 0.183) was logged by Tutto as `decided=click result=right`, while presses elsewhere stayed left clicks |
+| TC-2 | Two-finger right-click untouched | — | [x] Engine passes native right-click through untouched (unit test with real CGEvents) |
+| TC-3 | S / M / L / Custom (mm), drag to size, click other corner to switch | — | [x] S/M/L/Custom mm steppers, drag-to-size, click other corner |
+| TC-4 | Tap to click on/off, tap-to-drag timing | — | [x] Tap-to-click on/off and tap-to-drag windows (unit tests + live preference reading) |
+| TC-5 | Pause from menu bar, open at login | — | [x] Pause switch in panel/page; open at login (app-wide) |
+| TC-6 | Diagnostics log `~/Library/Logs/Tutto/corner.log` | Opt-in toggle, reveal log | [x] Diagnostics toggle + Reveal; one line per trackpad click (verified live before the log moved to its new path) |
+| TC-7 | Accessibility flow + Set Up & Test | — | [~] The installed copy without a grant shows the Accessibility card in the welcome window (verified); with a grant (test copy run under an approved process) the corner works. Granting the installed copy is the user's switch in System Settings |
+| TC-8 | Robustness: sleep/wake, hot-plug, stale stream, trust watchdog, menus, typing | — | [x] Engine's sleep/wake, hot-plug, stale-stream, watchdog, menu and typing rules kept; engine now also releases IOKit notifications when switched off |
+| TC-9 | Panel section more minimal (no right-click counter) | — | [x] Panel shows no right-click counter |
+| TC-10 | ~~One-time settings import; warning when another app is running~~ | — | [-] Removed by design: no settings import and no running-app warning; Trackpad Corner keeps its own settings (`corner.*`) |
 
 ## UX — design
 
@@ -105,22 +105,22 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 |---|---|---|---|
 | UX-1 | One coherent minimal design system, light & dark | Shared tokens/components; screenshots in both appearances | [x] One design system (ink tokens, hairlines, mono captions, shared controls) across panel, window, palettes, editor; light + dark renders reviewed |
 | UX-2 | Smooth, accessible motion | Springs ≤ 0.45 s; Reduce Motion → fades; nothing animates while idle | [x] Motion tokens ≤ 0.40 s, Reduce Motion fades, keyboard surfaces appear instantly, no continuous animation (removed per-second value animations after profiling) |
-| UX-3 | Accessibility | VoiceOver labels, keyboard navigation in palettes/editor, contrast AA | [x] `scripts/ax-audit.swift` live: 0 unlabeled controls across all 16 pages and the menu bar panel (fixed: encoding picker, archive Cancel); editor controls labeled; palettes and editor fully keyboard-operable; CornerClick's AA-tuned ink opacities. Not done: a formal contrast audit under Increase Contrast |
+| UX-3 | Accessibility | VoiceOver labels, keyboard navigation in palettes/editor, contrast AA | [x] `scripts/ax-audit.swift` live: 0 unlabeled controls across all 16 pages and the menu bar panel (fixed: encoding picker, archive Cancel); editor controls labeled; palettes and editor fully keyboard-operable; AA-tuned ink opacities. Not done: a formal contrast audit under Increase Contrast |
 | UX-4 | Research-informed | `docs/research/ui-ux-research.md` applied | [x] `docs/research/ui-ux-research.md` (verified X posts) applied: monochrome instrument style, system glass only, instant palettes, numeric typography, no idle animation |
 
 ## PERF — budgets (measured with `scripts/measure.sh`)
 
-Baseline of the apps Tutto replaces, idle for 3 minutes on the test machine (2026-10-10):
+Baseline: separate single-purpose utilities covering the same jobs, idle for 3 minutes on the test machine (2026-10-10):
 
-| App | CPU % | Footprint | Idle wakeups/s |
+| Utility | CPU % | Footprint | Idle wakeups/s |
 |---|---|---|---|
-| Stats 3.0.4 (menu bar values on) | 1.761 | 211 MB | 1.04 |
-| Raycast 1.104.31 | 0.022 | 104 MB | 0.26 |
-| Shottr 1.9.3 | 0.000 | 81 MB | 0.09 |
-| CornerClick 1.0.0 | 0.005 | 25 MB | 0.04 |
+| System monitor (menu bar values on) | 1.761 | 211 MB | 1.04 |
+| Launcher with clipboard history + window management | 0.022 | 104 MB | 0.26 |
+| Screenshot tool | 0.000 | 81 MB | 0.09 |
+| Trackpad corner right-click utility | 0.005 | 25 MB | 0.04 |
 | **Combined** | **1.788** | **421 MB** | **1.43** |
 
-(Macs Fan Control and The Unarchiver were not running.)
+(No separate fan-control or archive utility was running.)
 
 
 | ID | Budget | Status |
@@ -130,7 +130,7 @@ Baseline of the apps Tutto replaces, idle for 3 minutes on the test machine (202
 | PERF-3 | Idle memory footprint ≤ 45 MB | [x] 13 MB (30 MB after the panel has been opened) |
 | PERF-4 | All modules off: CPU ≤ 0.02 %, wakeups ≤ 0.5 /s | [x] 0 %, 0.02 /s |
 | PERF-5 | Panel open (1 Hz updates): CPU ≤ 3 % | [x] 1.5 % (was 15.5 % before the fix) |
-| PERF-6 | Lighter than the apps it replaces combined (Stats + Raycast + Shottr + CornerClick) | [x] 0.011 % / 13–30 MB vs 1.788 % / 421 MB combined |
+| PERF-6 | Lighter than the four separate utilities in the baseline combined | [x] 0.011 % / 13–30 MB vs 1.788 % / 421 MB combined |
 | PERF-7 | Hotkey → selection overlay ≤ 200 ms; mouse-up → clipboard ≤ 150 ms | [x] overlay 60–121 ms; mouse-up → clipboard 0–72 ms |
 | PERF-8 | App bundle ≤ 15 MB | [x] 8.0 MB |
 
@@ -140,10 +140,10 @@ Every request in the specification (re-read in full 2026-10-10, 2,673 words) map
 
 | Spec says | Covered by |
 |---|---|
-| Stats: click the menu bar icon to see stats; battery, max capacity, designed capacity, health %, cycles, power, top processes using battery | APP-1, SYS-1, SYS-2 |
-| Macs Fan Control: view temperatures, edit fan power for heavy tasks | FAN-1 … FAN-4 |
-| Raycast clipboard history on ⌃⇧V (Control, not Command); images, text and more in a clean UI; search, paste, pin, content-type filter | CLIP-1 … CLIP-6, APP-5 |
-| Raycast window management: ⌘⌥B, type "left half"/"right half"; halves, thirds, quarters, center, maximize, between displays | WIN-1 … WIN-3 (moving between displays is unit-tested only: this Mac has one display) |
+| Battery and system monitor: click the menu bar icon to see readings; battery, max capacity, designed capacity, health %, cycles, power, top processes using battery | APP-1, SYS-1, SYS-2 |
+| Temperatures and fans: view temperatures, edit fan power for heavy tasks | FAN-1 … FAN-4 |
+| Clipboard history on ⌃⇧V (Control, not Command); images, text and more in a clean UI; search, paste, pin, content-type filter | CLIP-1 … CLIP-6, APP-5 |
+| Window management: ⌘⌥B, type "left half"/"right half"; halves, thirds, quarters, center, maximize, between displays | WIN-1 … WIN-3 (moving between displays is unit-tested only: this Mac has one display) |
 | ⌘⇧2 select area → clipboard (no editor to dismiss) | SHOT-1 |
 | ⌘⇧1 whole screen | SHOT-2 |
 | ⌘⇧` select area → editor | SHOT-3, SHOT-4 |
@@ -152,18 +152,18 @@ Every request in the specification (re-read in full 2026-10-10, 2,673 words) map
 | No tool: drag a box with live pixel size, move and resize it, crop | SHOT-7 |
 | Copy all text in the screenshot (or the selected part) easily | SHOT-8 |
 | Save to a file, defaulting to Downloads | SHOT-9 |
-| Esc copies the screenshot, like Shottr | SHOT-10 |
+| Esc copies the screenshot | SHOT-10 |
 | Editor is screenshot-only (no battery etc.) | SHOT-11 |
-| The Unarchiver: RAR, 7z, zip, tar/gz/xz, ISO, CAB…; garbled filenames fixed; right-click options like WinRAR | ARC-1 … ARC-7 |
-| All of CornerClick: corner click/tap → right-click, either bottom corner, two-finger kept, S/M/L/custom drag, tap-to-click, pause, open at login, log file, Accessibility | CC-1 … CC-10, APP-6 |
-| CornerClick UI in the menu bar panel, without the right-click counter | CC-9 |
-| Menu bar icon looks good; panel shows very brief battery/CPU/GPU/RAM/disk with a way to go deeper; CornerClick; optional clipboard settings | APP-1, SYS-1, SYS-3, CC-9, CLIP (pause + count in panel) |
+| Full archive extraction: RAR, 7z, zip, tar/gz/xz, ISO, CAB…; garbled filenames fixed; extract/compress options in the Finder right-click menu | ARC-1 … ARC-7 |
+| Trackpad Corner: click or tap in a corner → right-click, either bottom corner, two-finger kept, S/M/L/custom drag, tap-to-click, pause, open at login, log file, Accessibility | TC-1 … TC-9, APP-6 |
+| Trackpad Corner controls in the menu bar panel, without the right-click counter | TC-9 |
+| Menu bar icon looks good; panel shows very brief battery/CPU/GPU/RAM/disk with a way to go deeper; Trackpad Corner; optional clipboard settings | APP-1, SYS-1, SYS-3, TC-9, CLIP (pause + count in panel) |
 | Open the app from Spotlight as a full app with in-depth CPU, GPU, RAM, disk, fans | APP-2, SYS-3, FAN-1/2 |
 | Change shortcuts there, with recording | APP-4 |
 | Settings for anything necessary | APP-6 |
 | Turn off every feature, and an off feature must not waste battery | APP-3, PERF-4 |
 | Clean, minimal, smooth, professional; smooth animation; clear on first look and install | UX-1 … UX-3, APP-8 |
 | Research X / social posts on UI/UX trends | UX-4 (`docs/research/ui-ux-research.md`) |
-| Very light on CPU/memory/battery; as good as or better than the apps it replaces | PERF-1 … PERF-8 (`docs/PERFORMANCE.md`) |
-| Investigate CornerClick source and macOS APIs; modular architecture; measurable acceptance criteria; identify permissions and OS limits | This file; `docs/research/macos-api-research.md`; README › Permissions / Limitations |
+| Very light on CPU/memory/battery; as good as or better than separate single-purpose utilities | PERF-1 … PERF-8 (`docs/PERFORMANCE.md`) |
+| Investigate the trackpad-corner engine source and macOS APIs; modular architecture; measurable acceptance criteria; identify permissions and OS limits | This file; `docs/research/macos-api-research.md`; README › Permissions / Limitations |
 | Test everything before finishing | `docs/TEST_RESULTS.md` |

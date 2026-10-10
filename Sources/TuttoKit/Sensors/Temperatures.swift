@@ -5,26 +5,26 @@
 //  Temperature sensors, readable without root:
 //  - IOHID (CBridges `TSensorsRead`): SoC die, PMU, battery and SSD sensors, named by
 //    the system ("PMU tdie3", "gas gauge battery", "NAND CH0 temp" …).
-//  - SMC keys for CPU and GPU, only where Stats (github.com/exelban/stats,
-//    Modules/Sensors/values.swift) documents what a key means for this chip generation.
+//  - SMC keys for CPU and GPU, only where published open-source SMC key tables document
+//    what a key means for this chip generation.
 //
 //  Honesty rules (FAN-1/FAN-4):
 //  - Readings outside −20…130 °C are dropped (this M5 has an IOHID sensor stuck at −9201 °C).
 //  - Apple documents none of these names. A sensor is only called "CPU" or "GPU" when
-//    its name says so (M1/M2 IOHID) or Stats maps its SMC key. Everything else keeps a
+//    its name says so (M1/M2 IOHID) or a published key table maps its SMC key. Everything else keeps a
 //    neutral label.
 //
 //  Verified on a MacBook Pro 14" M5 (macOS 26.5.2) by loading the CPU and GPU separately:
-//  - Stats' M5 GPU keys (Tg0U…Tg1g) rose 22–26 °C under a Metal compute load, more than any
+//  - The documented M5 GPU keys (Tg0U…Tg1g) rose 22–26 °C under a Metal compute load, more than any
 //    other sensor. Under a CPU-only load they rose least.
-//  - Stats' M5 CPU keys (Tp00…Tp0y) rose 10–15 °C within 2 s of a 4-thread Super-core load
-//    and did not move under an Efficiency-core-only load. Stats calls some of them
+//  - The documented M5 CPU keys (Tp00…Tp0y) rose 10–15 °C within 2 s of a 4-thread Super-core load
+//    and did not move under an Efficiency-core-only load. The tables call some of them
 //    "performance core", but the base M5 has no performance cores, so Tutto labels them
 //    plainly "CPU n" and does not claim a per-core mapping.
 //  - IOHID "PMU tdie*" rose under both CPU and GPU load, so Tutto groups them as SoC die.
 //    "PMU2 tdie*" barely moved under either load (about +1 °C), so they are not grouped
 //    as SoC.
-//  The M1–M4 SMC tables below come from Stats and are unverified here.
+//  The M1–M4 SMC tables below come from those published tables and are unverified here.
 //
 
 import CBridges
@@ -171,7 +171,7 @@ public enum TemperatureSensors {
         let verified = chip.generation == 5 && chip.variant.isEmpty
             ? "checked under CPU and GPU load on an M5 MacBook Pro"
             : "not verified on this chip"
-        return "\(name): CPU/GPU keys from Stats' sensor map (\(verified))."
+        return "\(name): CPU/GPU labels from published SMC key tables (\(verified))."
     }
 
     // MARK: IOHID
@@ -289,7 +289,7 @@ public enum TemperatureSensors {
         return parseChip(String(cString: bytes))
     }
 
-    /// Stats' documented CPU/GPU keys for a chip, with Tutto's labels. Empty for unknown chips.
+    /// Documented CPU/GPU keys for a chip, with Tutto's labels. Empty for unknown chips.
     static func smcCandidates(for chip: Chip) -> [SMCTemperatureKey] {
         func list(_ keys: [String], _ group: TemperatureGroup, _ prefix: String) -> [(String, TemperatureGroup, String)] {
             keys.map { ($0, group, prefix) }
@@ -315,7 +315,7 @@ public enum TemperatureSensors {
                 + list(["Tp01", "Tp05", "Tp09", "Tp0D", "Tp0V", "Tp0Y", "Tp0b", "Tp0e"], .cpu, "CPU performance core")
                 + list(gpuFirst + ["Tg0K", "Tg0L", "Tg0d", "Tg0e", "Tg0j", "Tg0k"], .gpu, "GPU")
         case 5:
-            // Stats splits these into "super core" (first six) and "performance core" (rest).
+            // Published tables split these into "super core" (first six) and "performance core" (rest).
             // The base M5 has Super + Efficiency cores and all of these follow Super-core load,
             // so they get a neutral "CPU n".
             entries = list(["Tp00", "Tp04", "Tp08", "Tp0C", "Tp0G", "Tp0K", "Tp0O", "Tp0R", "Tp0U", "Tp0X", "Tp0a",

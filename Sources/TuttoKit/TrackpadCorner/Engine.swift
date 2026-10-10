@@ -1,6 +1,6 @@
 //
 //  Engine.swift
-//  Tutto (CornerClick engine)
+//  Tutto (trackpad corner engine)
 //
 //  Owns the event tap and the trackpad listeners, and keeps them alive across
 //  sleep/wake, trackpad plug/unplug and permission changes. Main thread only.
@@ -101,7 +101,7 @@ public final class Engine {
         status = .off
     }
 
-    /// Tutto releases the engine when CornerClick is switched off; leave nothing behind.
+    /// Tutto releases the engine when Trackpad Corner is switched off; leave nothing behind.
     isolated deinit {
         stopListening()
         disarmHotplugNotifications()

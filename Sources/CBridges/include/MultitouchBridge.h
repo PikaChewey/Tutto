@@ -1,6 +1,6 @@
 //
 //  MultitouchBridge.h
-//  Tutto (from CornerClick)
+//  Tutto
 //
 //  A tiny C shim over Apple's private MultitouchSupport.framework.
 //  It is loaded at runtime with dlopen, so the app still launches (and simply
