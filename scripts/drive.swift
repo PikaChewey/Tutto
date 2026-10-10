@@ -124,6 +124,20 @@ func mouse(_ type: CGEventType, _ point: CGPoint) {
 switch args.first {
 case "key":
     press(args[1])
+case "cmdtab":
+    // A real ⌘-Tab: ⌘ goes down as its own key (the app switcher ignores a Tab that only carries the flag).
+    func key(_ code: Int, _ down: Bool, _ flags: CGEventFlags) {
+        let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(code), keyDown: down)!
+        if code == kVK_Command { event.type = .flagsChanged }
+        event.flags = flags
+        event.post(tap: .cghidEventTap)
+        usleep(60_000)
+    }
+    key(kVK_Command, true, .maskCommand)
+    key(kVK_Tab, true, .maskCommand)
+    key(kVK_Tab, false, .maskCommand)
+    usleep(150_000)
+    key(kVK_Command, false, [])
 case "keyto":
     press(args[2], toApp: args[1])
 case "type":

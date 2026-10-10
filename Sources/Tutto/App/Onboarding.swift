@@ -40,7 +40,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
             window.titleVisibility = .hidden
             window.isMovableByWindowBackground = true
             window.isReleasedWhenClosed = false
-            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+            window.collectionBehavior = AppActivation.windowBehavior
             window.title = "Welcome to Tutto"
             window.delegate = self
             // Size it before centering; SwiftUI would otherwise grow it from its top-left corner later.

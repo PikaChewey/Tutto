@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let launchedAtLogin = Self.wasLaunchedAsLoginItem()
         // `--no-shortcuts`: for measurement runs alongside other apps that own the same keys.
         model.launch(quietly: CommandLine.arguments.contains("--no-shortcuts"))
+        AppActivation.followSpaceSwitchesOnActivation()
         // Once the menu bar has settled, see whether the icon ended up behind the notch.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             MainActor.assumeIsolated {

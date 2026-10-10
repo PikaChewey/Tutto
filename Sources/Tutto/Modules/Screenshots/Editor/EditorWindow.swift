@@ -50,7 +50,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         window.delegate = self
         window.minSize = NSSize(width: 860, height: 420)
         // Captures often start in a full-screen app; the editor appears right there.
-        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        window.collectionBehavior = AppActivation.editorBehavior
         window.animationBehavior = .documentWindow
 
         // Natural size (one image pixel per screen pixel) plus chrome, within 85 % of the screen.

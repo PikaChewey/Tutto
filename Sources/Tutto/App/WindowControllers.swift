@@ -33,9 +33,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             window.setContentSize(NSSize(width: 920, height: 640))
             window.contentMinSize = NSSize(width: 780, height: 520)
             window.isReleasedWhenClosed = false
-            // Open on the Space you're in, even over a full-screen app (otherwise macOS may put
-            // it on another Space where you'd never see it).
-            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+            window.collectionBehavior = AppActivation.windowBehavior
             window.setFrameAutosaveName("TuttoMain")
             window.delegate = self
             if !window.setFrameUsingName("TuttoMain") { window.center() }
@@ -72,6 +70,26 @@ enum AppActivation {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// The main and welcome windows are ordinary desktop windows, so ⌘-Tab and the Dock take you
+    /// to them. Letting them float over a full-screen app (`.fullScreenAuxiliary`) or follow the
+    /// active Space (`.moveToActiveSpace`) broke ⌘-Tab from a full-screen app: macOS switched to the
+    /// desktop while the window stayed on (or jumped to) the full-screen Space.
+    static let windowBehavior: NSWindow.CollectionBehavior = []
+
+    /// The screenshot editor opens right over a full-screen app, where the capture started.
+    static let editorBehavior: NSWindow.CollectionBehavior = [.fullScreenAuxiliary]
+
+    /// Whenever Tutto becomes active (⌘-Tab, Dock, a shortcut) and macOS switches Spaces on the way,
+    /// bring Tutto's front window to the Space you land on.
+    static func followSpaceSwitchesOnActivation() {
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                let front = NSApp.orderedWindows.first { $0.isVisible && $0.styleMask.contains(.titled) }
+                if let front { followSpaceSwitch(front) }
+            }
+        }
+    }
+
     /// Shows a window on the Space you're looking at and brings Tutto forward. Activating from a
     /// full-screen app can still make macOS switch to a desktop Space; the window then follows you
     /// there instead of staying behind on the Space you left.
@@ -89,8 +107,12 @@ enum AppActivation {
         let center = NSWorkspace.shared.notificationCenter
         spaceObserver = center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak window] _ in
             MainActor.assumeIsolated {
-                // `.moveToActiveSpace` windows move to the active Space when made key again.
-                if let window, window.isVisible, !window.isOnActiveSpace { window.makeKeyAndOrderFront(nil) }
+                if let window, window.isVisible, !window.isOnActiveSpace {
+                    // Allowed to move just for this ordering, then it stays put again.
+                    window.collectionBehavior.insert(.moveToActiveSpace)
+                    window.makeKeyAndOrderFront(nil)
+                    window.collectionBehavior.remove(.moveToActiveSpace)
+                }
                 stopFollowing()
             }
         }
