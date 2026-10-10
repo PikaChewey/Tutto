@@ -36,13 +36,25 @@ Run against the release build launched from `build/`, driven with real HID event
 | Menu bar | Sampling stops when closed | ✅ `top` 1 → 0 processes; CPU back to 0.03 % |
 | Main window | Opens on reopen (as from Spotlight/Finder); sidebar, overview, pages render | ✅ |
 | Modules | CornerClick switch off/on from Overview | ✅ event tap 1 → 0 → 1, setting persisted |
+| Screenshots | Area → clipboard via (test) shortcut, mouse selection | ✅ 800 × 600 PNG; overlay 60–121 ms after the shortcut; mouse-up → clipboard ≤ 72 ms; TIFF generated only when an app asks |
+| Screenshots | Overlay visuals | ✅ hairline crosshair, loupe with pixel grid + center outline + hex, live size pill; right-click cancels |
+| Screenshots | Area → editor; editor keyboard: Tab, T, Esc | ✅ Tab copied `#222222` under the pointer; T copied the recognized text; Esc copied the 1280 × 190 image and closed. Bug found: Finder stayed frontmost so keys went to Finder → editor is now a key-capable panel |
+| Screenshots | OCR via the Text button | ✅ "Talk. It types." + two following lines exactly, in order, em dash preserved |
+| Screenshots | Draw tool | ✅ stroke rendered; toolbar switches to colors + thickness |
+| Screenshots | Selection → Crop button → Copy → Save | ✅ 402 × 202 px crop (same as the live size pill), PNG saved with Finder-style name in the chosen folder |
+| Screenshots | Editor layout | Bugs found and fixed: toolbar squeezed text buttons to zero width on small captures; window placed half off-screen (SwiftUI resizing the window) |
+| Windows | ⌃⌥⌘B palette → "left half" / "rh" / "center" / "restore" on a Finder window | ✅ (0, 33, 756 × 858) and (756, 33, 756 × 858) exactly; centered; restored. Bugs found and fixed: search field didn't get focus in the non-activating panel; a resting pointer selected rows on open |
+| Archives | Open an archive with Tutto (`open -a Tutto x.zip`, what double-click does once Tutto is default) | ✅ extracted next to it |
+| Archives | 3 GB archive | ✅ progress panel appeared (name, track, "40% · Huge/huge.bin", ×); Cancel left nothing behind. Bugs found and fixed: × wasn't reachable by VoiceOver; empty panel appeared after a password prompt |
+| Archives | Password-protected zip | ✅ prompt appears (now a focus-taking panel; the first version, an alert, could leave typing going to the previous app). Decryption itself covered by unit tests (ZipCrypto, AES) |
+| Accessibility | Editor controls in the AX tree | ✅ Select, Draw, Highlight, Arrow, Rectangle, Pixelate, Text, Undo, Redo, Save, Copy all labeled |
 | Performance | See [PERFORMANCE.md](PERFORMANCE.md) | ✅ all idle budgets |
 
 ## Not yet verified on device (and why)
 
 | Item | Status |
 |---|---|
-| Area selection overlay, editor (draw, crop, OCR, Tab color, Esc), window palette, clipboard palette paste, shortcut recorder | Blocked while macOS's screen-capture consent prompt for Tutto was waiting for the user: synthetic Return/Esc could have answered a security prompt. Rendering verified offscreen; logic unit-tested where possible. |
+| Clipboard palette ↩ paste into another app; shortcut recorder UI; per-action window shortcuts | Implemented; live run deferred while the user was actively using the Mac (the test has to bring a test window to the front). |
 | CornerClick corner press inside Tutto | Needs a physical trackpad press. The engine is CornerClick's (48 tests, real CGEvents); the module's event tap is verified installed. |
 | Fan speed changes | Needs the user to approve the root helper (App Background Activity). Non-root SMC writes verified to be refused (0xe00002c1); helper code-signing checks verified. |
 | Installed app in /Applications: Spotlight launch, login item, its own TCC grants | Needs installation + user approval of the TCC prompts. |

@@ -266,6 +266,18 @@ private struct EditorToolbar: View {
                 .disabled(!document.canRedo)
                 .opacity(document.canRedo ? 1 : 0.35)
 
+            if document.selection != nil {
+                Button {
+                    document.cropToSelection()
+                    actions.focusCanvas()
+                } label: {
+                    Label("Crop", systemImage: "crop").font(.system(size: 12, weight: .medium)).fixedSize()
+                }
+                .buttonStyle(OutlineButtonStyle(compact: true))
+                .focusable(false)
+                .help("Crop to the selection (↩)")
+                .transition(.opacity)
+            }
             if document.tool == .select {
                 Text(verbatim: "\(Int(document.size.width)) × \(Int(document.size.height))")
                     .font(.mono(11, weight: .medium))
@@ -290,6 +302,7 @@ private struct EditorToolbar: View {
         }
         .padding(.trailing, 12)
         .animation(Motion.micro, value: document.tool)
+        .animation(Motion.micro, value: document.selection == nil)
     }
 
     /// Colors and line thickness, shown while a drawing tool is active.
