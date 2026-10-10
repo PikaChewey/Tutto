@@ -257,6 +257,54 @@ case "axpress":
         }
     }
     if !pressed { print("not found:", label) }
+case "axdump":
+    // Prints role, name and value of every element whose text contains the filter (all when omitted).
+    let name = args[1], filter = args.count > 2 ? args[2].lowercased() : ""
+    guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }) else { print("not running"); break }
+    func text(_ element: AXUIElement, _ attribute: String) -> String {
+        var value: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+        if let string = value as? String { return string }
+        if let number = value as? NSNumber { return number.stringValue }
+        return ""
+    }
+    func dump(_ element: AXUIElement, depth: Int) {
+        guard depth < 40 else { return }
+        let fields = [text(element, kAXTitleAttribute), text(element, kAXDescriptionAttribute), text(element, kAXValueAttribute)]
+        if fields.contains(where: { !$0.isEmpty }), filter.isEmpty || fields.joined(separator: " ").lowercased().contains(filter) {
+            print(text(element, kAXRoleAttribute), fields.map { "\"\($0)\"" }.joined(separator: " "))
+        }
+        var children: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children)
+        for child in children as? [AXUIElement] ?? [] { dump(child, depth: depth + 1) }
+    }
+    var windows: CFTypeRef?
+    AXUIElementCopyAttributeValue(AXUIElementCreateApplication(app.processIdentifier), kAXWindowsAttribute as CFString, &windows)
+    for window in windows as? [AXUIElement] ?? [] { dump(window, depth: 0) }
+case "axclose":
+    // Presses the close button of an app's window whose title contains the filter (the first window when omitted).
+    // Retries for up to 3 s, since a window that just appeared may not be in the Accessibility tree yet.
+    let name = args[1], filter = args.count > 2 ? args[2].lowercased() : ""
+    guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }) else { print("not running"); break }
+    var closed = false, seen: [String] = []
+    for _ in 0..<15 where !closed {
+        var windows: CFTypeRef?
+        AXUIElementCopyAttributeValue(AXUIElementCreateApplication(app.processIdentifier), kAXWindowsAttribute as CFString, &windows)
+        seen = []
+        for window in windows as? [AXUIElement] ?? [] {
+            var title: CFTypeRef?, button: CFTypeRef?
+            AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &title)
+            AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &button)
+            let text = (title as? String) ?? ""
+            seen.append("\"\(text)\"\(button == nil ? " (no close button)" : "")")
+            guard filter.isEmpty || text.lowercased().contains(filter), let button else { continue }
+            print("close \(text):", AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString).rawValue)
+            closed = true
+            break
+        }
+        if !closed { usleep(200_000) }
+    }
+    if !closed { print("no closable window; windows seen:", seen.joined(separator: ", ")) }
 case "axsetfield":
     // Sets the first text (or secure text) field in an app's windows through Accessibility.
     let name = args[1], value = args[2]
