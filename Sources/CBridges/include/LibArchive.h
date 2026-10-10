@@ -129,4 +129,58 @@ int archive_write_add_filter_bzip2(struct archive *);
 int archive_write_set_options(struct archive *, const char *options);
 int archive_write_open_filename(struct archive *, const char *filename);
 
+// ---------------------------------------------------------------------------
+// Added for TuttoKit/Archives. Every symbol below is exported by the macOS
+// libarchive 3.7.4 (see the SDK's libarchive.2.tbd).
+
+const char *archive_version_string(void);
+const char *archive_version_details(void);
+
+// Formats (archive_format() & ARCHIVE_FORMAT_BASE_MASK)
+#define ARCHIVE_FORMAT_BASE_MASK 0xff0000
+#define ARCHIVE_FORMAT_CPIO 0x10000
+#define ARCHIVE_FORMAT_SHAR 0x20000
+#define ARCHIVE_FORMAT_TAR 0x30000
+#define ARCHIVE_FORMAT_ISO9660 0x40000
+#define ARCHIVE_FORMAT_ZIP 0x50000
+#define ARCHIVE_FORMAT_EMPTY 0x60000
+#define ARCHIVE_FORMAT_AR 0x70000
+#define ARCHIVE_FORMAT_MTREE 0x80000
+#define ARCHIVE_FORMAT_RAW 0x90000
+#define ARCHIVE_FORMAT_XAR 0xA0000
+#define ARCHIVE_FORMAT_LHA 0xB0000
+#define ARCHIVE_FORMAT_CAB 0xC0000
+#define ARCHIVE_FORMAT_RAR 0xD0000
+#define ARCHIVE_FORMAT_7ZIP 0xE0000
+#define ARCHIVE_FORMAT_WARC 0xF0000
+#define ARCHIVE_FORMAT_RAR_V5 0x100000
+
+// Individual read filters (built in; zstd/lz4/lzop/lrzip/grzip are external-program only on macOS)
+int archive_read_support_filter_bzip2(struct archive *);
+int archive_read_support_filter_compress(struct archive *);
+int archive_read_support_filter_gzip(struct archive *);
+int archive_read_support_filter_lzip(struct archive *);
+int archive_read_support_filter_lzma(struct archive *);
+int archive_read_support_filter_xz(struct archive *);
+int archive_read_support_filter_uu(struct archive *);
+int archive_read_support_filter_rpm(struct archive *);
+
+// Individual read formats (format_all also enables mtree, which can reference local files)
+int archive_read_support_format_7zip(struct archive *);
+int archive_read_support_format_ar(struct archive *);
+int archive_read_support_format_cab(struct archive *);
+int archive_read_support_format_cpio(struct archive *);
+int archive_read_support_format_iso9660(struct archive *);
+int archive_read_support_format_lha(struct archive *);
+int archive_read_support_format_rar(struct archive *);
+int archive_read_support_format_rar5(struct archive *);
+int archive_read_support_format_tar(struct archive *);
+int archive_read_support_format_warc(struct archive *);
+int archive_read_support_format_xar(struct archive *);
+int archive_read_support_format_zip(struct archive *);
+
+// Entry details
+int archive_entry_is_data_encrypted(struct archive_entry *);
+int archive_entry_is_metadata_encrypted(struct archive_entry *);
+
 #endif /* LibArchive_h */
