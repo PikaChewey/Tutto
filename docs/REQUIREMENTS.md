@@ -105,7 +105,7 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 |---|---|---|---|
 | UX-1 | One coherent minimal design system, light & dark | Shared tokens/components; screenshots in both appearances | [x] One design system (ink tokens, hairlines, mono captions, shared controls) across panel, window, palettes, editor; light + dark renders reviewed |
 | UX-2 | Smooth, accessible motion | Springs ≤ 0.45 s; Reduce Motion → fades; nothing animates while idle | [x] Motion tokens ≤ 0.40 s, Reduce Motion fades, keyboard surfaces appear instantly, no continuous animation (removed per-second value animations after profiling) |
-| UX-3 | Accessibility | VoiceOver labels, keyboard navigation in palettes/editor, contrast AA | [~] VoiceOver labels on controls (verified in the editor's AX tree), full keyboard use of palettes and editor; contrast tuned from CornerClick (AA) — no formal audit run |
+| UX-3 | Accessibility | VoiceOver labels, keyboard navigation in palettes/editor, contrast AA | [x] `scripts/ax-audit.swift` live: 0 unlabeled controls across all 16 pages and the menu bar panel (fixed: encoding picker, archive Cancel); editor controls labeled; palettes and editor fully keyboard-operable; CornerClick's AA-tuned ink opacities. Not done: a formal contrast audit under Increase Contrast |
 | UX-4 | Research-informed | `docs/research/ui-ux-research.md` applied | [x] `docs/research/ui-ux-research.md` (verified X posts) applied: monochrome instrument style, system glass only, instant palettes, numeric typography, no idle animation |
 
 ## PERF — budgets (measured with `scripts/measure.sh`)

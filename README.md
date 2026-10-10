@@ -7,6 +7,12 @@ Battery &amp; system stats · temperatures &amp; fans · clipboard history · wi
 
 Tutto replaces six apps — Stats, Macs Fan Control, Raycast's clipboard and window commands, Shottr, The Unarchiver and CornerClick — with one native Swift app that uses **13 MB of memory and no measurable CPU while idle**. Every tool can be switched off, and a tool that's off uses nothing at all.
 
+<p align="center">
+  <img src="docs/assets/panel.png" width="300" alt="Tutto's menu bar panel: battery health, cycles and power, top energy users, CPU/GPU/memory/disk, temperatures, the CornerClick corner, and quick actions">
+  &nbsp;&nbsp;
+  <img src="docs/assets/clipboard.png" width="520" alt="Clipboard history palette with search, type filters, preview and keyboard hints">
+</p>
+
 ## Install
 
 Requirements: macOS 14 or later (built and tested on macOS 26.5 on an M5 MacBook Pro), Xcode 26 to build.

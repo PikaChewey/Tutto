@@ -50,6 +50,7 @@ Run against the release build launched from `build/`, driven with real HID event
 | Archives | Password-protected zip | ✅ prompt appears (now a focus-taking panel; the first version, an alert, could leave typing going to the previous app). Decryption itself covered by unit tests (ZipCrypto, AES) |
 | Clipboard | ⌃⇧V-style palette (test shortcut) → type "paste test" → ↩ with TextEdit in front | ✅ "tutto paste test 123" (the older of two clips) pasted into TextEdit, read back via Accessibility; footer showed "Paste to TextEdit" |
 | Windows | Per-action shortcuts: Left Half on ⌃⌥⌘L, Maximize on ⌃⌥⌘M | ✅ (0, 33, 756 × 858) then (0, 33, 1512 × 858) |
+| Accessibility | `scripts/ax-audit.swift` over all 16 main-window pages and the menu bar panel | ✅ 0 unlabeled interactive elements (2 found and fixed: encoding picker, archive Cancel) |
 | Accessibility | Editor controls in the AX tree | ✅ Select, Draw, Highlight, Arrow, Rectangle, Pixelate, Text, Undo, Redo, Save, Copy all labeled |
 | Performance | See [PERFORMANCE.md](PERFORMANCE.md) | ✅ all idle budgets |
 
