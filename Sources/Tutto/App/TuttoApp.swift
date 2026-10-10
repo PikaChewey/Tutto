@@ -69,7 +69,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let model = AppModel.shared
         let files = urls.filter(\.isFileURL)
         let requests = urls.filter { $0.scheme == "tutto" }
-        for request in requests { ArchiveRequests.handle(request, model: model) }
+        for request in requests {
+            switch request.host {
+            case "archive": ArchiveRequests.handle(request, model: model)
+            case "open", "do": DeepLinks.handle(request, model: model)
+            default: break
+            }
+        }
         if !files.isEmpty { ArchiveRequests.open(files, model: model) }
     }
 
@@ -90,5 +96,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
         return ProcessInfo.processInfo.systemUptime < 180
+    }
+}
+
+/// `tutto://open/<page>` shows a page of the app; `tutto://do/<action>` runs an action, for
+/// automation (Shortcuts, Raycast scripts, Stream Deck…).
+///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows screenshots archives cornerClick shortcuts permissions general
+///   actions: capture-area capture-screen capture-edit clipboard windows
+@MainActor
+enum DeepLinks {
+    static func handle(_ url: URL, model: AppModel) {
+        let name = url.pathComponents.dropFirst().first ?? ""
+        if url.host == "open" {
+            MainWindowController.shared.show(page: MainPage(rawValue: name) ?? .overview)
+            return
+        }
+        let action: ShortcutAction? = switch name {
+        case "capture-area": .captureArea
+        case "capture-screen": .captureScreen
+        case "capture-edit": .captureAreaEdit
+        case "clipboard": .clipboardHistory
+        case "windows": .windowPalette
+        default: nil
+        }
+        if let action { model.perform(action) }
     }
 }
