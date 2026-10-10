@@ -36,7 +36,7 @@ Sign the helper first, then any other nested code, then the app. Don't use `--de
 
 ```sh
 IDENTITY="Apple Development: bryan.yao520@gmail.com (N3UA59RRRA)"
-APP=build/Tutto.app
+APP=build/Products.noindex/Tutto.app
 
 codesign --force --options runtime --timestamp=none \
   --identifier ca.bryanyao.Tutto.helper --sign "$IDENTITY" "$APP/Contents/MacOS/TuttoHelper"

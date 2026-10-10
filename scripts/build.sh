@@ -2,7 +2,7 @@
 # Builds Tutto.app: compiles the Swift package, assembles the bundle (app, Finder
 # extension, fan helper, icon), and signs it inside-out.
 #
-#   scripts/build.sh            release build into build/Tutto.app
+#   scripts/build.sh            release build into build/Products.noindex/Tutto.app
 #   scripts/build.sh --debug    debug build (enables --snapshot rendering)
 #   scripts/build.sh --install  also replaces /Applications/Tutto.app and registers it
 #
@@ -30,7 +30,7 @@ swift build -c $CONFIG --arch arm64 --product TuttoFinder
 swift build -c $CONFIG --arch arm64 --product TuttoHelper
 BIN=.build/arm64-apple-macosx/$CONFIG
 
-APP=build/Tutto.app
+APP=build/Products.noindex/Tutto.app   # .noindex: Spotlight lists only the installed copy
 rm -rf $APP
 mkdir -p $APP/Contents/{MacOS,Resources,PlugIns,Library/LaunchDaemons}
 

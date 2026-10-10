@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Measures Tutto's idle cost with different sets of modules on (launches the build in
-# build/Tutto.app without global shortcuts, so it can run beside Shottr/Raycast).
+# build/Products.noindex/Tutto.app without global shortcuts, so it can run beside Shottr/Raycast).
 #   scripts/measure-modules.sh [seconds-per-run]
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -9,7 +9,7 @@ run() {
   local label=$1; shift
   pkill -x Tutto; sleep 1
   defaults write ca.bryanyao.Tutto modules.enabled -array "$@"
-  (nohup ./build/Tutto.app/Contents/MacOS/Tutto --background --no-shortcuts > /dev/null 2>&1 &)
+  (nohup ./build/Products.noindex/Tutto.app/Contents/MacOS/Tutto --background --no-shortcuts > /dev/null 2>&1 &)
   sleep 6
   echo "== $label"
   ./scripts/measure.sh $secs Tutto | tail -1

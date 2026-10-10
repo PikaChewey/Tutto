@@ -1,6 +1,7 @@
 // Drives Tutto for live tests by posting real keyboard and mouse events.
 //
 //   swift scripts/drive.swift key cmd+shift+2          press a shortcut
+//   swift scripts/drive.swift keyto Tutto ctrl+opt+cmd+j   deliver a key press to one app only
 //   swift scripts/drive.swift type "left half"         type text
 //   swift scripts/drive.swift drag 200 200 600 500     drag (global top-left points)
 //   swift scripts/drive.swift click 400 300
@@ -50,6 +51,47 @@ func press(_ combo: String) {
     usleep(30_000)
 }
 
+/// Posts a key press straight into one app's event queue, so it can never land in another app
+/// (or in whatever the person at the Mac is typing into). Modifiers arrive as flagsChanged first, like a keyboard.
+func press(_ combo: String, toApp name: String) {
+    guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }) else { fatalError("\(name) isn't running") }
+    let pid = app.processIdentifier
+    let privateSource = CGEventSource(stateID: .privateState)
+    var flags: CGEventFlags = []
+    var key = ""
+    var modifierKeys: [(CGEventFlags, Int)] = []
+    for part in combo.lowercased().split(separator: "+") {
+        switch part {
+        case "cmd", "command": modifierKeys.append((.maskCommand, kVK_Command))
+        case "shift": modifierKeys.append((.maskShift, kVK_Shift))
+        case "opt", "option", "alt": modifierKeys.append((.maskAlternate, kVK_Option))
+        case "ctrl", "control": modifierKeys.append((.maskControl, kVK_Control))
+        default: key = String(part)
+        }
+    }
+    func post(_ event: CGEvent) { event.postToPid(pid); usleep(25_000) }
+    for (flag, code) in modifierKeys {
+        flags.insert(flag)
+        let event = CGEvent(keyboardEventSource: privateSource, virtualKey: CGKeyCode(code), keyDown: true)!
+        event.type = .flagsChanged
+        event.flags = flags
+        post(event)
+    }
+    guard let code = keyCodes[key] else { fatalError("unknown key \(key)") }
+    for down in [true, false] {
+        let event = CGEvent(keyboardEventSource: privateSource, virtualKey: CGKeyCode(code), keyDown: down)!
+        event.flags = flags
+        post(event)
+    }
+    for (flag, code) in modifierKeys.reversed() {
+        flags.remove(flag)
+        let event = CGEvent(keyboardEventSource: privateSource, virtualKey: CGKeyCode(code), keyDown: false)!
+        event.type = .flagsChanged
+        event.flags = flags
+        post(event)
+    }
+}
+
 func type(_ text: String) {
     // Letters, digits and space go as real key codes (like a keyboard); anything else as Unicode.
     for character in text.lowercased() {
@@ -82,6 +124,8 @@ func mouse(_ type: CGEventType, _ point: CGPoint) {
 switch args.first {
 case "key":
     press(args[1])
+case "keyto":
+    press(args[2], toApp: args[1])
 case "type":
     type(args.dropFirst().joined(separator: " "))
 case "move":

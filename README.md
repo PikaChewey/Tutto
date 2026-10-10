@@ -92,7 +92,7 @@ Measurements and comparisons with the apps Tutto replaces are in [docs/PERFORMAN
 ```bash
 swift test                               # 194 unit tests (engine, readers, archives, clipboard, layout…)
 scripts/build.sh --debug                 # debug build with offscreen UI snapshots:
-build/Tutto.app/Contents/MacOS/Tutto --snapshot /tmp/shots panel battery editor
+build/Products.noindex/Tutto.app/Contents/MacOS/Tutto --snapshot /tmp/shots panel battery editor
 scripts/measure.sh 180 Tutto Stats Raycast Shottr   # idle CPU / memory / wake-ups
 scripts/measure-modules.sh 90            # idle cost per module combination
 ```
