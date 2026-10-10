@@ -80,7 +80,7 @@ Measurements and comparisons with comparable utilities are in [docs/PERFORMANCE.
 
 ## Limitations (honest)
 
-- **Fan control** writes the SMC through a root helper. On this M5 the keys (`F0md`, `F0Tg`) are verified to exist and reject non-root writes, but a successful root write still needs your one-time approval to test.
+- **Fan control** writes the SMC through a root helper you approve once (System Settings › General › Login Items & Extensions). Verified on an M5: Max spins the fan to about 6,550 rpm and quitting returns it to Auto.
 - **Temperatures:** Apple doesn't document which sensor is the CPU or GPU on Apple silicon. Tutto labels CPU/GPU only from published SMC key tables (on M5, confirmed to respond to CPU and GPU load on this Mac) and shows the rest as SoC die, battery and SSD.
 - **Archives:** Tutto uses the libarchive built into macOS, so encrypted RAR and 7z archives and zstd/lz4 compression can't be opened (password-protected zip works). Compression produces zip.
 - **Screen Recording:** macOS may periodically ask you to re-confirm it; that's macOS policy.

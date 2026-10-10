@@ -34,7 +34,7 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 |---|---|---|---|
 | FAN-1 | View temperatures | All valid IOHID/SMC sensors, junk readings (e.g. −9201 °C) filtered, honest labels | [x] 40+ IOHID/SMC sensors, junk (−9201 °C) filtered; CPU/GPU labels from published SMC key tables (M5) confirmed under load by test; shown in panel and page |
 | FAN-2 | View fans | Current / min / max RPM from SMC | [x] 1 fan, 2317–6550 rpm, current speed (0 = stopped) read without root |
-| FAN-3 | Edit fan power for heavy tasks | Auto / custom speed / Max via privileged helper; resets to Auto on quit, sleep, module off, or app crash | [!] Implemented (helper + XPC + resets on quit/sleep/disconnect/module off); non-root writes verified refused; actual speed change needs the user to approve the helper (App Background Activity) |
+| FAN-3 | Edit fan power for heavy tasks | Auto / custom speed / Max via privileged helper; resets to Auto on quit, sleep, module off, or app crash | [x] Live on the M5 after approving the helper: Max set mode 1 / target 6550 rpm and the fan spun from 0 to 6,553 rpm within 10 s (read independently from the SMC); quitting Tutto restored Auto (mode 0, target 0) and the fan stopped. Custom speed and the sleep / module-off / crash resets are implemented but were not exercised live |
 | FAN-4 | Honest support states | Shows "needs helper approval", "no fans on this Mac", etc. Never fakes a reading | [x] States for helper not installed / awaiting approval / no fans; never fakes readings |
 
 ## CLIP — clipboard history
