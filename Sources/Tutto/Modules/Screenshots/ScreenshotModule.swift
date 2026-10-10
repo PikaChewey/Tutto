@@ -130,14 +130,8 @@ final class ScreenshotModule: ModuleController {
     // MARK: Output
 
     func copyToClipboard(_ image: CGImage) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        let rep = NSBitmapImageRep(cgImage: image)
-        if let png = rep.representation(using: .png, properties: [:]) {
-            pasteboard.declareTypes([.png, .tiff], owner: nil)
-            pasteboard.setData(png, forType: .png)
-            if let tiff = rep.tiffRepresentation { pasteboard.setData(tiff, forType: .tiff) }
-        }
+        guard let png = image.pngData else { return }
+        PasteboardImage.write(png: png)
     }
 
     /// Saves into the screenshot folder with a Finder-style name. Returns the file, or nil.

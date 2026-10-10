@@ -36,7 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         let model = AppModel.shared
         let launchedAtLogin = Self.wasLaunchedAsLoginItem()
-        model.launch()
+        // `--no-shortcuts`: for measurement runs alongside other apps that own the same keys.
+        model.launch(quietly: CommandLine.arguments.contains("--no-shortcuts"))
         if !model.hasCompletedOnboarding {
             OnboardingWindowController.shared.show()
         } else if !launchedAtLogin && !CommandLine.arguments.contains("--background") {

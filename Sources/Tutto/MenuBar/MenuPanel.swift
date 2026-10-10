@@ -532,6 +532,7 @@ private struct ClipboardLine: View {
 /// apps that actually clash (same shortcuts, double right-clicks). One line each.
 private struct Notices: View {
     var model: AppModel
+    @AppStorage("notice.raycastDismissed") private var raycastNoticeDismissed = false
 
     var body: some View {
         let missing = Permission.allCases.filter { permission in
@@ -540,7 +541,9 @@ private struct Notices: View {
             return model.permissions.isGranted(permission) == false
         }
         let clashes = model.runningReplacedApps().filter { ["cc.ffitch.shottr", "ca.bryanyao.CornerClick"].contains($0.bundleID) }
-        if !missing.isEmpty || !clashes.isEmpty {
+        let raycast = model.runningReplacedApps().first { $0.bundleID == "com.raycast.macos" }
+            .flatMap { app in raycastNoticeDismissed ? nil : app }
+        if !missing.isEmpty || !clashes.isEmpty || raycast != nil {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(missing) { permission in
                     NoticeRow(symbol: "lock", text: "\(permission.title) needed", help: permission.powers, button: "Allow") {
@@ -548,8 +551,13 @@ private struct Notices: View {
                     }
                 }
                 ForEach(clashes) { app in
-                    NoticeRow(symbol: "exclamationmark.triangle", text: "\(app.name) is also running", help: app.advice, button: "Quit") {
+                    NoticeRow(symbol: "exclamationmark.triangle", text: "\(app.name) also uses your shortcuts", help: app.advice, button: "Quit") {
                         model.quit(app)
+                    }
+                }
+                if let raycast {
+                    NoticeRow(symbol: "exclamationmark.triangle", text: "Raycast may also use ⌃⇧V / ⌘⌥B", help: raycast.advice, button: "Got It") {
+                        raycastNoticeDismissed = true
                     }
                 }
             }

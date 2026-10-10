@@ -162,8 +162,8 @@ final class EditorCanvas: NSView {
         context.translateBy(x: rect.minX, y: rect.minY)
         context.scaleBy(x: scale, y: scale)
         context.translateBy(x: -currentCrop.minX, y: -currentCrop.minY)
-        for annotation in document.annotations { annotation.draw(in: context) }
-        draft?.draw(in: context)
+        for annotation in document.annotations { annotation.draw(in: context, source: document.base) }
+        draft?.draw(in: context, source: document.base)
         context.restoreGState()
 
         // Recognized text, flashed after OCR.
@@ -302,6 +302,9 @@ final class EditorCanvas: NSView {
         case .rectangle:
             draft = Annotation(shape: .rectangle(CGRect(origin: pixel, size: .zero)), color: document.color, width: document.currentWidth)
             drag = .shape(start: pixel)
+        case .pixelate:
+            draft = Annotation(shape: .pixelate(CGRect(origin: pixel, size: .zero)), color: document.color, width: 0)
+            drag = .shape(start: pixel)
         }
         needsDisplay = true
     }
@@ -349,6 +352,9 @@ final class EditorCanvas: NSView {
             case .rectangle:
                 draft.shape = .rectangle(CGRect(x: min(start.x, pixel.x), y: min(start.y, pixel.y),
                                                 width: abs(pixel.x - start.x), height: abs(pixel.y - start.y)))
+            case .pixelate:
+                draft.shape = .pixelate(CGRect(x: min(start.x, pixel.x), y: min(start.y, pixel.y),
+                                               width: abs(pixel.x - start.x), height: abs(pixel.y - start.y)))
             case .stroke: break
             }
             self.draft = draft
@@ -381,7 +387,7 @@ final class EditorCanvas: NSView {
         switch annotation.shape {
         case .stroke(let points): !points.isEmpty
         case .arrow(let a, let b): hypot(b.x - a.x, b.y - a.y) > 3
-        case .rectangle(let rect): rect.width > 2 && rect.height > 2
+        case .rectangle(let rect), .pixelate(let rect): rect.width > 2 && rect.height > 2
         }
     }
 
@@ -471,6 +477,7 @@ final class EditorCanvas: NSView {
         case "h": document.tool = .highlighter
         case "a": document.tool = .arrow
         case "r": document.tool = .rectangle
+        case "b": document.tool = .pixelate
         case "t": onRecognizeText?()
         case "[": stepThickness(-1)
         case "]": stepThickness(1)

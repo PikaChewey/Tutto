@@ -240,9 +240,7 @@ final class ClipboardModule: ModuleController {
             }
         case .image:
             if let url = store.imageURL(for: item), let data = try? Data(contentsOf: url) {
-                pasteboard.declareTypes([.png, .tiff], owner: nil)
-                pasteboard.setData(data, forType: .png)
-                if let tiff = NSImage(data: data)?.tiffRepresentation { pasteboard.setData(tiff, forType: .tiff) }
+                PasteboardImage.write(png: data, to: pasteboard)
             } else {
                 ok = false
             }

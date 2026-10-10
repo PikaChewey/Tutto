@@ -48,6 +48,9 @@ final class AppModel {
     /// `quietly` (offscreen snapshots) starts modules without taking any global shortcuts.
     func launch(quietly: Bool = false) {
         for id in ModuleID.allCases where enabled.contains(id) { start(id) }
+        // Things that live outside Tutto's process must match the switch even if it was
+        // turned off in an earlier session: Finder only loads the menu extension when Archives is on.
+        if !enabled.contains(.archives) && !quietly { permissions.setFinderExtension(enabled: false) }
         if !quietly { bindShortcuts() }
         permissions.refresh()
     }

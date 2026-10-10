@@ -212,3 +212,23 @@ final class HotkeyCenter {
         registrations[number]?.handler()
     }
 }
+
+/// Apps that, when running, also respond to some of Tutto's default shortcuts. macOS delivers a
+/// shared global shortcut to every app that registered it (verified with Shottr on macOS 26.5),
+/// so both would react.
+@MainActor
+enum ExternalShortcuts {
+    static func runningOwner(of shortcut: KeyShortcut?) -> String? {
+        guard let shortcut else { return nil }
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        if running.contains("cc.ffitch.shottr"),
+           [KeyShortcut.cmdShift(kVK_ANSI_1), .cmdShift(kVK_ANSI_2)].contains(shortcut) {
+            return "Shottr"
+        }
+        if running.contains("com.raycast.macos"),
+           [KeyShortcut.ctrlShift(kVK_ANSI_V), .cmdOption(kVK_ANSI_B)].contains(shortcut) {
+            return "Raycast"
+        }
+        return nil
+    }
+}

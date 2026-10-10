@@ -163,6 +163,8 @@ struct ShortcutsPage: View {
                             Text("\(module.title) is off").font(.system(size: 11)).foregroundStyle(Color.ink3)
                         } else if model.hotkeys.failed.contains(action.id) {
                             Text("macOS didn't accept this shortcut").font(.system(size: 11)).foregroundStyle(Color.alert)
+                        } else if let owner = ExternalShortcuts.runningOwner(of: model.shortcuts.shortcut(for: action)) {
+                            Text("\(owner) is running and may also respond to this").font(.system(size: 11)).foregroundStyle(Color.ink2)
                         }
                     }
                     Spacer()

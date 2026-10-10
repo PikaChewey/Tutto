@@ -12,7 +12,7 @@ import Observation
 import Vision
 
 enum EditorTool: String, CaseIterable, Identifiable {
-    case select, pen, highlighter, arrow, rectangle
+    case select, pen, highlighter, arrow, rectangle, pixelate
 
     var id: String { rawValue }
 
@@ -23,6 +23,7 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .highlighter: "Highlight"
         case .arrow: "Arrow"
         case .rectangle: "Rectangle"
+        case .pixelate: "Pixelate"
         }
     }
 
@@ -33,6 +34,7 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .highlighter: "highlighter"
         case .arrow: "arrow.up.right"
         case .rectangle: "rectangle"
+        case .pixelate: "checkerboard.rectangle"
         }
     }
 
@@ -43,6 +45,7 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .highlighter: "H"
         case .arrow: "A"
         case .rectangle: "R"
+        case .pixelate: "B"
         }
     }
 }
@@ -52,6 +55,8 @@ struct Annotation: Identifiable, Equatable {
         case stroke([CGPoint])
         case arrow(CGPoint, CGPoint)
         case rectangle(CGRect)
+        /// Hides what's underneath (passwords, names) behind coarse blocks of the original pixels.
+        case pixelate(CGRect)
     }
 
     let id = UUID()
@@ -61,7 +66,20 @@ struct Annotation: Identifiable, Equatable {
     var highlighter = false
 
     /// Draws in image-pixel coordinates (the context's CTM maps those to the output).
-    func draw(in context: CGContext) {
+    /// `source` is the original picture, needed by Pixelate.
+    func draw(in context: CGContext, source: CGImage? = nil) {
+        if case .pixelate(let rect) = shape {
+            guard let source, let blocks = Self.pixelated(source, rect: rect.standardized.integral) else { return }
+            context.saveGState()
+            context.interpolationQuality = .none
+            // Images draw bottom-up; flip locally so the blocks land where the rect is.
+            let r = rect.standardized.integral
+            context.translateBy(x: r.minX, y: r.maxY)
+            context.scaleBy(x: 1, y: -1)
+            context.draw(blocks, in: CGRect(x: 0, y: 0, width: r.width, height: r.height))
+            context.restoreGState()
+            return
+        }
         context.saveGState()
         defer { context.restoreGState() }
         let alpha: CGFloat = highlighter ? 0.38 : 1
@@ -92,7 +110,23 @@ struct Annotation: Identifiable, Equatable {
             context.fillPath()
         case .rectangle(let rect):
             context.stroke(rect.standardized)
+        case .pixelate:
+            break
         }
+    }
+
+    /// The region shrunk to a few blocks across (averaging the pixels), to be drawn back up without smoothing.
+    static func pixelated(_ source: CGImage, rect: CGRect) -> CGImage? {
+        guard rect.width >= 2, rect.height >= 2,
+              let region = source.cropping(to: rect.intersection(CGRect(x: 0, y: 0, width: source.width, height: source.height))),
+              let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        let block = min(max(max(rect.width, rect.height) / 16, 8), 40)
+        let width = max(Int((rect.width / block).rounded()), 1), height = max(Int((rect.height / block).rounded()), 1)
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.interpolationQuality = .medium
+        context.draw(region, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
     }
 
     /// Quadratic curves through the midpoints: smooth freehand lines without lag.
@@ -221,7 +255,7 @@ final class EditorDocument {
             context.translateBy(x: 0, y: CGFloat(height))
             context.scaleBy(x: 1, y: -1)
             context.translateBy(x: -region.minX, y: -region.minY)
-            for annotation in annotations { annotation.draw(in: context) }
+            for annotation in annotations { annotation.draw(in: context, source: base) }
         }
         return context.makeImage()
     }
