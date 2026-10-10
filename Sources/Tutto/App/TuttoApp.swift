@@ -80,10 +80,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// True when macOS started Tutto as a login item, so it should stay in the menu bar.
+    /// Uses macOS's login-item flag, and as a fallback treats a launch within three minutes
+    /// of boot as a login launch (a window popping up at every startup would be worse).
     private static func wasLaunchedAsLoginItem() -> Bool {
-        guard let event = NSAppleEventManager.shared().currentAppleEvent,
-              event.eventID == kAEOpenApplication,
-              let property = event.paramDescriptor(forKeyword: keyAEPropData) else { return false }
-        return property.enumCodeValue == keyAELaunchedAsLogInItem
+        if let event = NSAppleEventManager.shared().currentAppleEvent,
+           event.eventID == kAEOpenApplication,
+           let property = event.paramDescriptor(forKeyword: keyAEPropData),
+           property.enumCodeValue == keyAELaunchedAsLogInItem {
+            return true
+        }
+        return ProcessInfo.processInfo.systemUptime < 180
     }
 }
