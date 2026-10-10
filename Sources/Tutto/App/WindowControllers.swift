@@ -33,6 +33,9 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             window.setContentSize(NSSize(width: 920, height: 640))
             window.contentMinSize = NSSize(width: 780, height: 520)
             window.isReleasedWhenClosed = false
+            // Open on the Space you're in, even over a full-screen app (otherwise macOS may put
+            // it on another Space where you'd never see it).
+            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
             window.setFrameAutosaveName("TuttoMain")
             window.delegate = self
             if !window.setFrameUsingName("TuttoMain") { window.center() }

@@ -40,6 +40,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
             window.titleVisibility = .hidden
             window.isMovableByWindowBackground = true
             window.isReleasedWhenClosed = false
+            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
             window.title = "Welcome to Tutto"
             window.delegate = self
             window.center()
