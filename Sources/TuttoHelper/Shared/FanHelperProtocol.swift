@@ -1,0 +1,1 @@
+../../TuttoKit/Sensors/FanHelperProtocol.swift
