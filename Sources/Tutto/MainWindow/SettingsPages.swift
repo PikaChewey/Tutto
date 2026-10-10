@@ -74,7 +74,7 @@ private struct OverviewStats: View {
             stat("Memory", Format.percent(monitor.memory?.usedFraction ?? 0), "%",
                  detail: monitor.memory.map { "pressure \($0.pressure.label.lowercased())" } ?? "", page: .memory)
             Hairline(vertical: true).padding(.vertical, 8)
-            let free = Format.bytesParts(monitor.rootVolume?.available ?? 0)
+            let free = Format.diskParts(monitor.rootVolume?.available ?? 0)
             stat("Disk", free.0, free.1, detail: "free", page: .disk)
         }
         .padding(.vertical, 6)
@@ -354,6 +354,7 @@ private struct CornerClickPageContent: View {
                         InkSwitch(isOn: $module.diagnostics, label: "Diagnostics log")
                     }
                 }
+                Hairline().opacity(0.6)
                 LabeledRow("Reset corner size", detail: "Back to Medium.") {
                     Button("Reset") { module.zoneIsCustom = false; module.resetZone() }
                         .buttonStyle(OutlineButtonStyle(compact: true))

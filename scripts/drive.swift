@@ -147,6 +147,15 @@ case "statusitem":
         if let position { AXValueGetValue(position as! AXValue, .cgPoint, &p) }
         print("item at", Int(p.x), Int(p.y), "press:", AXUIElementPerformAction(item, kAXPressAction as CFString).rawValue)
     }
+case "taps":
+    // Event taps installed by a process (CornerClick's lives only while the module is on).
+    var count: UInt32 = 0
+    CGGetEventTapList(0, nil, &count)
+    var taps = [CGEventTapInformation](repeating: CGEventTapInformation(), count: Int(count))
+    CGGetEventTapList(count, &taps, &count)
+    let pid = Int32(args[1])!
+    let mine = taps.filter { $0.tappingProcess == pid }
+    print("taps for \(pid):", mine.count, mine.map { "enabled=\($0.enabled) mask=\(String($0.eventsOfInterest, radix: 16))" })
 case "pbsave":
     // Saves every item and type on the clipboard, so tests can put it back exactly.
     let items = (NSPasteboard.general.pasteboardItems ?? []).map { item in
