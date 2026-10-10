@@ -4,7 +4,7 @@ Machine: MacBook Pro 14" (Apple M5), macOS 26.5.2, Xcode 26.6 / Swift 6.3.3. Dat
 
 ## Automated (`swift test`)
 
-**189 tests, 0 failures** (141 XCTest + 48 Swift Testing).
+**194 tests, 0 failures** (146 XCTest + 48 Swift Testing).
 
 | Suite | Tests | Covers |
 |---|---|---|
@@ -15,6 +15,7 @@ Machine: MacBook Pro 14" (Apple M5), macOS 26.5.2, Xcode 26.6 / Swift 6.3.3. Dat
 | Clipboard store | 8 | dedupe → top, search/filter/pinning, limits keep pinned, image cap, persistence with blobs, blob deletion, link detection, titles |
 | Window layout + fuzzy matching | 7 | halves/thirds/quarters/maximize/center/height, gaps, moving between displays, Cocoa→AX flip, "left half"/"lh"/"max" matching |
 | Shortcuts | 5 | symbol order, Carbon modifiers, grave key, validity, Codable |
+| Shortcut recording | 5 | Esc cancels, Delete removes, bare keys need a modifier (F-keys allowed), conflicts refused, defaults record |
 
 Defects caught by these tests and fixed: "Center" grew windows by 1 pt (`integral` on a half-point origin); a test-helper name clash between suites.
 
