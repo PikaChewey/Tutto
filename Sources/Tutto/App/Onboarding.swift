@@ -46,7 +46,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
             self.window = window
         }
         NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
+        AppActivation.bringForward()
         window?.makeKeyAndOrderFront(nil)
     }
 

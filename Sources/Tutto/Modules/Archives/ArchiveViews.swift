@@ -26,10 +26,12 @@ final class ArchiveProgressController {
             return
         }
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 120),
-                            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel, .utilityWindow],
+                            styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel, .utilityWindow],
                             backing: .buffered, defer: false)
         panel.titlebarAppearsTransparent = true
         panel.titleVisibility = .hidden
+        // Each job has its own × ; window buttons would only add clutter.
+        [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].forEach { panel.standardWindowButton($0)?.isHidden = true }
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.isReleasedWhenClosed = false
@@ -63,7 +65,7 @@ private struct ArchiveProgressView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 30)
+        .padding(.top, 16)
         .padding(.bottom, 16)
         .frame(width: 380)
         .animation(Motion.snappy, value: module.jobs.map(\.id))
@@ -102,7 +104,9 @@ private struct JobRow: View {
                 .truncationMode(.middle)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .accessibilityElement(children: .combine)
+        // Contain, don't combine: the Cancel button must stay reachable with VoiceOver.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(job.name)
     }
 
     private var isFailure: Bool {

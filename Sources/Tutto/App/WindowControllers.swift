@@ -40,7 +40,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         }
         // A regular app while the window is open: Dock icon, ⌘-Tab, menu bar menus.
         NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
+        AppActivation.bringForward()
         window?.makeKeyAndOrderFront(nil)
     }
 
@@ -63,6 +63,13 @@ final class MainNavigation {
 /// Tutto is a menu bar app (no Dock icon) except while one of its full windows is open.
 @MainActor
 enum AppActivation {
+    /// Brings Tutto to the front for a window the user asked for (a shortcut, a prompt).
+    /// macOS 14+'s cooperative `activate()` is declined when no click preceded it, which would
+    /// leave keystrokes going to the previous app, so ask firmly.
+    static func bringForward() {
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     static func update() {
         let hasRegularWindow = NSApp.windows.contains { window in
             window.isVisible && window.styleMask.contains(.titled) && !(window is NSPanel) && window.level == .normal

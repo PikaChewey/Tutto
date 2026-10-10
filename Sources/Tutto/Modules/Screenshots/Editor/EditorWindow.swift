@@ -63,7 +63,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         window.setFrame(NSRect(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2,
                                width: size.width, height: size.height).integral, display: false)
         self.window = window
-        NSApp.activate()
+        AppActivation.bringForward()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(canvas)
         AppActivation.update()

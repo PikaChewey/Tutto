@@ -38,7 +38,7 @@ final class SelectionOverlay {
             window.orderFrontRegardless()
             windows.append(window)
         }
-        NSApp.activate()
+        AppActivation.bringForward()
         let mouse = NSEvent.mouseLocation
         let key = windows.first { NSMouseInRect(mouse, $0.frame, false) } ?? windows.first
         key?.makeKey()

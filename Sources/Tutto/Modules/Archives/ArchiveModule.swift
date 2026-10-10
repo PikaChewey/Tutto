@@ -119,7 +119,7 @@ final class ArchiveModule: ModuleController {
             panel.prompt = "Extract Here"
             panel.message = archives.count == 1 ? "Where should “\(archives[0].lastPathComponent)” go?" : "Where should these \(archives.count) archives go?"
             panel.directoryURL = archives[0].deletingLastPathComponent()
-            NSApp.activate()
+            AppActivation.bringForward()
             guard panel.runModal() == .OK, let url = panel.url else { return }
             chosenFolder = url
         }
@@ -251,21 +251,15 @@ final class ArchiveModule: ModuleController {
     }
 
     private func askPassword(for archive: URL, job: ArchiveJob, destination: URL, options: ArchiveExtractionOptions, wrong: Bool) {
+        job.state = .cancelled  // this attempt is over; a new job starts if a password is given
         jobs.removeAll { $0.id == job.id }
         if jobs.isEmpty { progress?.close(); progress = nil }
-        let alert = NSAlert()
-        alert.messageText = wrong ? "That password didn't work." : "“\(archive.lastPathComponent)” is protected."
-        alert.informativeText = "Enter the archive's password."
-        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Extract")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-        NSApp.activate()
-        guard alert.runModal() == .alertFirstButtonReturn, !field.stringValue.isEmpty else { return }
-        var options = options
-        options.password = field.stringValue
-        run(extract: archive, to: destination, options: options)
+        PasswordPrompt.ask(archiveName: archive.lastPathComponent, wrong: wrong) { [weak self] password in
+            guard let self, let password else { return }
+            var options = options
+            options.password = password
+            self.run(extract: archive, to: destination, options: options)
+        }
     }
 
     nonisolated static func describe(_ error: Error) -> String {

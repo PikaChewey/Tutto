@@ -24,7 +24,7 @@ let keyCodes: [String: Int] = [
     "6": kVK_ANSI_6, "7": kVK_ANSI_7, "8": kVK_ANSI_8, "9": kVK_ANSI_9, "`": kVK_ANSI_Grave, "grave": kVK_ANSI_Grave,
     "space": kVK_Space, "return": kVK_Return, "enter": kVK_Return, "esc": kVK_Escape, "escape": kVK_Escape, "tab": kVK_Tab,
     "delete": kVK_Delete, "down": kVK_DownArrow, "up": kVK_UpArrow, "left": kVK_LeftArrow, "right": kVK_RightArrow,
-    "[": kVK_ANSI_LeftBracket, "]": kVK_ANSI_RightBracket,
+    "[": kVK_ANSI_LeftBracket, "]": kVK_ANSI_RightBracket, "-": kVK_ANSI_Minus, ".": kVK_ANSI_Period, "/": kVK_ANSI_Slash,
 ]
 
 func press(_ combo: String) {
@@ -213,6 +213,34 @@ case "axpress":
         }
     }
     if !pressed { print("not found:", label) }
+case "axsetfield":
+    // Sets the first text (or secure text) field in an app's windows through Accessibility.
+    let name = args[1], value = args[2]
+    guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }) else { print("not running"); break }
+    func findField(_ element: AXUIElement, depth: Int) -> AXUIElement? {
+        guard depth < 40 else { return nil }
+        var role: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+        if (role as? String) == "AXTextField" { return element }
+        var children: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children)
+        for child in children as? [AXUIElement] ?? [] {
+            if let found = findField(child, depth: depth + 1) { return found }
+        }
+        return nil
+    }
+    let root = AXUIElementCreateApplication(app.processIdentifier)
+    var windows: CFTypeRef?
+    AXUIElementCopyAttributeValue(root, kAXWindowsAttribute as CFString, &windows)
+    var done = false
+    for window in windows as? [AXUIElement] ?? [] {
+        if let field = findField(window, depth: 0) {
+            print("set:", AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, value as CFString).rawValue)
+            done = true
+            break
+        }
+    }
+    if !done { print("no field") }
 case "pbsave":
     // Saves every item and type on the clipboard, so tests can put it back exactly.
     let items = (NSPasteboard.general.pasteboardItems ?? []).map { item in
