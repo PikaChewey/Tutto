@@ -44,7 +44,7 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | CLIP-1 | ⌃⇧V opens history | Palette appears ≤ 150 ms, search focused | [x] Live: palette opens on the shortcut; search field focused (bug found and fixed: focus didn't reach the non-activating panel) |
 | CLIP-2 | Text, images, files, links | Each captured with preview; rich text keeps formatting on paste | [x] Live: text, link, image, file captured; rich text stored as RTF and restored on paste |
 | CLIP-3 | Search + type filter | Instant filter; All / Text / Images / Files / Links | [x] Unit tests (search, filters, pins) + palette UI with All/Text/Images/Files/Links (⇥ cycles) |
-| CLIP-4 | Paste, pin, delete | ↩ pastes into previous app, ⌘↩ copies only, pin/unpin, delete, clear unpinned | [~] Implemented (↩ paste, ⌘↩ copy, ⇧⌘P pin, ⌘⌫ delete, ⌘1–9, clear). Live paste-back test interrupted by an Automation prompt my test caused; to finish |
+| CLIP-4 | Paste, pin, delete | ↩ pastes into previous app, ⌘↩ copies only, pin/unpin, delete, clear unpinned | [x] Live: searched "paste test" in the palette, ↩ pasted exactly "tutto paste test 123" into TextEdit (read back via Accessibility); ⌘↩ copy, ⇧⌘P pin, ⌘⌫ delete, ⌘1–9 implemented |
 | CLIP-5 | Privacy | Skips password-manager (concealed/transient) items; pause capture; ignore list | [x] Live: concealed (password-manager) item not recorded; pause switch; ignore list with password managers by default |
 | CLIP-6 | Persistence | Survives relaunch; size/age limits | [x] Unit tests: persistence with blobs, 500-item limit, 100-image cap, pinned kept |
 
@@ -54,7 +54,7 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 |---|---|---|---|
 | WIN-1 | ⌘⌥B → type "left half" → ↩ | Frontmost window snaps to the left half of its screen's visible frame | [x] Live: palette → "left half" → Finder window at (0, 33, 756 × 858) exactly |
 | WIN-2 | Halves, thirds, quarters, center, maximize, displays | All actions work on the test machine incl. restore | [x] Live: right half, left half, center, restore, thirds (Finder's 536 pt min width respected); geometry unit-tested for all actions incl. displays |
-| WIN-3 | Per-action hotkeys | Optional recordable shortcut per action | [~] Each action has a recordable shortcut (Windows page, Shortcuts page); not exercised live |
+| WIN-3 | Per-action hotkeys | Optional recordable shortcut per action | [x] Live: Left Half on ⌃⌥⌘L → (0, 33, 756 × 858); Maximize on ⌃⌥⌘M → (0, 33, 1512 × 858); every action recordable on the Windows and Shortcuts pages |
 
 ## SHOT — screenshots (Shottr 1.9.3)
 
