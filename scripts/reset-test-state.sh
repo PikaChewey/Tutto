@@ -7,7 +7,7 @@ set -uo pipefail
 pkill -x Tutto 2>/dev/null
 sleep 0.5
 for key in shortcuts.v1 screenshots.folder hasCompletedOnboarding modules.enabled windows.usage \
-           notice.raycastDismissed panel.cornerClickExpanded; do
+           notice.raycastDismissed panel.cornerClickExpanded cornerclick.diagnostics; do
   defaults delete ca.bryanyao.Tutto "$key" 2>/dev/null
 done
 # Everything copied while a test build ran (test captures, and anything else copied meanwhile)
