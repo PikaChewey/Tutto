@@ -43,8 +43,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         }
         // A regular app while the window is open: Dock icon, ⌘-Tab, menu bar menus.
         NSApp.setActivationPolicy(.regular)
-        AppActivation.bringForward()
-        window?.makeKeyAndOrderFront(nil)
+        if let window { AppActivation.present(window) }
     }
 
     var isVisible: Bool { window?.isVisible ?? false }
@@ -71,6 +70,39 @@ enum AppActivation {
     /// leave keystrokes going to the previous app, so ask firmly.
     static func bringForward() {
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Shows a window on the Space you're looking at and brings Tutto forward. Activating from a
+    /// full-screen app can still make macOS switch to a desktop Space; the window then follows you
+    /// there instead of staying behind on the Space you left.
+    static func present(_ window: NSWindow) {
+        window.orderFrontRegardless()
+        bringForward()
+        window.makeKeyAndOrderFront(nil)
+        followSpaceSwitch(window)
+    }
+
+    private static var spaceObserver: NSObjectProtocol?
+
+    private static func followSpaceSwitch(_ window: NSWindow) {
+        stopFollowing()
+        let center = NSWorkspace.shared.notificationCenter
+        spaceObserver = center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak window] _ in
+            MainActor.assumeIsolated {
+                // `.moveToActiveSpace` windows move to the active Space when made key again.
+                if let window, window.isVisible, !window.isOnActiveSpace { window.makeKeyAndOrderFront(nil) }
+                stopFollowing()
+            }
+        }
+        // Only the switch caused by this activation counts; later ones are the user's.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            MainActor.assumeIsolated { stopFollowing() }
+        }
+    }
+
+    private static func stopFollowing() {
+        if let spaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver) }
+        spaceObserver = nil
     }
 
     static func update() {

@@ -43,12 +43,13 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
             window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
             window.title = "Welcome to Tutto"
             window.delegate = self
+            // Size it before centering; SwiftUI would otherwise grow it from its top-left corner later.
+            window.setContentSize(hosting.view.fittingSize)
             window.center()
             self.window = window
         }
         NSApp.setActivationPolicy(.regular)
-        AppActivation.bringForward()
-        window?.makeKeyAndOrderFront(nil)
+        if let window { AppActivation.present(window) }
     }
 
     func windowWillClose(_ notification: Notification) {
