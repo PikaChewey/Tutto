@@ -16,6 +16,7 @@ var total = 0, unlabeled: [String] = []
 func walk(_ element: AXUIElement, path: String, depth: Int) {
     guard depth < 40 else { return }
     let role = string(element, kAXRoleAttribute)
+    if role == "AXScrollBar" { return }  // the system scroller's own parts, announced by VoiceOver itself
     let subrole = string(element, kAXSubroleAttribute)
     if interactive.contains(role), !["AXCloseButton", "AXMinimizeButton", "AXZoomButton", "AXFullScreenButton"].contains(subrole) {
         total += 1

@@ -204,7 +204,7 @@ private struct ArchiveSettings: View {
                 }
                 Hairline().opacity(0.6)
                 LabeledRow("Filename encoding", detail: "Archives made on older or non-English systems often store names in a legacy encoding. Tutto detects it; override only if names still look wrong.") {
-                    Picker("", selection: $archives.encodingOverride) {
+                    Picker("Filename encoding", selection: $archives.encodingOverride) {
                         Text("Detect automatically").tag(UInt?.none)
                         Divider()
                         ForEach(EncodingChoice.all, id: \.value) { choice in
