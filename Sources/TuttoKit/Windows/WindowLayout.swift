@@ -120,12 +120,13 @@ public enum WindowLayout {
         switch action {
         case .center:
             let size = CGSize(width: min(current.width, area.width), height: min(current.height, area.height))
-            return CGRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2,
-                          width: size.width, height: size.height).integral
+            // Round the origin, keep the size exact (integral would grow it by a point).
+            return CGRect(x: (area.midX - size.width / 2).rounded(), y: (area.midY - size.height / 2).rounded(),
+                          width: size.width, height: size.height)
         case .maximizeHeight:
             let width = min(current.width, area.width)
             let x = min(max(current.minX, area.minX), area.maxX - width)
-            return CGRect(x: x, y: area.minY, width: width, height: area.height).integral
+            return CGRect(x: x.rounded(), y: area.minY, width: width, height: area.height)
         case .almostMaximize:
             return area.insetBy(dx: area.width * 0.05, dy: area.height * 0.05).integral
         case .nextDisplay, .previousDisplay, .restore:
@@ -146,7 +147,7 @@ public enum WindowLayout {
         var y = target.minY + relativeY * target.height
         x = min(max(x, target.minX), target.maxX - width)
         y = min(max(y, target.minY), target.maxY - height)
-        return CGRect(x: x, y: y, width: width, height: height).integral
+        return CGRect(x: x.rounded(), y: y.rounded(), width: width.rounded(), height: height.rounded())
     }
 
     /// Converts a Cocoa screen rect (bottom-left origin) to Accessibility coordinates (top-left origin of
@@ -156,7 +157,8 @@ public enum WindowLayout {
     }
 }
 
-/// Small fuzzy matcher for palettes: word prefixes beat subsequences; aliases count.
+/// Small fuzzy matcher for palettes: exact beats prefix beats word prefixes beats initials beats
+/// subsequences; aliases count slightly less than titles. Ties are left to the caller's order.
 public enum FuzzyMatcher {
     /// Higher is better; nil means no match.
     public static func score(_ query: String, title: String, aliases: [String] = []) -> Int? {
@@ -173,7 +175,7 @@ public enum FuzzyMatcher {
 
     private static func score(_ query: String, against candidate: String) -> Int? {
         if candidate == query { return 1000 }
-        if candidate.hasPrefix(query) { return 900 - candidate.count }
+        if candidate.hasPrefix(query) { return 900 }
         let queryWords = query.split(separator: " ")
         let candidateWords = candidate.split(separator: " ")
         // Every query word is the prefix of some candidate word, in order: "left ha" → "Left Half".
@@ -187,15 +189,15 @@ public enum FuzzyMatcher {
             position = found + 1
             if position > candidateWords.count { break }
         }
-        if allPrefixes { return 700 - candidate.count }
+        if allPrefixes { return 700 }
         // Initials: "lh" → "Left Half".
         let initials = String(candidateWords.compactMap(\.first))
-        if initials.hasPrefix(query.replacingOccurrences(of: " ", with: "")) { return 600 - candidate.count }
+        if initials.hasPrefix(query.replacingOccurrences(of: " ", with: "")) { return 600 }
         // Subsequence anywhere.
         var remaining = Substring(query.replacingOccurrences(of: " ", with: ""))
         for character in candidate where character == remaining.first {
             remaining = remaining.dropFirst()
-            if remaining.isEmpty { return 300 - candidate.count }
+            if remaining.isEmpty { return 300 }
         }
         return nil
     }

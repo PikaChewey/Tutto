@@ -82,6 +82,48 @@ struct SnapshotExtras {
     var inDefaultSet = true
     var view: (AppModel) -> AnyView
 
-    static var all: [SnapshotExtras] = []
+    static var all: [SnapshotExtras] {
+        var extras: [SnapshotExtras] = OnboardingStep.allCases.map { step in
+            SnapshotExtras(name: "onboarding-\(step.label.lowercased().replacingOccurrences(of: " ", with: "-"))") { model in
+                AnyView(OnboardingView(model: model, start: step, close: {}))
+            }
+        }
+        extras.append(SnapshotExtras(name: "clipboard-palette") { model in
+            guard let clipboard = model.clipboard else { return AnyView(EmptyView()) }
+            let palette = ClipboardPaletteModel(module: clipboard)
+            palette.targetName = "Safari"
+            return AnyView(ClipboardPaletteView(model: palette, actions: ClipboardPaletteController(module: clipboard))
+                .frame(width: 780, height: 480))
+        })
+        extras.append(SnapshotExtras(name: "window-palette") { model in
+            guard let windows = model.windows else { return AnyView(EmptyView()) }
+            let palette = WindowPaletteModel(module: windows)
+            palette.appName = "Safari"
+            palette.query = "half"
+            return AnyView(WindowPaletteView(model: palette, perform: { _ in }).frame(width: 560, height: 420))
+        })
+        extras.append(SnapshotExtras(name: "editor") { model in
+            guard let screenshots = model.screenshots, let image = sampleImage() else { return AnyView(EmptyView()) }
+            let editor = EditorWindowController(image: image, module: screenshots)
+            editor.document.selection = CGRect(x: 120, y: 90, width: 520, height: 300)
+            editor.document.add(Annotation(shape: .arrow(CGPoint(x: 900, y: 600), CGPoint(x: 660, y: 420)),
+                                           color: EditorPalette.colors[0], width: 6))
+            editor.document.add(Annotation(shape: .stroke([CGPoint(x: 700, y: 120), CGPoint(x: 760, y: 150), CGPoint(x: 840, y: 130),
+                                                           CGPoint(x: 900, y: 170)]), color: EditorPalette.colors[4], width: 6))
+            return AnyView(editor.snapshotView().frame(width: 1100, height: 760))
+        })
+        return extras
+    }
+
+    /// A screenshot-like picture for editor renders: the menu bar panel drawn offscreen.
+    static func sampleImage() -> CGImage? {
+        let host = NSHostingView(rootView: MainView(model: AppModel.shared, navigation: MainWindowController.shared.navigation)
+            .frame(width: 960, height: 640))
+        host.frame = NSRect(x: 0, y: 0, width: 960, height: 640)
+        host.layoutSubtreeIfNeeded()
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        return rep.cgImage
+    }
 }
 #endif

@@ -23,6 +23,8 @@ final class EditorCanvas: NSView {
     var onClose: (() -> Void)?
 
     private let imageLayer = CALayer()
+    /// Drawings and the selection sit in their own view so they render above the picture's layer.
+    private let overlay = CanvasOverlay()
     private var userZoom: CGFloat = 1
     private var pan: CGPoint = .zero
     private var draft: Annotation?
@@ -54,6 +56,8 @@ final class EditorCanvas: NSView {
         imageLayer.shadowRadius = 12
         imageLayer.shadowOffset = CGSize(width: 0, height: -2)
         layer?.addSublayer(imageLayer)
+        overlay.drawHandler = { [weak self] context in self?.drawOverlay(in: context) }
+        addSubview(overlay)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect, .cursorUpdate],
                                        owner: self, userInfo: nil))
         observeDocument()
@@ -127,7 +131,12 @@ final class EditorCanvas: NSView {
         imageLayer.magnificationFilter = scale * (window?.backingScaleFactor ?? 2) > 1.01 ? .nearest : .linear
         CATransaction.commit()
         document.zoomPercent = Int((scale * (window?.backingScaleFactor ?? 2) * 100).rounded())
-        needsDisplay = true
+        overlay.frame = bounds
+        overlay.needsDisplay = true
+    }
+
+    override var needsDisplay: Bool {
+        didSet { if needsDisplay { overlay.needsDisplay = true } }
     }
 
     private var lastCrop: CGRect = .null
@@ -144,8 +153,7 @@ final class EditorCanvas: NSView {
 
     // MARK: Drawing
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
+    private func drawOverlay(in context: CGContext) {
         let rect = imageRect
 
         // Drawings, clipped to the picture.
@@ -486,5 +494,19 @@ final class EditorCanvas: NSView {
             document.thickness = next
             NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
         }
+    }
+}
+
+/// Transparent, click-through view that draws the editor's drawings and selection.
+final class CanvasOverlay: NSView {
+    var drawHandler: ((CGContext) -> Void)?
+
+    override var isFlipped: Bool { true }
+    override var isOpaque: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        drawHandler?(context)
     }
 }

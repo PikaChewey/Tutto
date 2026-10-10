@@ -213,8 +213,8 @@ struct ClipboardPaletteView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
-                    if model.results.isEmpty {
-                        Text(model.query.isEmpty ? "Copy something and it shows up here." : "Nothing matches “\(model.query)”.")
+                    if model.results.isEmpty && !model.query.isEmpty {
+                        Text("Nothing matches “\(model.query)”.")
                             .font(.system(size: 12))
                             .foregroundStyle(Color.ink3)
                             .padding(16)
@@ -268,7 +268,7 @@ struct ClipboardPaletteView: View {
         HStack(spacing: 14) {
             hint("Paste to \(model.targetName ?? "the active app")", "↩")
             hint("Copy", "⌘↩")
-            hint(model.selected?.pinned == true ? "Unpin" : "Pin", "⌘⇧P")
+            hint(model.selected?.pinned == true ? "Unpin" : "Pin", "⇧⌘P")
             hint("Delete", "⌘⌫")
             Spacer()
             hint("Type", "⇥")

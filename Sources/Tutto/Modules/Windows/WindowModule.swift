@@ -60,11 +60,12 @@ final class WindowModule: ModuleController {
                 return ua != ub ? ua > ub : a.offset < b.offset
             }.map(\.element)
         }
-        return available.compactMap { action -> (WindowAction, Int)? in
+        // Best match first; ties go to what you use most, then to the natural order (left before top).
+        return available.enumerated().compactMap { index, action -> (WindowAction, Int, Int)? in
             guard let score = FuzzyMatcher.score(query, title: action.title, aliases: action.aliases) else { return nil }
-            return (action, score + min(usage[action.rawValue] ?? 0, 20))
+            return (action, score * 100 + min(usage[action.rawValue] ?? 0, 99), index)
         }
-        .sorted { $0.1 > $1.1 }
+        .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.2 < $1.2 }
         .map(\.0)
     }
 

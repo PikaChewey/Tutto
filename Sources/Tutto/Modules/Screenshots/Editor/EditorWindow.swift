@@ -74,6 +74,10 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    #if DEBUG
+    func snapshotView() -> some View { EditorView(document: document, canvas: canvas, actions: self) }
+    #endif
+
     func focusCanvas() {
         window?.makeFirstResponder(canvas)
     }
@@ -232,11 +236,7 @@ private struct EditorToolbar: View {
                         actions.focusCanvas()
                     }
                 }
-                ColorPicker("", selection: Binding(get: { Color(nsColor: document.color) },
-                                                   set: { document.color = NSColor($0) }), supportsOpacity: false)
-                    .labelsHidden()
-                    .frame(width: 22)
-                    .help("Custom color")
+                CustomColorButton(document: document)
             }
             Hairline(vertical: true).frame(height: 22)
             HStack(spacing: 2) {
@@ -278,7 +278,7 @@ private struct EditorToolbar: View {
                 .disabled(!document.canRedo)
                 .opacity(document.canRedo ? 1 : 0.35)
 
-            Text("\(Int(document.size.width)) × \(Int(document.size.height))")
+            Text(verbatim: "\(Int(document.size.width)) × \(Int(document.size.height))")
                 .font(.mono(11, weight: .medium))
                 .foregroundStyle(Color.ink2)
                 .padding(.horizontal, 8)
@@ -317,6 +317,53 @@ private struct Swatch: View {
         .focusable(false)
         .accessibilityLabel("Color \(color.hexString)")
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// A "+" swatch that opens the system color panel for any other color.
+private struct CustomColorButton: View {
+    var document: EditorDocument
+    @State private var target = ColorPanelTarget()
+
+    var body: some View {
+        let isCustom = !EditorPalette.colors.contains(document.color)
+        Button {
+            target.document = document
+            let panel = NSColorPanel.shared
+            panel.showsAlpha = false
+            panel.color = document.color
+            panel.setTarget(target)
+            panel.setAction(#selector(ColorPanelTarget.colorChanged(_:)))
+            panel.orderFront(nil)
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(isCustom ? Color(nsColor: document.color) : Color.clear)
+                    .overlay(Circle().strokeBorder(Color.ink.opacity(isCustom ? 0.2 : 0.35), style: StrokeStyle(lineWidth: 1, dash: isCustom ? [] : [2, 2])))
+                    .frame(width: 14, height: 14)
+                if !isCustom {
+                    Image(systemName: "plus").font(.system(size: 7, weight: .bold)).foregroundStyle(Color.ink2)
+                }
+            }
+            .padding(3)
+            .overlay(Circle().strokeBorder(isCustom ? Color.ink : .clear, lineWidth: 1.5))
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .help("Another color…")
+        .accessibilityLabel("Custom color")
+    }
+}
+
+@MainActor
+final class ColorPanelTarget: NSObject {
+    weak var document: EditorDocument?
+
+    @objc func colorChanged(_ sender: NSColorPanel) {
+        guard let document else { return }
+        document.color = sender.color.usingColorSpace(.sRGB) ?? sender.color
+        if document.tool == .select { document.tool = .pen }
     }
 }
 
