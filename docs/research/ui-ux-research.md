@@ -66,7 +66,7 @@ Researched 2026-10-10. X numbers were read from a logged-in X session that day (
 - 32 pt footer: "Paste to ‹App› ↩ · Copy ⌘↩ · Actions ⌘K".
 - Nothing animates: open, highlight and preview are all instant.
 
-**Window palette (⌘⌥B)**
+**Window palette (⌃⇧B)**
 - Same shell, with the list only.
 - Each row gets a 16×10 pt to-scale screen glyph with the target region inked, the same language as the trackpad drawing.
 - Fuzzy aliases ("lh"), hotkey keycaps, and the display name when several displays are connected.

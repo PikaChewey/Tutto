@@ -2,7 +2,7 @@
 //  WindowPalette.swift
 //  Tutto
 //
-//  ⌘⌥B: type what you want ("left half", "lh", "max"), press ↩. Each row carries a
+//  ⌃⇧B: type what you want ("left half", "lh", "max"), press ↩. Each row carries a
 //  tiny to-scale screen with the target region inked in, in the same drawing language
 //  as the Trackpad Corner trackpad.
 //

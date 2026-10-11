@@ -13,7 +13,7 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | APP-2 | Main app window opens like a normal app (Spotlight "Tutto", Finder, `open`) | Launch or reopen shows main window, Dock icon while open, hides from Dock when closed | [x] Live: reopen (`open Tutto.app`) shows the main window with sidebar; Dock icon while open. Spotlight launch of the installed copy still to be confirmed by the user |
 | APP-3 | Every module can be turned off independently | Toggle in General + each page header; disabled module stops all timers/taps/hotkeys/extension; verified by measuring CPU/wakeups and checking taps/hotkeys removed | [x] Live: Trackpad Corner switch → event tap 1→0→1; Archives off → Finder extension `-`; all modules off → 0 % CPU, 0.02 wakeups/s; per-module idle costs measured |
 | APP-4 | Shortcut recording & customization | Click recorder → press combo → saved & live; Esc cancels, ⌫ clears; duplicate & system-conflict warnings; "Reset to defaults" | [x] Live in the running app: ⌃⌥⌘J recorded and stored, conflict refused ("Already used by “Open Tutto”"), bare key refused ("Add ⌘, ⌃ or ⌥"), Esc cancels, Delete removes, Restore Defaults restores; custom shortcuts fire globally (⌃⌥⌘2/3/B/V/L/M verified); reserved-shortcut warnings; the Shortcuts page carries a general tip that macOS may deliver keys shared with another app to both; 5 unit tests |
-| APP-5 | Default shortcuts preserved | ⌃⇧V clipboard, ⌘⌥B window palette, ⌘⇧2 area→clipboard, ⌘⇧1 full screen→clipboard, ⌘⇧` area→editor | [x] Defaults set in code and shown in the UI; ⌘⇧1 verified live (if another app registers the same keys, macOS delivers them to both — see the tip on the Shortcuts page) |
+| APP-5 | Default shortcuts preserved | ⌃⇧V clipboard, ⌃⇧B window palette, ⌘⇧2 area→clipboard, ⌘⇧1 full screen→clipboard, ⌘⇧` area→editor | [x] Defaults set in code and shown in the UI; ⌘⇧1 verified live (if another app registers the same keys, macOS delivers them to both — see the tip on the Shortcuts page) |
 | APP-6 | Settings for everything necessary | Open at login, per-module options, reset, about | [x] Open at login (SMAppService), per-module settings pages, Restore Defaults, About |
 | APP-7 | Permissions overview | Live status + request button for Accessibility, Screen Recording, Finder extension, fan helper; says exactly which features need which | [x] Live: Permissions page shows live status; first capture without permission opened System Settings › Screen & System Audio Recording with Tutto listed |
 | APP-8 | Clear on first look & install | First-run welcome: modules, permissions, shortcuts cheat sheet | [x] Installed app from clean settings via LaunchServices, over a full-screen app: welcome window on screen and centered where you land (two Space bugs found and fixed); four steps walked with live permission states; close button completes first run without adding a login item; Done (which also turns on Open at login when its box is ticked) was not pressed, to avoid adding a login item on this Mac; Spotlight lists only the installed copy (duplicate found, fixed) |
@@ -52,7 +52,7 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 
 | ID | Requirement | Acceptance criteria | Status |
 |---|---|---|---|
-| WIN-1 | ⌘⌥B → type "left half" → ↩ | Frontmost window snaps to the left half of its screen's visible frame | [x] Live: palette → "left half" → Finder window at (0, 33, 756 × 858) exactly |
+| WIN-1 | ⌃⇧B → type "left half" → ↩ | Frontmost window snaps to the left half of its screen's visible frame | [x] Live: palette → "left half" → Finder window at (0, 33, 756 × 858) exactly |
 | WIN-2 | Halves, thirds, quarters, center, maximize, displays | All actions work on the test machine incl. restore | [x] Live: right half, left half, center, restore, thirds (Finder's 536 pt min width respected); geometry unit-tested for all actions incl. displays |
 | WIN-3 | Per-action hotkeys | Optional recordable shortcut per action | [x] Live: Left Half on ⌃⌥⌘L → (0, 33, 756 × 858); Maximize on ⌃⌥⌘M → (0, 33, 1512 × 858); every action recordable on the Windows and Shortcuts pages |
 
@@ -143,7 +143,7 @@ Every request in the specification (re-read in full 2026-10-10, 2,673 words) map
 | Battery and system monitor: click the menu bar icon to see readings; battery, max capacity, designed capacity, health %, cycles, power, top processes using battery | APP-1, SYS-1, SYS-2 |
 | Temperatures and fans: view temperatures, edit fan power for heavy tasks | FAN-1 … FAN-4 |
 | Clipboard history on ⌃⇧V (Control, not Command); images, text and more in a clean UI; search, paste, pin, content-type filter | CLIP-1 … CLIP-6, APP-5 |
-| Window management: ⌘⌥B, type "left half"/"right half"; halves, thirds, quarters, center, maximize, between displays | WIN-1 … WIN-3 (moving between displays is unit-tested only: this Mac has one display) |
+| Window management: ⌃⇧B, type "left half"/"right half"; halves, thirds, quarters, center, maximize, between displays | WIN-1 … WIN-3 (moving between displays is unit-tested only: this Mac has one display) |
 | ⌘⇧2 select area → clipboard (no editor to dismiss) | SHOT-1 |
 | ⌘⇧1 whole screen | SHOT-2 |
 | ⌘⇧` select area → editor | SHOT-3, SHOT-4 |

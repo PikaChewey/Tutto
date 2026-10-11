@@ -63,7 +63,7 @@ enum ShortcutAction: Hashable, Identifiable {
     var defaultShortcut: KeyShortcut? {
         switch self {
         case .clipboardHistory: .ctrlShift(kVK_ANSI_V)
-        case .windowPalette: .cmdOption(kVK_ANSI_B)
+        case .windowPalette: .ctrlShift(kVK_ANSI_B)
         case .captureArea: .cmdShift(kVK_ANSI_2)
         case .captureScreen: .cmdShift(kVK_ANSI_1)
         case .captureAreaEdit: .cmdShift(kVK_ANSI_Grave)

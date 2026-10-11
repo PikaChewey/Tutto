@@ -39,7 +39,7 @@ If another app already uses one of the shortcuts below, macOS may deliver the ke
 | `⌘⇧1` | The whole screen under the pointer → clipboard |
 | ``⌘⇧` `` | Select an area → screenshot editor |
 | `⌃⇧V` | Clipboard history: type to search, double-click or `↩` to paste into the app you were in (your clipboard stays as it was; Clipboard › "Keep pasted items on the clipboard" changes that), `⌘↩` copy, `⇥` filter by type, `⇧⌘P` pin, `⌘⌫` delete |
-| `⌘⌥B` | Window palette: type "left half", "max", "next display"…, `↩` |
+| `⌃⇧B` | Window palette: type "left half", "max", "next display"…, `↩` |
 
 Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press the new keys; Esc cancels, Delete removes). Every window action can also get its own shortcut.
 

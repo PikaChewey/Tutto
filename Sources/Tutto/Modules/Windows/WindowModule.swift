@@ -2,7 +2,7 @@
 //  WindowModule.swift
 //  Tutto
 //
-//  Window management through the Accessibility API: ⌘⌥B opens a palette, type
+//  Window management through the Accessibility API: ⌃⇧B opens a palette, type
 //  "left half", press ↩, and the window you were in snaps there. Every action can
 //  also have its own shortcut. Nothing runs between uses.
 //
