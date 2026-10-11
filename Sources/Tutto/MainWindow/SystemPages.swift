@@ -73,7 +73,7 @@ struct ValueRow: View {
                 .font(.system(size: 12.5, weight: .medium).monospacedDigit())
                 .foregroundStyle(Color.ink)
         }
-        .frame(minHeight: 28)
+        .frame(minHeight: 32)
         .overlay(alignment: .bottom) { Hairline().opacity(0.6) }
         .accessibilityElement(children: .combine)
     }

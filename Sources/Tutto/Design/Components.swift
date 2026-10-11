@@ -120,13 +120,14 @@ struct LabeledRow<Content: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 12.5))
                     .foregroundStyle(Color.ink)
                 if let detail {
                     Text(detail)
                         .font(.system(size: 11))
+                        .lineSpacing(2)
                         .foregroundStyle(Color.ink3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -134,9 +135,18 @@ struct LabeledRow<Content: View>: View {
             Spacer(minLength: 12)
             content
         }
+        .padding(.vertical, Metrics.rowPadding)
         .frame(minHeight: 30)
         .accessibilityElement(children: .contain)
     }
+}
+
+/// Shared spacing for rows inside an `InkGroup`, so every list in the app breathes the same.
+enum Metrics {
+    /// Above and below each row's text, inside its separators.
+    static let rowPadding: CGFloat = 10
+    /// Between a row's title and its one-line description.
+    static let titleToDetail: CGFloat = 3
 }
 
 /// A key/value pair in a readout: small caption over a monospaced value.
@@ -194,7 +204,7 @@ struct InkGroup<Content: View>: View {
                 content
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 6)
+            .padding(.vertical, 2)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.wash.opacity(0.7)))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.hairline))
         }

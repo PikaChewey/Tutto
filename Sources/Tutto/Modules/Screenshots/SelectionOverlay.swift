@@ -66,12 +66,12 @@ final class SelectionOverlay {
 
     /// Frames of on-screen windows, front to back, in global top-left coordinates.
     private static func onScreenWindowFrames() -> [CGRect] {
-        let own = getpid()
+        // Tutto's own windows count too (you can capture the main window); the overlay itself is
+        // never at layer 0.
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
                 as? [[String: Any]] else { return [] }
         return list.compactMap { info in
             guard (info[kCGWindowLayer as String] as? Int) == 0,
-                  (info[kCGWindowOwnerPID as String] as? Int32) != own,
                   (info[kCGWindowAlpha as String] as? Double ?? 1) > 0.01,
                   let bounds = info[kCGWindowBounds as String] as? NSDictionary,
                   let rect = CGRect(dictionaryRepresentation: bounds),

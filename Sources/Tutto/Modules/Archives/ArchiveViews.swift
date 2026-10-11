@@ -218,9 +218,10 @@ private struct ArchiveSettings: View {
             InkGroup("Formats") {
                 Text("Extracts zip, RAR (including RAR5 and multi-part), 7z, tar, gzip, bzip2, xz, lzma, ISO, CAB, LHA/LZH, XAR/pkg, cpio, ar/deb and more through the libarchive built into macOS. Password-protected zip files are supported; encrypted RAR and 7z files and zstd/lz4 compression are not (macOS's libarchive can't decrypt or decode them). Compresses to zip.")
                     .font(.system(size: 12))
+                    .lineSpacing(3)
                     .foregroundStyle(Color.ink2)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Metrics.rowPadding)
             }
         }
         .onAppear { refreshDefault() }

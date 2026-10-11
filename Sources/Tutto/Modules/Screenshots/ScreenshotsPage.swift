@@ -58,7 +58,7 @@ private struct ScreenshotSettings: View {
                 }
             }
             InkGroup("While selecting") {
-                tip("Drag", "select an area; the size shows in pixels")
+                tip("Drag", "select an area; the pointer shows its position, then the size, in pixels")
                 tip("Click", "a window takes just that window; the desktop takes the whole screen")
                 tip("Shift", "square selection · Space + drag moves it")
                 tip("Tab", "copies the color under the crosshair")
@@ -91,7 +91,7 @@ private struct ScreenshotSettings: View {
             Text(text).font(.system(size: 12)).foregroundStyle(Color.ink2)
             Spacer()
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 7)
     }
 
     private func chooseFolder() {

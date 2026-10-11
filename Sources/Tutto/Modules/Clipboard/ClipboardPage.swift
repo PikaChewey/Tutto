@@ -55,9 +55,11 @@ private struct ClipboardSettings: View {
             InkGroup("Privacy") {
                 Text("Items that password managers mark as concealed are never recorded. Copies made in these apps are ignored too:")
                     .font(.system(size: 11.5))
+                    .lineSpacing(2)
                     .foregroundStyle(Color.ink3)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, 6)
+                    .padding(.top, Metrics.rowPadding)
+                    .padding(.bottom, 6)
                 ForEach(clipboard.ignoredApps, id: \.self) { id in
                     HStack(spacing: 8) {
                         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {

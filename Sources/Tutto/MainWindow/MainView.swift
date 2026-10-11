@@ -109,7 +109,10 @@ struct MainView: View {
                     .transition(.opacity)
             }
             .animation(.easeOut(duration: 0.12), value: navigation.page)
+            // The window keeps the page name (Window menu, Mission Control, VoiceOver), but not the
+            // toolbar: there it floated, faint, over the scrolling page under the page's own title.
             .navigationTitle(navigation.page.title)
+            .modifier(HideToolbarTitle())
         }
         .frame(minWidth: 780, minHeight: 520)
     }
@@ -145,6 +148,16 @@ struct MainView: View {
         case .shortcuts: ShortcutsPage(model: model)
         case .permissions: PermissionsPage(model: model)
         case .general: GeneralPage(model: model)
+        }
+    }
+}
+
+private struct HideToolbarTitle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            content.toolbar(removing: .title)
+        } else {
+            content
         }
     }
 }

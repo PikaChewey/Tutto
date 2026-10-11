@@ -46,8 +46,13 @@ mkdir -p $EXT/Contents/MacOS
 cp $BIN/TuttoFinder $EXT/Contents/MacOS/TuttoFinder
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Resources/FinderExtension-Info.plist > $EXT/Contents/Info.plist
 
-xcrun actool --compile $APP/Contents/Resources --platform macosx --minimum-deployment-target 14.0 \
-  --app-icon AppIcon --output-partial-info-plist build/actool-partial.plist Resources/AppIcon.icon > /dev/null
+# actool reports failures in its plist output; show them instead of stopping silently.
+if ! ACTOOL_OUT=$(xcrun actool --compile $APP/Contents/Resources --platform macosx --minimum-deployment-target 14.0 \
+    --app-icon AppIcon --output-partial-info-plist build/actool-partial.plist Resources/AppIcon.icon 2>&1); then
+  echo "$ACTOOL_OUT" | grep -A2 "<key>description</key>" | head -6
+  echo "actool failed compiling the icon. A stuck asset compiler helps clear with: pkill -f ibtoold" >&2
+  exit 1
+fi
 
 # Inside-out: helper, extension, then the app.
 SIGN=(codesign --force --sign "$IDENTITY" --timestamp=none)

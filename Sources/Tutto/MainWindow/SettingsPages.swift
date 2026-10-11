@@ -43,7 +43,7 @@ struct OverviewPage: View {
                             .font(.system(size: 14))
                             .frame(width: 22)
                             .foregroundStyle(Color.ink2)
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: Metrics.titleToDetail) {
                             Text(module.title).font(.system(size: 13, weight: .medium))
                             Text(module.summary).font(.system(size: 11.5)).foregroundStyle(Color.ink3)
                         }
@@ -51,7 +51,7 @@ struct OverviewPage: View {
                         shortcutHint(for: module)
                         ModuleSwitch(model: model, module: module)
                     }
-                    .padding(.vertical, 7)
+                    .padding(.vertical, Metrics.rowPadding)
                     .overlay(alignment: .bottom) { if module != ModuleID.allCases.last { Hairline().opacity(0.6) } }
                 }
             }
@@ -177,7 +177,9 @@ struct PermissionsPage: View {
             }
             InkGroup("Also good to know") {
                 note("Files & folders", "The first time Tutto saves to Downloads or extracts an archive in Desktop, Documents or Downloads, macOS asks once.")
+                Hairline().opacity(0.6)
                 note("Not needed", "Input Monitoring, Full Disk Access, Location, Camera, Microphone, Contacts.")
+                Hairline().opacity(0.6)
                 note("Screen Recording", "macOS may ask you to re-confirm screen recording from time to time; that's macOS, not a problem with Tutto.")
             }
         }
@@ -185,11 +187,12 @@ struct PermissionsPage: View {
     }
 
     private func note(_ title: String, _ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Metrics.titleToDetail) {
             Text(title).font(.system(size: 12.5, weight: .medium))
-            Text(text).font(.system(size: 11.5)).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+            Text(text).font(.system(size: 11.5)).lineSpacing(2).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 7)
+        .padding(.vertical, Metrics.rowPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -202,10 +205,10 @@ struct PermissionRow: View {
         let needed = permission.modules.contains { model.isEnabled($0) }
         HStack(alignment: .center, spacing: 12) {
             StatusDot(on: granted == true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Metrics.titleToDetail) {
                 Text(permission.title).font(.system(size: 13, weight: .medium))
                 Text(permission.powers).font(.system(size: 11.5)).foregroundStyle(Color.ink3)
-                Text(permission.settingsPath).font(.mono(10)).foregroundStyle(Color.ink4)
+                Text(permission.settingsPath).font(.mono(10)).foregroundStyle(Color.ink4).padding(.top, 1)
             }
             Spacer()
             if granted == true {
@@ -219,7 +222,7 @@ struct PermissionRow: View {
                 .buttonStyle(InkButtonStyle(compact: true))
             }
         }
-        .padding(.vertical, 9)
+        .padding(.vertical, Metrics.rowPadding + 1)
     }
 }
 
@@ -235,7 +238,7 @@ struct GeneralPage: View {
                 ForEach(ModuleID.allCases) { module in
                     HStack(spacing: 12) {
                         Image(systemName: module.symbol).frame(width: 20).foregroundStyle(Color.ink2)
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: Metrics.titleToDetail) {
                             Text(module.title).font(.system(size: 13, weight: .medium))
                             Text(module.idleCost).font(.system(size: 11.5)).foregroundStyle(Color.ink3)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -243,7 +246,7 @@ struct GeneralPage: View {
                         Spacer()
                         ModuleSwitch(model: model, module: module)
                     }
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Metrics.rowPadding)
                     .overlay(alignment: .bottom) { if module != ModuleID.allCases.last { Hairline().opacity(0.6) } }
                 }
             }
@@ -252,6 +255,7 @@ struct GeneralPage: View {
                     InkSwitch(isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }),
                               label: "Open at login")
                 }
+                Hairline().opacity(0.6)
                 LabeledRow("Welcome tour", detail: "Permissions, shortcuts and the Trackpad Corner test again.") {
                     Button("Show") { OnboardingWindowController.shared.show() }
                         .buttonStyle(OutlineButtonStyle(compact: true))

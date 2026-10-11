@@ -3,7 +3,8 @@
 //  Tutto
 //
 //  Still images of displays through ScreenCaptureKit, at native resolution, in sRGB
-//  (so picked colors match what designers expect), with Tutto's own windows excluded.
+//  (so picked colors match what designers expect). Tutto's own windows are in the picture like
+//  any app's; only its floating bits (toasts, palettes, the menu bar panel) are left out.
 //
 
 import AppKit
@@ -41,7 +42,9 @@ enum ScreenCapturer {
             throw CGPreflightScreenCaptureAccess() ? CaptureError.failed(error.localizedDescription) : CaptureError.permissionDenied
         }
         let ownBundle = Bundle.main.bundleIdentifier
-        let ownApps = content.applications.filter { $0.bundleIdentifier == ownBundle }
+        let floating = content.windows.filter {
+            $0.owningApplication?.bundleIdentifier == ownBundle && $0.windowLayer != 0
+        }
         let screens = await MainActor.run {
             NSScreen.screens.map { (id: $0.displayID, frame: $0.frame, scale: $0.backingScaleFactor) }
         }
@@ -52,7 +55,7 @@ enum ScreenCapturer {
             for display in displays {
                 guard let screen = screens.first(where: { $0.id == display.displayID }) else { continue }
                 group.addTask {
-                    let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
+                    let filter = SCContentFilter(display: display, excludingWindows: floating)
                     let configuration = SCStreamConfiguration()
                     configuration.width = Int((screen.frame.width * screen.scale).rounded())
                     configuration.height = Int((screen.frame.height * screen.scale).rounded())

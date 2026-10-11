@@ -149,6 +149,16 @@ case "click":
     mouse(.mouseMoved, point); usleep(50_000)
     mouse(.leftMouseDown, point); usleep(40_000)
     mouse(.leftMouseUp, point)
+case "scroll":
+    // Scroll wheel at a point: drive scroll x y lines (positive scrolls content up, like swiping up).
+    let point = CGPoint(x: Double(args[1])!, y: Double(args[2])!)
+    mouse(.mouseMoved, point); usleep(80_000)
+    let lines = Int32(args[3])!
+    for _ in 0..<abs(lines) {
+        CGEvent(scrollWheelEvent2Source: source, units: .line, wheelCount: 1, wheel1: lines > 0 ? -1 : 1, wheel2: 0, wheel3: 0)!
+            .post(tap: .cghidEventTap)
+        usleep(16_000)
+    }
 case "doubleclick":
     let point = CGPoint(x: Double(args[1])!, y: Double(args[2])!)
     mouse(.mouseMoved, point); usleep(80_000)
