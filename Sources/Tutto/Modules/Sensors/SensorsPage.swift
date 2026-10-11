@@ -106,6 +106,8 @@ private struct FanControlView: View {
                                      case .maximum: "Full speed, for long renders or games"
                                      }
                                  })
+                    // Never squeezed by a wide speed reading ("Custom" was cut to "Cust…").
+                    .fixedSize()
                 }
                 if choice == .custom {
                     HStack(spacing: 12) {
@@ -198,7 +200,7 @@ private struct SensorList: View {
             }
             ForEach(order, id: \.self) { group in
                 VStack(alignment: .leading, spacing: 4) {
-                    Caption(group.title).padding(.top, 8)
+                    Caption(group.title).padding(.top, group == order.first ? 10 : 16)
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)], spacing: 0) {
                         ForEach(groups[group] ?? []) { reading in
                             HStack {
@@ -214,6 +216,7 @@ private struct SensorList: View {
                     }
                 }
             }
+            Color.clear.frame(height: 6)
         }
     }
 }

@@ -80,8 +80,11 @@ final class SystemMonitor {
     // MARK: Watching
 
     func begin(_ feeds: Set<SystemFeed>) {
+        let wasWatchingVolumes = watching(.volumes)
         for feed in feeds { watchers[feed, default: 0] += 1 }
         update()
+        // The slow readings otherwise wait for the 10th tick; a page that just opened shouldn't.
+        if watching(.volumes) && !wasWatchingVolumes { sampleSlow() }
     }
 
     func end(_ feeds: Set<SystemFeed>) {
