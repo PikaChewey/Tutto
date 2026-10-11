@@ -241,9 +241,14 @@ struct SensorsLine: View {
                 Spacer()
                 if let fan = sensors.fans.first {
                     Image(systemName: "fan").font(.system(size: 10.5)).foregroundStyle(Color.ink3)
-                    Text(fan.isStopped ? "off" : "\(Format.number(Int(fan.currentRPM))) rpm")
+                    // The fan glyph says what the number is; "rpm" here pushed a spinning fan's
+                    // reading past the panel's width ("2,50…").
+                    Text(fan.isStopped ? "off" : Format.number(Int(fan.currentRPM)))
                         .font(.system(size: 11.5, weight: .medium).monospacedDigit())
                         .foregroundStyle(sensors.isManual ? Color.ink : Color.ink2)
+                        .fixedSize()
+                        .help(fan.isStopped ? "Fan off" : "Fan \(Format.number(Int(fan.currentRPM))) rpm")
+                        .accessibilityLabel(fan.isStopped ? "Fan off" : "Fan \(Format.number(Int(fan.currentRPM))) rpm")
                 }
             }
             .frame(height: 22)
