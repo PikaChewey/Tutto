@@ -135,8 +135,11 @@ final class EditorCanvas: NSView {
         overlay.needsDisplay = true
     }
 
-    override var needsDisplay: Bool {
-        didSet { if needsDisplay { overlay.needsDisplay = true } }
+    /// Redraws the drawings and selection. Called on every drag event so a stroke, arrow or box
+    /// grows under the pointer. (An override of `needsDisplay` used to forward this, but AppKit
+    /// doesn't route the setter through it, so nothing redrew until the mouse was released.)
+    func redrawOverlay() {
+        overlay.needsDisplay = true
     }
 
     private var lastCrop: CGRect = .null
@@ -306,7 +309,7 @@ final class EditorCanvas: NSView {
             draft = Annotation(shape: .pixelate(CGRect(origin: pixel, size: .zero)), color: document.color, width: 0)
             drag = .shape(start: pixel)
         }
-        needsDisplay = true
+        redrawOverlay()
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -362,14 +365,14 @@ final class EditorCanvas: NSView {
             break
         }
         updateHover(point)
-        needsDisplay = true
+        redrawOverlay()
     }
 
     override func mouseUp(with event: NSEvent) {
         defer {
             drag = .none
             draft = nil
-            needsDisplay = true
+            redrawOverlay()
         }
         switch drag {
         case .newSelection:

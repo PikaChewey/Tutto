@@ -159,6 +159,21 @@ case "scroll":
             .post(tap: .cghidEventTap)
         usleep(16_000)
     }
+case "down":
+    // Press and hold the left button at a point (pair with "dragto" and "up").
+    let point = CGPoint(x: Double(args[1])!, y: Double(args[2])!)
+    mouse(.mouseMoved, point); usleep(60_000)
+    mouse(.leftMouseDown, point)
+case "dragto":
+    // Move with the button held, in small steps: drive dragto fromX fromY toX toY
+    let a = CGPoint(x: Double(args[1])!, y: Double(args[2])!), b = CGPoint(x: Double(args[3])!, y: Double(args[4])!)
+    for step in 1...15 {
+        let t = Double(step) / 15
+        mouse(.leftMouseDragged, CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t))
+        usleep(16_000)
+    }
+case "up":
+    mouse(.leftMouseUp, CGPoint(x: Double(args[1])!, y: Double(args[2])!))
 case "doubleclick":
     let point = CGPoint(x: Double(args[1])!, y: Double(args[2])!)
     mouse(.mouseMoved, point); usleep(80_000)
