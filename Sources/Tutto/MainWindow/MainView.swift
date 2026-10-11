@@ -105,9 +105,11 @@ struct MainView: View {
                     .padding(.bottom, 32)
                     .frame(maxWidth: 760, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .id(navigation.page)
-                    .transition(.opacity)
             }
+            // A new scroll view per page, so every page opens at its top instead of at the
+            // previous page's scroll position.
+            .id(navigation.page)
+            .transition(.opacity)
             .animation(.easeOut(duration: 0.12), value: navigation.page)
             // The window keeps the page name (Window menu, Mission Control, VoiceOver), but not the
             // toolbar: there it floated, faint, over the scrolling page under the page's own title.
