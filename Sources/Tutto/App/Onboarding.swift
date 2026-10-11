@@ -32,7 +32,9 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     func show(step: OnboardingStep = .welcome) {
         if window == nil {
             let hosting = NSHostingController(rootView: OnboardingView(model: AppModel.shared, start: step) { [weak self] in
-                self?.window?.close()
+                guard let window = self?.window else { return }
+                window.sheetParent?.endSheet(window)
+                window.close()
             })
             let window = NSWindow(contentViewController: hosting)
             window.styleMask = [.titled, .closable, .fullSizeContentView]
@@ -49,7 +51,15 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
             self.window = window
         }
         NSApp.setActivationPolicy(.regular)
-        if let window { AppActivation.present(window) }
+        guard let window, window.sheetParent == nil else { return }
+        // Opened from the main window (Welcome tour › Show): a sheet on it, so it is always on the
+        // same Space. Over a full-screen app a second window of its own landed on another Space.
+        if let host = MainWindowController.shared.openWindow {
+            AppActivation.present(host)
+            host.beginSheet(window)
+        } else {
+            AppActivation.present(window)
+        }
     }
 
     func windowWillClose(_ notification: Notification) {

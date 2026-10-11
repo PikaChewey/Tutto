@@ -8,6 +8,7 @@
 //
 
 import AppKit
+import os
 import SwiftUI
 
 // MARK: - Main window
@@ -45,6 +46,8 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     }
 
     var isVisible: Bool { window?.isVisible ?? false }
+    /// The main window while it's open, e.g. to attach a sheet to.
+    var openWindow: NSWindow? { window?.isVisible == true ? window : nil }
 
     func windowWillClose(_ notification: Notification) {
         window = nil  // drop the views so nothing keeps sampling
@@ -70,11 +73,11 @@ enum AppActivation {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// The main and welcome windows are ordinary desktop windows, so ⌘-Tab and the Dock take you
-    /// to them. Letting them float over a full-screen app (`.fullScreenAuxiliary`) or follow the
-    /// active Space (`.moveToActiveSpace`) broke ⌘-Tab from a full-screen app: macOS switched to the
-    /// desktop while the window stayed on (or jumped to) the full-screen Space.
-    static let windowBehavior: NSWindow.CollectionBehavior = []
+    /// The main and welcome windows may open over a full-screen app (`.fullScreenAuxiliary`); without
+    /// it, opening one from a full-screen app left it on no Space at all. They don't follow every
+    /// Space change (`.moveToActiveSpace` made them jump away on ⌘-Tab); instead `present` and the
+    /// activation hook below move a window to the Space you're looking at when it needs to.
+    static let windowBehavior: NSWindow.CollectionBehavior = [.fullScreenAuxiliary]
 
     /// The screenshot editor opens right over a full-screen app, where the capture started.
     static let editorBehavior: NSWindow.CollectionBehavior = [.fullScreenAuxiliary]
@@ -94,25 +97,37 @@ enum AppActivation {
     /// full-screen app can still make macOS switch to a desktop Space; the window then follows you
     /// there instead of staying behind on the Space you left.
     static func present(_ window: NSWindow) {
+        spaceLog.debug("present \(window.title, privacy: .public): active=\(NSApp.isActive) onActive=\(window.isOnActiveSpace) visible=\(window.isVisible)")
         window.orderFrontRegardless()
+        spaceLog.debug("  ordered: onActive=\(window.isOnActiveSpace) visible=\(window.isVisible) number=\(window.windowNumber)")
         bringForward()
         window.makeKeyAndOrderFront(nil)
+        spaceLog.debug("  key: active=\(NSApp.isActive) onActive=\(window.isOnActiveSpace) key=\(window.isKeyWindow)")
+        // A window that already exists keeps its Space, and macOS may put a new one on a desktop
+        // while you're in a full-screen Space (the welcome tour opened from the main window landed
+        // where you couldn't see it). Bring it to the Space you're looking at.
+        if !window.isOnActiveSpace { moveToActiveSpace(window) }
         followSpaceSwitch(window)
     }
 
+    /// Asks macOS to put a window on the Space you're looking at, for this one ordering.
+    private static func moveToActiveSpace(_ window: NSWindow) {
+        let had = window.collectionBehavior.contains(.moveToActiveSpace)
+        window.collectionBehavior.insert(.moveToActiveSpace)
+        window.makeKeyAndOrderFront(nil)
+        if !had { window.collectionBehavior.remove(.moveToActiveSpace) }
+        spaceLog.debug("  moved: onActive=\(window.isOnActiveSpace)")
+    }
+
     private static var spaceObserver: NSObjectProtocol?
+    private static let spaceLog = Logger(subsystem: "ca.bryanyao.Tutto", category: "spaces")
 
     private static func followSpaceSwitch(_ window: NSWindow) {
         stopFollowing()
         let center = NSWorkspace.shared.notificationCenter
         spaceObserver = center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak window] _ in
             MainActor.assumeIsolated {
-                if let window, window.isVisible, !window.isOnActiveSpace {
-                    // Allowed to move just for this ordering, then it stays put again.
-                    window.collectionBehavior.insert(.moveToActiveSpace)
-                    window.makeKeyAndOrderFront(nil)
-                    window.collectionBehavior.remove(.moveToActiveSpace)
-                }
+                if let window, window.isVisible, !window.isOnActiveSpace { moveToActiveSpace(window) }
                 stopFollowing()
             }
         }
