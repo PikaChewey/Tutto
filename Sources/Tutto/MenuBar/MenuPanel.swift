@@ -62,7 +62,7 @@ struct MenuPanel: View {
     }
 
     private var hasQuickActions: Bool {
-        model.screenshots != nil || model.clipboard != nil || model.windows != nil
+        model.screenshots != nil || model.clipboard != nil || model.windows != nil || model.wordCounter != nil
     }
 
     private var header: some View {
@@ -468,10 +468,13 @@ private struct QuickActions: View {
                     action("Edit", symbol: "pencil.and.scribble", .captureAreaEdit)
                 }
                 if model.clipboard != nil {
-                    action("Clipboard", symbol: "list.clipboard", .clipboardHistory)
+                    action("History", symbol: "list.clipboard", .clipboardHistory, fullTitle: "Clipboard history")
                 }
                 if model.windows != nil {
-                    action("Windows", symbol: "rectangle.split.2x1", .windowPalette)
+                    action("Snap", symbol: "rectangle.split.2x1", .windowPalette, fullTitle: "Window palette")
+                }
+                if model.wordCounter != nil {
+                    action("Words", symbol: ModuleID.wordCounter.symbol, .wordCounter, fullTitle: "Word counter")
                 }
             }
             if let clipboard = model.clipboard {
@@ -480,8 +483,8 @@ private struct QuickActions: View {
         }
     }
 
-    private func action(_ title: String, symbol: String, _ shortcut: ShortcutAction) -> some View {
-        QuickActionButton(title: title, symbol: symbol, shortcut: model.shortcuts.shortcut(for: shortcut)) {
+    private func action(_ title: String, symbol: String, _ shortcut: ShortcutAction, fullTitle: String? = nil) -> some View {
+        QuickActionButton(title: title, fullTitle: fullTitle ?? title, symbol: symbol, shortcut: model.shortcuts.shortcut(for: shortcut)) {
             // Let the panel close first so it isn't in the screenshot or in the way.
             NSApp.keyWindow?.close()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -493,6 +496,8 @@ private struct QuickActions: View {
 
 private struct QuickActionButton: View {
     var title: String
+    /// For the tooltip and VoiceOver when the label is shortened to fit.
+    var fullTitle: String
     var symbol: String
     var shortcut: KeyShortcut?
     var action: () -> Void
@@ -519,8 +524,8 @@ private struct QuickActionButton: View {
         }
         .buttonStyle(PressStyle())
         .onHover { hovering = $0 }
-        .help(shortcut.map { "\(title) (\($0.displayString))" } ?? title)
-        .accessibilityLabel(title)
+        .help(shortcut.map { "\(fullTitle) (\($0.displayString))" } ?? fullTitle)
+        .accessibilityLabel(fullTitle)
     }
 }
 

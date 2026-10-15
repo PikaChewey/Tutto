@@ -28,6 +28,7 @@ final class AppModel {
     private(set) var screenshots: ScreenshotModule?
     private(set) var archives: ArchiveModule?
     private(set) var corner: CornerModule?
+    private(set) var wordCounter: WordCounterModule?
 
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
     /// On notched MacBooks a crowded menu bar puts new icons behind the notch, where they can't be clicked.
@@ -38,7 +39,10 @@ final class AppModel {
 
     private init() {
         if let saved = defaults.array(forKey: Keys.enabled) as? [String] {
-            enabled = Set(saved.compactMap(ModuleID.init(rawValue:)))
+            // Tools added since the choice was saved start on, like everything does on a first run.
+            let known = defaults.array(forKey: Keys.known) as? [String] ?? Self.originalModules
+            let added = ModuleID.allCases.filter { !known.contains($0.rawValue) }
+            enabled = Set(saved.compactMap(ModuleID.init(rawValue:))).union(added)
         } else {
             enabled = Set(ModuleID.allCases)  // everything on, the way the spec describes Tutto
         }
@@ -86,6 +90,7 @@ final class AppModel {
             stop(id)
         }
         defaults.set(enabled.map(\.rawValue).sorted(), forKey: Keys.enabled)
+        defaults.set(ModuleID.allCases.map(\.rawValue), forKey: Keys.known)
         bindShortcuts()
     }
 
@@ -110,6 +115,9 @@ final class AppModel {
         case .corner:
             if corner == nil { corner = CornerModule() }
             corner?.start()
+        case .wordCounter:
+            if wordCounter == nil { wordCounter = WordCounterModule() }
+            wordCounter?.start()
         }
     }
 
@@ -133,6 +141,9 @@ final class AppModel {
         case .archives:
             archives?.stop()
             archives = nil
+        case .wordCounter:
+            wordCounter?.stop()
+            wordCounter = nil
         case .corner:
             corner?.stop()
             corner = nil
@@ -168,6 +179,7 @@ final class AppModel {
         case .captureArea: screenshots?.capture(.areaToClipboard)
         case .captureScreen: screenshots?.capture(.screenToClipboard)
         case .captureAreaEdit: screenshots?.capture(.areaToEditor)
+        case .wordCounter: wordCounter?.togglePanel()
         case .openTutto: MainWindowController.shared.show()
         case .toggleCorner:
             if let corner { corner.isEnabled.toggle() }
@@ -194,8 +206,13 @@ final class AppModel {
         defaults.set(true, forKey: Keys.onboarded)
     }
 
+    /// The tools in the first release, for choices saved before `modules.known` existed.
+    private static let originalModules = ["system", "sensors", "clipboard", "windows", "screenshots", "archives", "corner"]
+
     private enum Keys {
         static let enabled = "modules.enabled"
+        /// The tools that existed when `enabled` was saved.
+        static let known = "modules.known"
         static let onboarded = "hasCompletedOnboarding"
     }
 }

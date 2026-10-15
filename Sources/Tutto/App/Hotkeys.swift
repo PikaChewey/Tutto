@@ -19,6 +19,7 @@ enum ShortcutAction: Hashable, Identifiable {
     case captureArea
     case captureScreen
     case captureAreaEdit
+    case wordCounter
     case openTutto
     case toggleCorner
     case window(WindowAction)
@@ -30,6 +31,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureArea: "screenshot.area"
         case .captureScreen: "screenshot.screen"
         case .captureAreaEdit: "screenshot.edit"
+        case .wordCounter: "wordcounter.open"
         case .openTutto: "app.open"
         case .toggleCorner: "corner.toggle"
         case .window(let action): "windows.\(action.rawValue)"
@@ -43,6 +45,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureArea: "Capture area to clipboard"
         case .captureScreen: "Capture full screen to clipboard"
         case .captureAreaEdit: "Capture area and edit"
+        case .wordCounter: "Word counter"
         case .openTutto: "Open Tutto"
         case .toggleCorner: "Pause or resume Trackpad Corner"
         case .window(let action): action.title
@@ -54,6 +57,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .clipboardHistory: .clipboard
         case .windowPalette, .window: .windows
         case .captureArea, .captureScreen, .captureAreaEdit: .screenshots
+        case .wordCounter: .wordCounter
         case .toggleCorner: .corner
         case .openTutto: nil
         }
@@ -67,12 +71,13 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureArea: .cmdShift(kVK_ANSI_2)
         case .captureScreen: .cmdShift(kVK_ANSI_1)
         case .captureAreaEdit: .cmdShift(kVK_ANSI_Grave)
+        case .wordCounter: .ctrlShift(kVK_ANSI_C)
         case .openTutto, .toggleCorner, .window: nil
         }
     }
 
     static var fixed: [ShortcutAction] {
-        [.clipboardHistory, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .openTutto, .toggleCorner]
+        [.clipboardHistory, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .wordCounter, .openTutto, .toggleCorner]
     }
 
     static var all: [ShortcutAction] { fixed + WindowAction.allCases.map { .window($0) } }

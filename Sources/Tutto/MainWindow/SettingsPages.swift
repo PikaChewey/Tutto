@@ -64,6 +64,7 @@ struct OverviewPage: View {
         case .clipboard: .clipboardHistory
         case .windows: .windowPalette
         case .screenshots: .captureArea
+        case .wordCounter: .wordCounter
         default: nil
         }
         if let action, model.isEnabled(module) {
@@ -121,7 +122,7 @@ struct ShortcutsPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             PageHeader(title: "Shortcuts", subtitle: "Click a shortcut, then press the keys you want. Esc cancels, Delete removes it.")
-            group("Everyday", [.captureArea, .captureScreen, .captureAreaEdit, .clipboardHistory, .windowPalette])
+            group("Everyday", [.captureArea, .captureScreen, .captureAreaEdit, .clipboardHistory, .windowPalette, .wordCounter])
             group("App", [.openTutto, .toggleCorner])
             group("Window actions", WindowAction.allCases.map { .window($0) })
             HStack(alignment: .top) {

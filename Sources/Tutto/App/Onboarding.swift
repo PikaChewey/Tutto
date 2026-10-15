@@ -138,7 +138,7 @@ struct OnboardingView: View {
                 Text("One app, all of it.")
                     .font(.system(size: 30, weight: .semibold))
                     .tracking(-0.6)
-                Text("Seven quiet tools in your menu bar. Keep what you use — anything you switch off uses nothing.")
+                Text("Eight quiet tools in your menu bar. Keep what you use — anything you switch off uses nothing.")
                     .font(.system(size: 13.5))
                     .foregroundStyle(Color.ink2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -188,7 +188,7 @@ struct OnboardingView: View {
     private var shortcuts: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Five keys to remember.")
+                Text("Six keys to remember.")
                     .font(.system(size: 30, weight: .semibold))
                     .tracking(-0.6)
                 Text("The same ones you already use. Change any of them later in Tutto › Shortcuts.")
@@ -196,7 +196,7 @@ struct OnboardingView: View {
                     .foregroundStyle(Color.ink2)
             }
             VStack(spacing: 0) {
-                ForEach([ShortcutAction.captureArea, .captureScreen, .captureAreaEdit, .clipboardHistory, .windowPalette]) { action in
+                ForEach([ShortcutAction.captureArea, .captureScreen, .captureAreaEdit, .clipboardHistory, .windowPalette, .wordCounter]) { action in
                     HStack {
                         Text(action.title).font(.system(size: 13))
                         Spacer()

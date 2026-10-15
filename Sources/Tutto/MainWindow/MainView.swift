@@ -12,7 +12,7 @@ import TuttoKit
 enum MainPage: String, Hashable, CaseIterable, Identifiable {
     case overview
     case battery, cpu, gpu, memory, disk, network, sensors
-    case clipboard, windows, screenshots, archives, corner
+    case clipboard, windows, screenshots, archives, corner, wordCounter
     case shortcuts, permissions, general
 
     var id: String { rawValue }
@@ -32,6 +32,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .screenshots: "Screenshots"
         case .archives: "Archives"
         case .corner: "Trackpad Corner"
+        case .wordCounter: "Word Counter"
         case .shortcuts: "Shortcuts"
         case .permissions: "Permissions"
         case .general: "General"
@@ -53,6 +54,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .screenshots: ModuleID.screenshots.symbol
         case .archives: ModuleID.archives.symbol
         case .corner: ModuleID.corner.symbol
+        case .wordCounter: ModuleID.wordCounter.symbol
         case .shortcuts: "command"
         case .permissions: "lock.shield"
         case .general: "gearshape"
@@ -68,12 +70,13 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .screenshots: .screenshots
         case .archives: .archives
         case .corner: .corner
+        case .wordCounter: .wordCounter
         case .overview, .shortcuts, .permissions, .general: nil
         }
     }
 
     static let systemPages: [MainPage] = [.battery, .cpu, .gpu, .memory, .disk, .network, .sensors]
-    static let toolPages: [MainPage] = [.clipboard, .windows, .screenshots, .archives, .corner]
+    static let toolPages: [MainPage] = [.clipboard, .windows, .screenshots, .archives, .corner, .wordCounter]
     static let settingsPages: [MainPage] = [.shortcuts, .permissions, .general]
 }
 
@@ -147,6 +150,7 @@ struct MainView: View {
         case .screenshots: ScreenshotsPage(model: model)
         case .archives: ArchivesPage(model: model)
         case .corner: CornerPage(model: model)
+        case .wordCounter: WordCounterPage(model: model)
         case .shortcuts: ShortcutsPage(model: model)
         case .permissions: PermissionsPage(model: model)
         case .general: GeneralPage(model: model)

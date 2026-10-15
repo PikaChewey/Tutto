@@ -2,7 +2,7 @@
 //  Modules.swift
 //  Tutto
 //
-//  The seven tools inside Tutto. Each can be switched off on its own, and a module
+//  The eight tools inside Tutto. Each can be switched off on its own, and a module
 //  that is off holds no timers, taps, hotkeys, helpers or memory.
 //
 
@@ -16,6 +16,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
     case screenshots
     case archives
     case corner
+    case wordCounter
 
     var id: String { rawValue }
 
@@ -28,6 +29,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .screenshots: "Screenshots"
         case .archives: "Archives"
         case .corner: "Trackpad Corner"
+        case .wordCounter: "Word Counter"
         }
     }
 
@@ -40,6 +42,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .screenshots: "viewfinder"
         case .archives: "archivebox"
         case .corner: "rectangle.inset.bottomright.filled"
+        case .wordCounter: "text.word.spacing"
         }
     }
 
@@ -53,6 +56,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .screenshots: "Capture to clipboard, edit, draw, pick colors, copy text."
         case .archives: "Open RAR, 7z, zip and more, right from Finder."
         case .corner: "Click or tap a trackpad corner to right-click."
+        case .wordCounter: "Words, characters and reading time of any text."
         }
     }
 
@@ -61,7 +65,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .system, .sensors: "Nothing. Readings are taken only while they're on screen."
         case .clipboard: "Checks the clipboard about once a second, coalesced with other system work."
-        case .windows, .screenshots: "Nothing. Registered shortcuts wait for a key press."
+        case .windows, .screenshots, .wordCounter: "Nothing. Registered shortcuts wait for a key press."
         case .archives: "Nothing in Tutto. Finder loads the small menu extension."
         case .corner: "Nothing until a finger touches the trackpad."
         }

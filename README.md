@@ -3,9 +3,9 @@
 <h1 align="center">Tutto</h1>
 
 <p align="center"><b>Every Mac utility you actually use, in one quiet menu bar app.</b><br>
-Battery &amp; system load · temperatures &amp; fans · clipboard history · window snapping · screenshots with OCR · archives from Finder · trackpad corner right-click.</p>
+Battery &amp; system load · temperatures &amp; fans · clipboard history · window snapping · screenshots with OCR · archives from Finder · trackpad corner right-click · word counter.</p>
 
-Tutto is seven everyday tools in one native Swift app that uses **13 MB of memory and no measurable CPU while idle**. Every tool can be switched off, and a tool that's off uses nothing at all.
+Tutto is eight everyday tools in one native Swift app that uses **13 MB of memory and no measurable CPU while idle**. Every tool can be switched off, and a tool that's off uses nothing at all.
 
 <p align="center">
   <img src="docs/assets/panel.png" width="300" alt="Tutto's menu bar panel: battery health, cycles and power, top energy users, CPU/GPU/memory/disk, temperatures, the Trackpad Corner editor, and quick actions">
@@ -24,9 +24,9 @@ scripts/build.sh --install
 
 That builds a release `Tutto.app`, signs it with your Apple Development identity, and installs it in `/Applications`. Then open it from Spotlight (`⌘Space`, type "Tutto"). The welcome window walks through:
 
-1. **Tools** — all seven are on; switch off anything you don't want.
+1. **Tools** — all eight are on; switch off anything you don't want.
 2. **Access** — two macOS switches (see [Permissions](#permissions)).
-3. **Keys** — the five shortcuts below.
+3. **Keys** — the six shortcuts below.
 4. **Try it** — press your trackpad's corner and watch the right-click land.
 
 If another app already uses one of the shortcuts below, macOS may deliver the keys to both apps. Change the shortcut in Tutto › Shortcuts or in the other app.
@@ -40,6 +40,7 @@ If another app already uses one of the shortcuts below, macOS may deliver the ke
 | ``⌘⇧` `` | Select an area → screenshot editor |
 | `⌃⇧V` | Clipboard history: type to search, double-click or `↩` to paste into the app you were in (your clipboard stays as it was; Clipboard › "Keep pasted items on the clipboard" changes that), `⌘↩` copy, `⇥` filter by type, `⇧⌘P` pin, `⌘⌫` delete |
 | `⌃⇧B` | Window palette: type "left half", "max", "next display"…, `↩` |
+| `⌃⇧C` | Word counter: the cursor is ready, press `⌘V` (or type) to see words, characters (with and without spaces), sentences, paragraphs, reading and speaking time, and the same for a selection. `⌘K` clears, `Esc` closes |
 
 Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press the new keys; Esc cancels, Delete removes). Every window action can also get its own shortcut.
 
@@ -47,11 +48,11 @@ Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press th
 
 **In the screenshot editor:** with no tool, drag to make a selection box (move it, drag its handles; `↩` crops to it). `P` draw, `H` highlight, `A` arrow, `R` rectangle, `[`/`]` thickness, eight colors plus any color. `T` copies all text (in the selection if there is one) and QR codes. `Tab` copies the hovered pixel's hex color. `⌘S` saves to Downloads (configurable), `⌘C` copies, **`Esc` copies and closes**. `⌘Z` undoes.
 
-**Menu bar panel:** battery (charge, health, cycles, max/design capacity, watts, top energy users), CPU, GPU, memory, disk, temperatures and fan, the Trackpad Corner editor, and one-click capture/clipboard/window buttons. Click any number for the full page in the app.
+**Menu bar panel:** battery (charge, health, cycles, max/design capacity, watts, top energy users), CPU, GPU, memory, disk, temperatures and fan, the Trackpad Corner editor, and one-click capture, clipboard history, window palette and word counter buttons. Click any number for the full page in the app.
 
 **Finder:** right-click an archive for **Extract Here**, **Extract to "Name"**, **Extract to…**; right-click anything for **Compress to ZIP**. Archives can also be opened with Tutto by double-clicking (Archives › Make Default).
 
-**Automation:** `tutto://do/capture-area`, `capture-screen`, `capture-edit`, `clipboard`, `windows`, `quit` run an action; `tutto://open/<page>` (e.g. `battery`, `shortcuts`) opens a page — handy from Shortcuts, scripts or a Stream Deck.
+**Automation:** `tutto://do/capture-area`, `capture-screen`, `capture-edit`, `clipboard`, `windows`, `word-counter`, `quit` run an action; `tutto://open/<page>` (e.g. `battery`, `shortcuts`) opens a page — handy from Shortcuts, scripts or a Stream Deck.
 
 **Can't see the menu bar icon?** On MacBooks with a camera notch, a full menu bar hides new icons behind the notch. Tutto notices and tells you; quit a menu bar app you no longer need, or hold ⌘ and drag icons to reorder them. Everything in the panel is also in the app (Spotlight › Tutto).
 

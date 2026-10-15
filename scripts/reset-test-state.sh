@@ -6,7 +6,7 @@
 set -uo pipefail
 pkill -x Tutto 2>/dev/null
 sleep 0.5
-for key in shortcuts.v1 screenshots.folder hasCompletedOnboarding modules.enabled windows.usage \
+for key in shortcuts.v1 screenshots.folder hasCompletedOnboarding modules.enabled modules.known wordCounter.readingSpeed windows.usage \
            panel.cornerExpanded corner.diagnostics; do
   defaults delete ca.bryanyao.Tutto "$key" 2>/dev/null
 done

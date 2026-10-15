@@ -103,6 +103,25 @@ struct SnapshotExtras {
             palette.query = "half"
             return AnyView(WindowPaletteView(model: palette, perform: { _ in }).frame(width: 560, height: 420))
         })
+        extras.append(SnapshotExtras(name: "word-counter") { model in
+            guard let counter = model.wordCounter else { return AnyView(EmptyView()) }
+            let sample = """
+            The quick brown fox jumps over the lazy dog. It's a well-known pangram, used to show every letter.
+
+            Paste anything here and the counts update as you type.
+            """
+            let editor = NSTextView.scrollableTextView()
+            (editor.documentView as? NSTextView)?.string = sample
+            (editor.documentView as? NSTextView)?.font = .systemFont(ofSize: 14)
+            (editor.documentView as? NSTextView)?.textContainerInset = NSSize(width: 14, height: 14)
+            editor.drawsBackground = false
+            (editor.documentView as? NSTextView)?.drawsBackground = false
+            let state = WordCounterModel()
+            state.stats = TextStats.measure(sample)
+            state.isEmpty = false
+            state.selection = TextStats.measure("well-known pangram")
+            return AnyView(WordCounterView(model: state, module: counter, editor: editor).frame(width: 720, height: 440))
+        })
         extras.append(SnapshotExtras(name: "editor") { model in
             guard let screenshots = model.screenshots, let image = sampleImage() else { return AnyView(EmptyView()) }
             let editor = EditorWindowController(image: image, module: screenshots)

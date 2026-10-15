@@ -102,8 +102,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 /// `tutto://open/<page>` shows a page of the app; `tutto://do/<action>` runs an action, for
 /// automation (Shortcuts, scripts, Stream Deck…).
-///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows screenshots archives corner shortcuts permissions general
-///   actions: capture-area capture-screen capture-edit clipboard windows quit
+///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows screenshots archives corner wordCounter shortcuts permissions general
+///   actions: capture-area capture-screen capture-edit clipboard windows word-counter quit
 @MainActor
 enum DeepLinks {
     static func handle(_ url: URL, model: AppModel) {
@@ -118,6 +118,7 @@ enum DeepLinks {
         case "capture-edit": .captureAreaEdit
         case "clipboard": .clipboardHistory
         case "windows": .windowPalette
+        case "word-counter": .wordCounter
         default: nil
         }
         if name == "quit" {
