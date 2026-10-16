@@ -82,6 +82,42 @@ final class WindowModule: ModuleController {
     }
 
     func perform(_ action: WindowAction, on window: AXUIElement, app: NSRunningApplication?) {
+        // macOS won't move or resize a window in native full screen (each sits on its own Space).
+        // Take it out of full screen first, wait for the animation to finish, then place it.
+        if Self.isFullScreen(window), action != .restore {
+            exitFullScreen(window) { [weak self] in self?.place(action, window: window, app: app) }
+            return
+        }
+        place(action, window: window, app: app)
+    }
+
+    /// Ends native full screen and calls `then` once the window has left it (or after 2 s).
+    private func exitFullScreen(_ window: AXUIElement, then: @escaping () -> Void) {
+        AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString, kCFBooleanFalse)
+        let deadline = Date().addingTimeInterval(2)
+        var settledSince: Date?
+        var lastFrame: CGRect?
+        func poll() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                MainActor.assumeIsolated {
+                    let frame = Self.frame(of: window)
+                    // Done when it's no longer full screen and its frame has stopped animating.
+                    if !Self.isFullScreen(window), frame == lastFrame {
+                        if let since = settledSince, Date().timeIntervalSince(since) >= 0.15 { return then() }
+                        if settledSince == nil { settledSince = Date() }
+                    } else {
+                        settledSince = nil
+                    }
+                    lastFrame = frame
+                    if Date() > deadline { return then() }
+                    poll()
+                }
+            }
+        }
+        poll()
+    }
+
+    private func place(_ action: WindowAction, window: AXUIElement, app: NSRunningApplication?) {
         guard let current = Self.frame(of: window) else { return }
         usage[action.rawValue, default: 0] += 1
         defaults.set(usage, forKey: Keys.usage)
@@ -113,6 +149,11 @@ final class WindowModule: ModuleController {
 
     // MARK: Accessibility helpers
 
+    static func isFullScreen(_ window: AXUIElement) -> Bool {
+        var value: CFTypeRef?
+        return AXUIElementCopyAttributeValue(window, "AXFullScreen" as CFString, &value) == .success && (value as? Bool) == true
+    }
+
     static func focusedWindow(of app: NSRunningApplication) -> AXUIElement? {
         let element = AXUIElementCreateApplication(app.processIdentifier)
         for attribute in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] {
@@ -141,7 +182,7 @@ final class WindowModule: ModuleController {
     /// Size, position, size again: some apps clamp the size to the screen they're on before moving.
     static func setFrame(_ frame: CGRect, of window: AXUIElement, app: NSRunningApplication?) {
         // Apps with "enhanced user interface" on (set by assistive tools) animate every
-        // AX resize slowly; switch it off for the move, as Rectangle does.
+        // AX resize slowly; switch it off for the move.
         let appElement = app.map { AXUIElementCreateApplication($0.processIdentifier) }
         var enhanced: CFTypeRef?
         let wasEnhanced = appElement.map {
