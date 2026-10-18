@@ -25,6 +25,7 @@ final class SelectionOverlay {
     private var windows: [OverlayWindow] = []
     private var completion: ((Selection?) -> Void)?
     private var previousApp: NSRunningApplication?
+    private var appSwitchObserver: NSObjectProtocol?
 
     /// Shows the overlay on every captured display. `completion` gets the selection, or nil if cancelled.
     func begin(shots: [DisplayShot], completion: @escaping (Selection?) -> Void) {
@@ -38,16 +39,31 @@ final class SelectionOverlay {
             window.orderFrontRegardless()
             windows.append(window)
         }
-        AppActivation.bringForward()
+        // No app activation. The overlay is a key-capable non-activating panel, so it gets Esc,
+        // Tab, Space and ↩ while the app you were in stays active. Activating Tutto made that app
+        // reset the pointer to an arrow as it lost focus, over the new crosshair. A background app
+        // may set the pointer only with the window server's permission; the overlay then shows
+        // the crosshair once the covered app has finished reacting (OverlayView.showCrosshair).
         let mouse = NSEvent.mouseLocation
         let key = windows.first { NSMouseInRect(mouse, $0.frame, false) } ?? windows.first
         key?.makeKey()
-        NSCursor.crosshair.set()
+        BackgroundCursor.allow()
+        for window in windows { (window.contentView as? OverlayView)?.showCrosshair() }
+        // If another app takes focus (an app opening itself, a notification click), the keyboard
+        // goes there; cancel rather than leave a frozen screen that no longer receives Esc.
+        appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+            MainActor.assumeIsolated { self?.finish(nil) }
+        }
     }
 
     private func finish(_ selection: Selection?) {
         guard let completion else { return }
         self.completion = nil
+        if let appSwitchObserver { NSWorkspace.shared.notificationCenter.removeObserver(appSwitchObserver) }
+        appSwitchObserver = nil
         for window in windows {
             window.orderOut(nil)
             window.contentView = nil
@@ -81,6 +97,25 @@ final class SelectionOverlay {
     }
 }
 
+// MARK: - Pointer
+
+/// Lets Tutto set the pointer while another app is active (the window server ignores cursor
+/// changes from background apps otherwise). Undocumented but long-standing: it's how overlays
+/// that don't steal focus show their own pointer.
+enum BackgroundCursor {
+    @_silgen_name("CGSMainConnectionID") private static func mainConnection() -> Int32
+    @_silgen_name("CGSSetConnectionProperty")
+    private static func setConnectionProperty(_ cid: Int32, _ target: Int32, _ key: CFString, _ value: CFTypeRef) -> Int32
+
+    private static var allowed = false
+
+    static func allow() {
+        guard !allowed else { return }
+        let connection = mainConnection()
+        allowed = setConnectionProperty(connection, connection, "SetsCursorInBackground" as CFString, kCFBooleanTrue) == 0
+    }
+}
+
 // MARK: - Window
 
 private final class OverlayWindow: NSPanel {
@@ -100,6 +135,10 @@ private final class OverlayWindow: NSPanel {
             .filter { $0.intersects(CGRect(origin: .zero, size: shot.frame.size)) }
         contentView = OverlayView(shot: shot, windowFrames: local, finish: finish)
         setFrame(shot.frame, display: false)
+        // Tutto sets the crosshair itself (on show, every pointer event, and each frame for the
+        // first second). AppKit's cursor rects would reset it to an arrow while the window is
+        // still appearing, so they're off for this window.
+        disableCursorRects()
     }
 
     override var canBecomeKey: Bool { true }
@@ -163,38 +202,39 @@ private final class OverlayView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    private var activationObserver: NSObjectProtocol?
     private var cursorGuard: Timer?
+    /// The crosshair is shown from this moment on (see `showCrosshair`).
+    private var crosshairFrom = Date.distantFuture
+
+    /// Called once the overlay is on screen. The app underneath reacts to the overlay covering it
+    /// by setting its own pointer, once, within about 50 ms. Setting the crosshair before that
+    /// made it flip back to an arrow; so wait 120 ms, then set it and hold it for a second
+    /// (each frame), after which pointer events keep it. One clean change, no flip back.
+    func showCrosshair() {
+        cursorGuard?.invalidate()
+        let start = Date()
+        crosshairFrom = start.addingTimeInterval(0.12)
+        cursorGuard = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self, self.window != nil, Date().timeIntervalSince(start) < 1.12 else {
+                    timer.invalidate()
+                    return
+                }
+                self.setCrosshair()
+            }
+        }
+    }
+
+    private func setCrosshair() {
+        // NSCursor.current only knows what Tutto last set, not another app's change: always set it.
+        if Date() >= crosshairFrom { NSCursor.crosshair.set() }
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
-        activationObserver = nil
-        cursorGuard?.invalidate()
-        cursorGuard = nil
-        if window != nil {
-            activationObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
-                                                                        object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.window?.invalidateCursorRects(for: self)
-                    NSCursor.crosshair.set()
-                }
-            }
-            // The app you were in resets the pointer to an arrow as it loses focus, tens of
-            // milliseconds after the overlay appears, from its own process, so no event here
-            // reliably comes after it. Hold the crosshair through that handover (1 s), then the
-            // cursor rect, cursorUpdate and mouse events keep it.
-            let started = Date()
-            cursorGuard = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
-                MainActor.assumeIsolated {
-                    guard let self, self.window != nil, Date().timeIntervalSince(started) < 1 else {
-                        timer.invalidate()
-                        return
-                    }
-                    NSCursor.crosshair.set()  // NSCursor.current only knows what Tutto set, so always set it
-                }
-            }
+        if window == nil {
+            cursorGuard?.invalidate()
+            cursorGuard = nil
         }
         window?.makeFirstResponder(self)
         if let window {
@@ -202,20 +242,14 @@ private final class OverlayView: NSView {
         }
     }
 
-    // The crosshair has to survive Tutto becoming the active app a moment after the overlay
-    // appears: AppKit then resets the pointer from cursor rects (an arrow where there are none)
-    // without a fresh cursorUpdate, since the pointer never entered the view. So the whole view
-    // is a crosshair cursor rect, and every pointer event and activation sets it again.
-    override func cursorUpdate(with event: NSEvent) { NSCursor.crosshair.set() }
-
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .crosshair)
-    }
+    // The window's cursor rects are off (see OverlayWindow); the crosshair is set here on every
+    // pointer event instead.
+    override func cursorUpdate(with event: NSEvent) { setCrosshair() }
 
     // MARK: Mouse
 
     override func mouseMoved(with event: NSEvent) {
-        NSCursor.crosshair.set()
+        setCrosshair()
         updatePointer(convert(event.locationInWindow, from: nil))
     }
 
@@ -225,7 +259,7 @@ private final class OverlayView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        NSCursor.crosshair.set()
+        setCrosshair()
         let point = convert(event.locationInWindow, from: nil)
         guard var origin = start else { return }
         if spaceHeld, let selection {
