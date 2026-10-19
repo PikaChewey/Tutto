@@ -209,7 +209,7 @@ struct PermissionRow: View {
             VStack(alignment: .leading, spacing: Metrics.titleToDetail) {
                 Text(permission.title).font(.system(size: 13, weight: .medium))
                 Text(permission.powers).font(.system(size: 11.5)).foregroundStyle(Color.ink3)
-                Text(permission.settingsPath).font(.mono(10)).foregroundStyle(Color.ink4).padding(.top, 1)
+                Text(permission.settingsPath).font(.geist(10)).foregroundStyle(Color.ink4).padding(.top, 1)
             }
             Spacer()
             if granted == true {

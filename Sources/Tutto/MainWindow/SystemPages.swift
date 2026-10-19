@@ -229,7 +229,7 @@ private struct CoreGrid: View {
                         }
                         .frame(height: 54)
                         Text(Format.percent(value))
-                            .font(.mono(9.5))
+                            .font(.geist(9.5))
                             .foregroundStyle(Color.ink3)
                     }
                     .frame(maxWidth: .infinity)

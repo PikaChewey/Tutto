@@ -102,4 +102,4 @@ Layout: `Sources/TuttoKit` (testable logic: Trackpad Corner engine, system reade
 
 ## License
 
-MIT. libarchive (BSD) ships with macOS.
+MIT. libarchive (BSD) ships with macOS. Labels are set in [Geist](https://github.com/vercel/geist-font) 1.8.1 (SIL Open Font License 1.1, bundled with its license in `Resources/Fonts`).

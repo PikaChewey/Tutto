@@ -87,7 +87,7 @@ private struct ScreenshotSettings: View {
 
     private func tip(_ key: String, _ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(key.uppercased()).font(.mono(10, weight: .semibold)).foregroundStyle(Color.ink2).frame(width: 52, alignment: .leading)
+            Text(key.uppercased()).font(.geist(10, weight: .semibold)).foregroundStyle(Color.ink2).frame(width: 52, alignment: .leading)
             Text(text).font(.system(size: 12)).foregroundStyle(Color.ink2)
             Spacer()
         }

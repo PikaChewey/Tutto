@@ -235,7 +235,7 @@ struct ProcessRow: View {
                 .truncationMode(.tail)
             Spacer(minLength: 6)
             Text(value)
-                .font(.mono(11, weight: .medium))
+                .font(.geist(11, weight: .medium))
                 .foregroundStyle(Color.ink2)
         }
         .frame(height: 18)

@@ -261,7 +261,7 @@ struct SensorsLine: View {
 
     private func value(_ label: String, _ celsius: Double?) -> some View {
         HStack(spacing: 3) {
-            Text(label).font(.mono(9.5)).foregroundStyle(Color.ink3)
+            Text(label).font(.geist(9.5)).foregroundStyle(Color.ink3)
             Text(Format.temperature(celsius))
                 .font(.system(size: 12, weight: .medium).monospacedDigit())
                 .foregroundStyle((celsius ?? 0) >= 95 ? Color.alert : Color.ink)

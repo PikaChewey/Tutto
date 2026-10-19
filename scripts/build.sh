@@ -37,6 +37,7 @@ mkdir -p $APP/Contents/{MacOS,Resources,PlugIns,Library/LaunchDaemons}
 cp $BIN/Tutto $APP/Contents/MacOS/Tutto
 cp $BIN/TuttoHelper $APP/Contents/MacOS/TuttoHelper
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Resources/Info.plist > $APP/Contents/Info.plist
+cp -R Resources/Fonts $APP/Contents/Resources/Fonts   # Geist, registered via ATSApplicationFontsPath
 if [[ -f Resources/ca.bryanyao.Tutto.helper.plist ]]; then
   cp Resources/ca.bryanyao.Tutto.helper.plist $APP/Contents/Library/LaunchDaemons/
 fi

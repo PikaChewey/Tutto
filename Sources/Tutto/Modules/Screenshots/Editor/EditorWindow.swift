@@ -280,7 +280,7 @@ private struct EditorToolbar: View {
             }
             if document.tool == .select {
                 Text(verbatim: "\(Int(document.size.width)) × \(Int(document.size.height))")
-                    .font(.mono(11, weight: .medium))
+                    .font(.geist(11, weight: .medium))
                     .foregroundStyle(Color.ink2)
                     .fixedSize()
                     .padding(.horizontal, 8)
@@ -427,11 +427,11 @@ private struct EditorStatus: View {
             }
             Text("\(document.zoomPercent)%")
             Spacer()
-            Text("TAB COPY COLOR · ↩ CROP · T TEXT · ESC COPY & CLOSE")
+            Text("TAB COPY COLOR · RETURN CROP · T TEXT · ESC COPY & CLOSE")
                 .tracking(0.6)
                 .foregroundStyle(Color.ink3)
         }
-        .font(.mono(10.5, weight: .medium))
+        .font(.geist(10.5, weight: .medium))
         .foregroundStyle(Color.ink2)
         .padding(.horizontal, 14)
     }

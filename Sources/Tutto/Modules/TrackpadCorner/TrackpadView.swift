@@ -185,7 +185,7 @@ struct TrackpadView: View {
                     .transition(.opacity)
             }
             Text(dragging ? "\(Int(zoneMillimetres.width.rounded())) × \(Int(zoneMillimetres.height.rounded())) mm" : "RIGHT-CLICK")
-                .font(.mono(9, weight: .semibold))
+                .font(.geist(9, weight: .semibold))
                 .tracking(0.8)
                 .foregroundStyle(lit ? Color.paper : Color.ink)
                 .padding(.horizontal, 7)

@@ -98,7 +98,7 @@ private struct JobRow: View {
             }
             Meter(value: job.state == .running ? job.fraction : 1, height: 2, alert: isFailure)
             Text(status)
-                .font(.mono(10.5))
+                .font(.geist(10.5))
                 .foregroundStyle(isFailure ? Color.alert : Color.ink3)
                 .lineLimit(2)
                 .truncationMode(.middle)

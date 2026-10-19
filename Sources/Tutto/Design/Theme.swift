@@ -3,7 +3,8 @@
 //  Tutto (design system)
 //
 //  Monochrome. One ink (black in light mode, white in dark mode) at a few
-//  opacities, hairlines instead of shadows, SF Pro with monospaced numbers.
+//  opacities, hairlines instead of shadows. SF Pro for text and numbers (monospaced
+//  digits); Geist for the small labels, captions and keys.
 //
 
 import AppKit
@@ -51,12 +52,15 @@ extension NSAppearance {
 // MARK: - Type
 
 extension Font {
-    static func mono(_ size: CGFloat, weight: Font.Weight = .medium) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
+    /// Geist (bundled, Resources/Fonts, SIL OFL) for small labels, captions, keys and figures,
+    /// with tabular digits so numbers don't shift as they change. Body text stays SF Pro.
+    /// Symbols Geist lacks (⌘ ⌃ ⌥ ⎋) fall back to the system font.
+    static func geist(_ size: CGFloat, weight: Font.Weight = .medium) -> Font {
+        .custom("Geist", fixedSize: size).weight(weight).monospacedDigit()
     }
 }
 
-/// Small uppercase monospaced label, like an engraving on an instrument.
+/// Small uppercase label in Geist, like an engraving on an instrument.
 struct Caption: View {
     var text: String
     var uppercase = true
@@ -68,7 +72,7 @@ struct Caption: View {
 
     var body: some View {
         Text(uppercase ? text.uppercased() : text)
-            .font(.mono(10, weight: .medium))
+            .font(.geist(10, weight: .medium))
             .tracking(uppercase ? 0.8 : 0)
             .foregroundStyle(Color.ink3)
     }

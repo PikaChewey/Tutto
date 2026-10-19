@@ -338,7 +338,7 @@ private struct ToastView: View {
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(content.title.uppercased())
-                        .font(.mono(10.5, weight: .semibold))
+                        .font(.geist(10.5, weight: .semibold))
                         .tracking(0.8)
                         .foregroundStyle(Color.ink)
                     if let detail = content.detail {

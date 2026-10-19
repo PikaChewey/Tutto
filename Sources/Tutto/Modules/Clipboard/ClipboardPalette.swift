@@ -348,7 +348,7 @@ private struct ClipRow: View {
                     .foregroundStyle(selected ? Color.paper.opacity(0.7) : Color.ink4)
             }
             Text(RelativeTime.short(item.lastCopied))
-                .font(.mono(10))
+                .font(.geist(10))
                 .foregroundStyle(selected ? Color.paper.opacity(0.7) : Color.ink3)
         }
         .padding(.horizontal, 10)
