@@ -3,8 +3,12 @@
 //  Tutto
 //
 //  Battery health and power straight from the smart battery's IORegistry entry.
-//  "Maximum capacity" follows macOS's own definition (System Settings and
-//  system_profiler): NominalChargeCapacity ÷ DesignCapacity.
+//
+//  Health is macOS's own "Maximum Capacity" (System Settings › Battery › Battery Health),
+//  read from system_profiler and kept between launches. It is not NominalChargeCapacity ÷
+//  DesignCapacity: that ratio follows every gas-gauge recalibration and wanders up and
+//  down by a percent or so through the day (93.9 %, then 93.3 %, while macOS said 94 %
+//  throughout). macOS's figure is a whole percent that only moves as the battery ages.
 //
 
 import Foundation
@@ -21,7 +25,7 @@ public struct BatteryInfo: Equatable, Sendable {
     public var designCycleCount: Int?
     /// mAh.
     public var designCapacity: Int
-    /// mAh the battery holds when full today (macOS's definition of maximum capacity).
+    /// mAh the gas gauge estimates a full charge holds today. Recalibrates as the battery is used.
     public var maxCapacity: Int
     /// mAh as the gas gauge measures it, before macOS's smoothing.
     public var rawMaxCapacity: Int?
@@ -43,8 +47,19 @@ public struct BatteryInfo: Equatable, Sendable {
     public var condition: String?
     public var serial: String?
 
-    /// Battery health as a percentage, like System Settings.
-    public var health: Double { designCapacity > 0 ? Double(maxCapacity) / Double(designCapacity) : 0 }
+    /// macOS's "Maximum Capacity", whole percent, when it could be read.
+    public var reportedHealth: Int? = nil
+
+    /// Battery health in whole percent, exactly as System Settings shows it. Only if macOS's
+    /// figure can't be read does it fall back to the gauge's estimate ÷ design, rounded.
+    public var healthPercent: Int {
+        if let reportedHealth { return reportedHealth }
+        guard designCapacity > 0 else { return 0 }
+        return Int((Double(maxCapacity) / Double(designCapacity) * 100).rounded())
+    }
+
+    /// `healthPercent` as a fraction.
+    public var health: Double { Double(healthPercent) / 100 }
 
     /// Watts into (positive) or out of (negative) the battery, from the power telemetry when
     /// reported (consistent with `systemPower`), else voltage × current.
@@ -81,6 +96,7 @@ public enum BatteryReader {
               let dict = properties?.takeRetainedValue() as? [String: Any] else { return nil }
         var info = parse(dict)
         addPowerSourceDetails(to: &info)
+        info.reportedHealth = BatteryHealthCache.shared.value(for: info.serial)
         return info
     }
 
@@ -161,6 +177,102 @@ public enum BatteryReader {
                 info.condition = health == "Good" ? "Normal" : health
             }
         }
+    }
+}
+
+// MARK: - macOS's health figure
+
+/// The "Maximum Capacity" macOS shows under System Settings › Battery › Battery Health.
+/// Apple publishes no API for it; system_profiler is the supported way to read it.
+public enum BatteryHealthReport {
+    /// Runs system_profiler (about 70 ms). Blocks, so call it off the main thread.
+    public static func fetch() -> Int? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
+        process.arguments = ["SPPowerDataType", "-json"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+        return parse(data)
+    }
+
+    /// Exposed for tests: pulls "94%" out of `system_profiler SPPowerDataType -json`.
+    public static func parse(_ json: Data) -> Int? {
+        guard let root = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
+              let entries = root["SPPowerDataType"] as? [[String: Any]] else { return nil }
+        for entry in entries {
+            guard let health = entry["sppower_battery_health_info"] as? [String: Any],
+                  let text = health["sppower_battery_health_maximum_capacity"] as? String,
+                  let value = Int(text.filter(\.isNumber)), (1...150).contains(value) else { continue }
+            return value
+        }
+        return nil
+    }
+}
+
+/// macOS's health figure, remembered between launches (keyed to the battery's serial, so a
+/// replaced battery starts fresh) and re-read in the background at most once an hour.
+public final class BatteryHealthCache: @unchecked Sendable {
+    public static let shared = BatteryHealthCache()
+
+    private static let defaultsKey = "battery.reportedHealth"
+    private static let maxAge: TimeInterval = 3600
+
+    private let lock = NSLock()
+    private var value: Int?
+    private var serial: String?
+    private var fetchedAt: Date?
+    private var isFetching = false
+
+    private init() {
+        if let stored = UserDefaults.standard.dictionary(forKey: Self.defaultsKey) {
+            value = stored["value"] as? Int
+            serial = stored["serial"] as? String
+        }
+    }
+
+    /// The last figure macOS gave for this battery. Starts a background refresh when it's an
+    /// hour old. The very first time (nothing remembered yet) it reads synchronously, once,
+    /// so the number on screen never switches from an estimate to macOS's figure.
+    public func value(for batterySerial: String?) -> Int? {
+        lock.lock()
+        if serial != batterySerial { value = nil; fetchedAt = nil }
+        let known = value
+        let stale = fetchedAt.map { -$0.timeIntervalSinceNow > Self.maxAge } ?? true
+        let firstEver = known == nil && fetchedAt == nil
+        let startBackground = stale && !isFetching && !firstEver
+        if startBackground || firstEver { isFetching = true }
+        lock.unlock()
+
+        if firstEver {
+            store(BatteryHealthReport.fetch(), serial: batterySerial)
+            lock.lock(); defer { lock.unlock() }
+            return value
+        }
+        if startBackground {
+            DispatchQueue.global(qos: .utility).async { [self] in
+                store(BatteryHealthReport.fetch(), serial: batterySerial)
+            }
+        }
+        return known
+    }
+
+    private func store(_ fetched: Int?, serial batterySerial: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        isFetching = false
+        fetchedAt = Date()
+        // A failed read keeps the last good figure rather than dropping back to an estimate.
+        guard let fetched else { return }
+        value = fetched
+        serial = batterySerial
+        var stored: [String: Any] = ["value": fetched]
+        if let batterySerial { stored["serial"] = batterySerial }
+        UserDefaults.standard.set(stored, forKey: Self.defaultsKey)
     }
 }
 

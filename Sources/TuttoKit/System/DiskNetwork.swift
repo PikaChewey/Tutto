@@ -88,21 +88,23 @@ public struct NetworkInterfaceInfo: Equatable, Sendable {
 
 public enum NetworkReader {
     /// Bytes in and out across physical interfaces (Wi-Fi, Ethernet), since boot.
+    /// Read per interface from the interface MIB, the same exact 64-bit counters `netstat -ib`
+    /// prints. The `getifaddrs` and `NET_RT_IFLIST2` copies are rounded and cut to 32 bits, so
+    /// they wrapped every 4 GB and blanked the rate for a second mid-download.
     public static func counters() -> NetworkCounters {
-        var head: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&head) == 0, let first = head else { return NetworkCounters(received: 0, sent: 0) }
-        defer { freeifaddrs(head) }
         var received: UInt64 = 0, sent: UInt64 = 0
-        var cursor: UnsafeMutablePointer<ifaddrs>? = first
-        while let entry = cursor {
-            defer { cursor = entry.pointee.ifa_next }
-            guard let address = entry.pointee.ifa_addr, address.pointee.sa_family == UInt8(AF_LINK),
-                  let data = entry.pointee.ifa_data else { continue }
-            let name = String(cString: entry.pointee.ifa_name)
-            guard name.hasPrefix("en") else { continue }  // skip loopback, tunnels, bridges
-            let stats = data.assumingMemoryBound(to: if_data.self).pointee
-            received &+= UInt64(stats.ifi_ibytes)
-            sent &+= UInt64(stats.ifi_obytes)
+        guard let list = if_nameindex() else { return NetworkCounters(received: 0, sent: 0) }
+        defer { if_freenameindex(list) }
+        var entry = list
+        while entry.pointee.if_index != 0, let cName = entry.pointee.if_name {
+            defer { entry += 1 }
+            guard String(cString: cName).hasPrefix("en") else { continue }  // skip loopback, tunnels, bridges
+            var mib: [Int32] = [CTL_NET, PF_LINK, NETLINK_GENERIC, IFMIB_IFDATA, Int32(entry.pointee.if_index), IFDATA_GENERAL]
+            var data = ifmibdata()
+            var size = MemoryLayout<ifmibdata>.size
+            guard sysctl(&mib, u_int(mib.count), &data, &size, nil, 0) == 0 else { continue }
+            received &+= data.ifmd_data.ifi_ibytes
+            sent &+= data.ifmd_data.ifi_obytes
         }
         return NetworkCounters(received: received, sent: sent)
     }

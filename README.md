@@ -48,7 +48,7 @@ Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press th
 
 **In the screenshot editor:** with no tool, drag to make a selection box (move it, drag its handles; `↩` crops to it). `P` draw, `H` highlight, `A` arrow, `R` rectangle, `[`/`]` thickness, eight colors plus any color. `T` copies all text (in the selection if there is one) and QR codes. `Tab` copies the hovered pixel's hex color. `⌘S` saves to Downloads (configurable), `⌘C` copies, **`Esc` copies and closes**. `⌘Z` undoes.
 
-**Menu bar panel:** battery (charge, health, cycles, max/design capacity, watts, top energy users), CPU, GPU, memory, disk, temperatures and fan, the Trackpad Corner editor, and one-click capture, clipboard history, window palette and word counter buttons. Click any number for the full page in the app.
+**Menu bar panel:** battery (charge, health as macOS reports it, cycles, condition, watts, top energy users), CPU, GPU, memory, disk, network speed with a small graph, temperatures, fan Auto/Custom/Max, compact Trackpad Corner controls (size, side, click/tap; the full drawing is in the app), and one-click capture, clipboard history, window palette and word counter buttons. Click any number for the full page in the app.
 
 **Finder:** right-click an archive for **Extract Here**, **Extract to "Name"**, **Extract to…**; right-click anything for **Compress to ZIP**. Archives can also be opened with Tutto by double-clicking (Archives › Make Default).
 

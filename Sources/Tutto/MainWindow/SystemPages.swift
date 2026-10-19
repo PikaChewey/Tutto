@@ -114,13 +114,11 @@ struct BatteryPage: View {
                 hero(battery)
                 HStack(alignment: .top, spacing: 18) {
                     InkGroup("Health") {
-                        ValueRow(label: "Maximum capacity", value: "\(Format.percent(battery.health, digits: 1))%",
-                                 detail: "of when it was new")
-                        ValueRow(label: "Full charge holds", value: "\(Format.number(battery.maxCapacity)) mAh")
+                        ValueRow(label: "Maximum capacity", value: "\(battery.healthPercent)%",
+                                 detail: battery.reportedHealth == nil ? "estimated from the gauge" : "as macOS reports it")
                         ValueRow(label: "Designed to hold", value: "\(Format.number(battery.designCapacity)) mAh")
-                        if let raw = battery.rawMaxCapacity {
-                            ValueRow(label: "Gas gauge reading", value: "\(Format.number(raw)) mAh")
-                        }
+                        ValueRow(label: "Holds today", value: "\(Format.number(battery.maxCapacity)) mAh",
+                                 detail: "live gauge estimate")
                         ValueRow(label: "Cycle count", value: Format.number(battery.cycleCount),
                                  detail: battery.designCycleCount.map { "rated for \(Format.number($0))" })
                         ValueRow(label: "Condition", value: battery.condition ?? "—")
@@ -173,7 +171,7 @@ struct BatteryPage: View {
             }
             Spacer()
             HStack(spacing: 28) {
-                Readout(caption: "Health", value: Format.percent(battery.health, digits: 1), unit: "%", large: true)
+                Readout(caption: "Health", value: "\(battery.healthPercent)", unit: "%", large: true)
                 Readout(caption: "Cycles", value: Format.number(battery.cycleCount), large: true)
                 Readout(caption: "Power", value: Format.watts(battery.powerDraw), unit: "W", large: true)
             }

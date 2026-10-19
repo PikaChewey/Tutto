@@ -344,6 +344,8 @@ enum Format {
 
     static func rate(_ bytesPerSecond: Double?) -> String {
         guard let bytesPerSecond else { return "—" }
+        // ByteCountFormatter spells nothing as "Zero KB"; a rate reads better as a number.
+        if bytesPerSecond < 1000 { return "\(Int(bytesPerSecond / 1000)) KB/s" }
         return ByteCountFormatter.string(fromByteCount: Int64(bytesPerSecond), countStyle: .file) + "/s"
     }
 

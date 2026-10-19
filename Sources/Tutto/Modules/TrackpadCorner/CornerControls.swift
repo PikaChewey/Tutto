@@ -132,16 +132,18 @@ struct CornerEditor: View {
                 ProblemRow(problem: problem)
                     .padding(.bottom, 10)
             }
-            TrackpadView(contacts: module.contacts,
-                         zone: $module.zone,
-                         size: module.trackpadSize,
-                         pulse: module.pulse,
-                         editable: module.isEnabled,
-                         dimmed: !module.status.isRunning,
-                         onResize: { if !module.zoneIsCustom { module.zoneIsCustom = true } })
-                .frame(height: compact ? 292 * module.trackpadSize.height / module.trackpadSize.width : nil)
+            if !compact {
+                // The live drawing lives on the Trackpad Corner page; the menu bar keeps just the controls.
+                TrackpadView(contacts: module.contacts,
+                             zone: $module.zone,
+                             size: module.trackpadSize,
+                             pulse: module.pulse,
+                             editable: module.isEnabled,
+                             dimmed: !module.status.isRunning,
+                             onResize: { if !module.zoneIsCustom { module.zoneIsCustom = true } })
+            }
             if compact {
-                // Menu bar: the same controls in two rows.
+                // Menu bar: size, side and triggers in two rows.
                 HStack(spacing: 8) {
                     readout
                     InkSegmented(selection: $module.zone.corner,
@@ -150,7 +152,6 @@ struct CornerEditor: View {
                         .disabled(!module.isEnabled)
                         .opacity(module.isEnabled ? 1 : 0.4)
                 }
-                .padding(.top, 6)
                 HStack {
                     ZonePresetPicker(module: module)
                     Spacer(minLength: 6)
@@ -177,6 +178,8 @@ struct CornerEditor: View {
             }
         }
         .background(VisibilityReader { visible in
+            // Finger positions are only read while the drawing is on screen.
+            guard !compact else { return }
             if visible { module.beginWatching() } else { module.endWatching() }
         })
     }

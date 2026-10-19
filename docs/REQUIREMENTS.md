@@ -24,7 +24,7 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | ID | Requirement | Acceptance criteria | Status |
 |---|---|---|---|
 | SYS-1 | Brief summary in panel: battery, CPU, GPU, RAM, disk | One compact row/tile each; values update ~1 s while visible | [x] Live panel: battery block, CPU/GPU/Memory/Disk tiles, temperature line; 1 Hz while open |
-| SYS-2 | Battery: %, max capacity, design capacity, health %, cycles, power, top battery processes | Matches `system_profiler SPPowerDataType` (health = NominalChargeCapacity ÷ DesignCapacity, rounds to the same %), cycles exact, power from PowerTelemetry/ V×A, top processes match `top -o power` ordering | [x] Live: 94.4 % health = NominalChargeCapacity ÷ DesignCapacity (System Settings: 94 %), cycles 127 = system_profiler, max/design mAh, watts from power telemetry, top energy users from `top -o power` |
+| SYS-2 | Battery: %, health %, cycles, condition, power, top battery processes | Health is macOS's own Maximum Capacity (System Settings › Battery Health, read from `system_profiler SPPowerDataType`), whole percent, steady through the day; cycles exact; power from PowerTelemetry / V×A; top processes match `top -o power` ordering | [x] Live: health 94 % = System Settings and system_profiler, while the gauge's NominalChargeCapacity ÷ DesignCapacity drifted 93.9 → 93.3 → 92.8 % the same day (the old formula, which caused the reported flicker); cycles 135 = system_profiler; condition Normal; watts from power telemetry; top energy users from `top -o power` |
 | SYS-3 | Go deeper for each: CPU, GPU, RAM, disk, battery (+network) | Main-window pages: per-core CPU (Super/Efficiency), load, top CPU processes; GPU utilization/renderer/tiler/memory; RAM breakdown + pressure + swap + top memory; volumes + read/write throughput; network rates; full battery/adapter detail | [x] Pages for Battery, CPU (Super/Efficiency cores, load, top CPU), GPU, Memory (breakdown, pressure, swap, top memory), Disk (volumes, read/write), Network; rendered with live data |
 | SYS-4 | No idle cost | Sampling runs only while panel/page visible; stops ≤ 1 s after hiding (verified by wakeups) | [x] Live: `top` 1→0 on close, CPU back to 0.03 %, wakeups 0.12/s |
 
@@ -150,7 +150,7 @@ Every request in the specification (re-read in full 2026-10-10, 2,673 words) map
 
 | Spec says | Covered by |
 |---|---|
-| Battery and system monitor: click the menu bar icon to see readings; battery, max capacity, designed capacity, health %, cycles, power, top processes using battery | APP-1, SYS-1, SYS-2 |
+| Battery and system monitor: click the menu bar icon to see readings; battery, health % (as macOS reports it), cycles, condition, power, top processes using battery | APP-1, SYS-1, SYS-2 |
 | Temperatures and fans: view temperatures, edit fan power for heavy tasks | FAN-1 … FAN-4 |
 | Clipboard history on ⌃⇧V (Control, not Command); images, text and more in a clean UI; search, paste, pin, content-type filter | CLIP-1 … CLIP-6, APP-5 |
 | Window management: ⌃⇧B, type "left half"/"right half"; halves, thirds, quarters, center, maximize, between displays | WIN-1 … WIN-3 (moving between displays is unit-tested only: this Mac has one display) |

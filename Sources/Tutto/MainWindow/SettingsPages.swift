@@ -79,7 +79,7 @@ private struct OverviewStats: View {
     var body: some View {
         HStack(spacing: 0) {
             if let battery = monitor.battery {
-                stat("Battery", "\(battery.percent)", "%", detail: "health \(Format.percent(battery.health, digits: 1))%", page: .battery)
+                stat("Battery", "\(battery.percent)", "%", detail: "health \(battery.healthPercent)%", page: .battery)
                 Hairline(vertical: true).padding(.vertical, 8)
             }
             stat("CPU", Format.percent(monitor.cpu.total), "%", detail: CPUReader.topology.brand, page: .cpu)
@@ -271,7 +271,7 @@ private struct AboutFooter: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(nsImage: MenuBarGlyph.image()).renderingMode(.template).foregroundStyle(Color.ink3)
-            Text("Tutto \(Bundle.main.shortVersion) · Made by Bryan Yao · No analytics, no network code")
+            Text("Tutto \(Bundle.main.shortVersion) · Made by Bryan Yao")
                 .font(.system(size: 11))
                 .foregroundStyle(Color.ink3)
         }

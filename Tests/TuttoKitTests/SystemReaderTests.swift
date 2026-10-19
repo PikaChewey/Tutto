@@ -51,6 +51,57 @@ final class SystemReaderTests: XCTestCase {
         XCTAssertEqual(info.stateText, "On battery")
     }
 
+    func testHealthIsMacOSFigureNotTheDriftingGaugeRatio() {
+        // Later the same day: the gauge's estimate fell to 5833 mAh (93.3 %) while macOS still said 94 %.
+        var info = BatteryReader.parse(["DesignCapacity": 6249, "NominalChargeCapacity": 5833, "CurrentCapacity": 47])
+        XCTAssertEqual(info.healthPercent, 93)  // fallback only: estimate, rounded to a whole percent
+        info.reportedHealth = 94
+        XCTAssertEqual(info.healthPercent, 94)
+        XCTAssertEqual(info.health, 0.94, accuracy: 0.0001)
+    }
+
+    func testSystemProfilerHealthParsing() {
+        let json = """
+        {"SPPowerDataType":[{"_name":"spbattery_information","sppower_battery_health_info":
+        {"sppower_battery_cycle_count":135,"sppower_battery_health":"Good",
+        "sppower_battery_health_maximum_capacity":"94%"}},{"_name":"sppower_information"}]}
+        """
+        XCTAssertEqual(BatteryHealthReport.parse(Data(json.utf8)), 94)
+        XCTAssertNil(BatteryHealthReport.parse(Data(#"{"SPPowerDataType":[{"_name":"sppower_information"}]}"#.utf8)))
+        XCTAssertNil(BatteryHealthReport.parse(Data("not json".utf8)))
+    }
+
+    func testLiveHealthMatchesSystemProfiler() throws {
+        guard BatteryReader.read() != nil else { throw XCTSkip("No battery") }
+        let reported = try XCTUnwrap(BatteryHealthReport.fetch())
+        XCTAssert((50...110).contains(reported))
+    }
+
+    func testNetworkCountersAre64BitAndOnlyGoUp() {
+        let a = NetworkReader.counters()
+        let b = NetworkReader.counters()
+        XCTAssertGreaterThan(a.received, 0)
+        XCTAssertGreaterThanOrEqual(b.received, a.received)
+        XCTAssertGreaterThanOrEqual(b.sent, a.sent)
+
+        // Same exact counters as netstat (allowing for traffic between the two reads).
+        let netstat = Process()
+        netstat.executableURL = URL(fileURLWithPath: "/usr/sbin/netstat")
+        netstat.arguments = ["-ib"]
+        let pipe = Pipe()
+        netstat.standardOutput = pipe
+        try? netstat.run()
+        let text = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        netstat.waitUntilExit()
+        var received: UInt64 = 0
+        for line in text.split(separator: "\n") {
+            let columns = line.split(separator: " ")
+            guard columns.count >= 10, columns[0].hasPrefix("en"), columns[2].hasPrefix("<Link") else { continue }
+            received += UInt64(columns[columns.count - 5]) ?? 0
+        }
+        XCTAssertLessThan(abs(Int64(received) - Int64(b.received)), 50_000_000)
+    }
+
     func testTopParsing() {
         let block = """
          1234 total, 5 running

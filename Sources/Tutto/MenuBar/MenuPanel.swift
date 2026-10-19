@@ -2,8 +2,9 @@
 //  MenuPanel.swift
 //  Tutto
 //
-//  The menu bar panel: a glance at the battery and the machine, Trackpad Corner's corner,
-//  and one-click access to every tool. Each part appears only if its module is on.
+//  The menu bar panel: a glance at the battery, the machine, the network and the fan
+//  (with its Auto / Custom / Max control), Trackpad Corner's settings, and one-click
+//  access to every tool. Each part appears only if its module is on.
 //  Readings run only while this panel is open.
 //
 
@@ -27,13 +28,19 @@ struct MenuPanel: View {
                     Hairline().padding(.bottom, 10)
                 }
                 StatsStrip(monitor: system)
-                    .padding(.bottom, model.sensors == nil ? 10 : 4)
+                    .padding(.bottom, 6)
                     .watching(system, system.panelFeeds)
+                NetworkLine(monitor: system)
+                    .padding(.bottom, model.sensors == nil ? 10 : 4)
             }
             if let sensors = model.sensors {
                 if model.system == nil { Hairline().padding(.bottom, 6) }
                 SensorsLine(sensors: sensors)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 2)
+                if let fan = sensors.fans.first {
+                    PanelFanControl(sensors: sensors, fan: fan)
+                        .padding(.bottom, 8)
+                }
             }
 
             if let corner = model.corner {
@@ -170,22 +177,9 @@ private struct BatterySummary: View {
 
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 0) {
                 GridRow {
-                    Readout(caption: "Health", value: Format.percent(battery.health, digits: 1), unit: "%")
+                    Readout(caption: "Health", value: "\(battery.healthPercent)", unit: "%")
                     Readout(caption: "Cycles", value: Format.number(battery.cycleCount))
-                    VStack(alignment: .leading, spacing: 3) {
-                        Caption("Max · Design")
-                        HStack(alignment: .firstTextBaseline, spacing: 2) {
-                            Text("\(Format.number(battery.maxCapacity))")
-                                .font(.system(size: 15, weight: .medium).monospacedDigit())
-                            Text("/ \(Format.number(battery.designCapacity)) mAh")
-                                .font(.system(size: 11, weight: .medium).monospacedDigit())
-                                .foregroundStyle(Color.ink3)
-                        }
-                        .lineLimit(1)
-                    }
-                    .gridCellColumns(1)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Maximum capacity \(battery.maxCapacity) of \(battery.designCapacity) milliamp hours designed")
+                    Readout(caption: "Condition", value: battery.condition ?? "—")
                 }
             }
 
@@ -399,6 +393,124 @@ private struct StatsStrip: View {
         .buttonStyle(.plain)
         .help("Free space on \(monitor.rootVolume?.name ?? "the startup disk")")
         .accessibilityLabel("Disk, \(monitor.rootVolume.map { Format.bytes($0.available, style: .file) } ?? "unknown") free")
+    }
+}
+
+// MARK: - Network
+
+/// Download and upload rates with the last minute of traffic. Read once a second with the
+/// other panel numbers, only while the panel is open.
+private struct NetworkLine: View {
+    var monitor: SystemMonitor
+
+    var body: some View {
+        Button {
+            MainWindowController.shared.show(page: .network)
+        } label: {
+            HStack(spacing: 10) {
+                Caption("Net")
+                rate("arrow.down", monitor.networkIn)
+                rate("arrow.up", monitor.networkOut)
+                Spacer(minLength: 4)
+                Sparkline(values: monitor.networkHistory)
+                    .frame(width: 84, height: 14)
+            }
+            .frame(height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Network details")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Network, download \(Format.rate(monitor.networkIn)), upload \(Format.rate(monitor.networkOut))")
+    }
+
+    private func rate(_ symbol: String, _ value: Double?) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Color.ink3)
+            Text(Format.rate(value))
+                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .foregroundStyle(Color.ink)
+                .lineLimit(1)
+        }
+        .frame(width: 70, alignment: .leading)
+    }
+}
+
+// MARK: - Fan
+
+/// Auto / Custom / Max for the fan, right in the panel. The helper set-up and the full fan
+/// page stay in the app.
+private struct PanelFanControl: View {
+    @Bindable var sensors: SensorsModule
+    var fan: FanReading
+    @State private var customRPM: Double = 0
+
+    private enum Choice: Hashable { case auto, custom, maximum }
+
+    private var choice: Choice {
+        switch sensors.commands[fan.index] {
+        case .none, .auto?: .auto
+        case .rpm?: .custom
+        case .maximum?: .maximum
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Caption("Fan")
+                Spacer(minLength: 6)
+                InkSegmented(selection: Binding(get: { choice }, set: { select($0) }),
+                             options: [(Choice.auto, "Auto"), (.custom, "Custom"), (.maximum, "Max")],
+                             help: { option in
+                                 switch option {
+                                 case .auto: "macOS controls the fan"
+                                 case .custom: "Hold a speed you choose"
+                                 case .maximum: "Full speed, for heavy work"
+                                 }
+                             })
+                    .fixedSize()
+            }
+            if choice == .custom {
+                HStack(spacing: 8) {
+                    Slider(value: $customRPM, in: fan.minRPM...fan.maxRPM, step: 100) { editing in
+                        if !editing { sensors.set(.rpm(customRPM), for: fan) }
+                    }
+                    .controlSize(.mini)
+                    .accessibilityLabel("Fan speed")
+                    Text("\(Format.number(Int(customRPM))) rpm")
+                        .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                        .frame(width: 70, alignment: .trailing)
+                }
+                .transition(.opacity)
+            }
+            if sensors.helperStatus != .enabled, let message = sensors.helperMessage {
+                HStack(spacing: 8) {
+                    Text(message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 6)
+                    Button("Set Up") { MainWindowController.shared.show(page: .sensors) }
+                        .buttonStyle(OutlineButtonStyle(compact: true))
+                }
+            }
+        }
+        .animation(Motion.snappy, value: choice)
+        .onAppear {
+            if case .rpm(let rpm)? = sensors.commands[fan.index] { customRPM = rpm }
+            else { customRPM = fan.minRPM + (fan.maxRPM - fan.minRPM) / 2 }
+        }
+    }
+
+    private func select(_ choice: Choice) {
+        switch choice {
+        case .auto: sensors.set(.auto, for: fan)
+        case .custom: sensors.set(.rpm(customRPM), for: fan)
+        case .maximum: sensors.set(.maximum, for: fan)
+        }
     }
 }
 
