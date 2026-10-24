@@ -35,6 +35,8 @@ If another app already uses one of the shortcuts below, macOS may deliver the ke
 
 | Shortcut | What it does |
 |---|---|
+| `⌘Tab` | Window switcher: every window gets its own card, not just every app (three Firefox windows are three cards, on any Space or in full screen, with a picture of each). Hold `⌘`, press `Tab` to move, let go to switch; a quick tap goes back to the previous window. While it's open: `1`–`9` switch to that card, `W` close, `M` minimize, `Q` quit, `H` hide, `F` fill the screen, `C` centre, `N` next display, `R` rename the window, `/` search, `` ` `` only that app's windows, `Esc` cancel |
+| ``⌘` `` | The front app's windows only (all your Firefox windows) |
 | `⌘⇧2` | Select an area → copied to the clipboard (no editor to dismiss) |
 | `⌘⇧1` | The whole screen under the pointer → clipboard |
 | ``⌘⇧` `` | Select an area → screenshot editor |
@@ -64,8 +66,8 @@ Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press th
 
 | Permission | Powers | Asked |
 |---|---|---|
-| Accessibility | Trackpad Corner, moving windows, pasting from clipboard history | Welcome window / first use |
-| Screen Recording | Screenshots, color picking, text recognition | Welcome window / first capture |
+| Accessibility | Trackpad Corner, the window switcher, moving windows, pasting from clipboard history | Welcome window / first use |
+| Screen Recording | Screenshots, color picking, text recognition, window titles and pictures in the switcher | Welcome window / first capture |
 | System Audio Recording | Muting apps in Sound (Tutto holds their sound back; nothing is recorded) | The first time you mute an app |
 | Finder extension | The Extract / Compress right-click items | Archives page (System Settings › General › Login Items & Extensions › Extensions) |
 | Fan helper (App Background Activity) | Setting fan speeds — reading never needs it | Only when you first choose Custom or Max |
@@ -78,6 +80,7 @@ Tutto has no network code and no analytics. Clipboard history stays in `~/Librar
 - **Nothing runs while you're not looking.** System readings, temperatures and the `top` process feed run only while the panel or a page shows them, and stop the moment it closes.
 - **Event-driven where macOS allows.** Shortcuts are Carbon hot keys (the system calls Tutto), Trackpad Corner wakes only when a finger touches the trackpad, battery changes come from IOKit notifications.
 - **The one unavoidable timer** — macOS has no clipboard-changed notification — checks a local counter about once a second with wide timer leeway so macOS folds it into wake-ups that happen anyway, slows to every 4 s when you're away, and stops while the screen is locked.
+- **The window switcher waits, it doesn't watch.** A key filter on its own thread lets every key through except the trigger; the window list is built when you press ⌘Tab (about 10 ms) and window pictures are taken only while it's open, then dropped 30 s later.
 - **Off means off.** A module that's switched off releases its object, timers, taps, hot keys and (for Archives) the Finder extension.
 
 Measurements and comparisons with comparable utilities are in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
@@ -88,6 +91,7 @@ Measurements and comparisons with comparable utilities are in [docs/PERFORMANCE.
 - **Temperatures:** Apple doesn't document which sensor is the CPU or GPU on Apple silicon. Tutto labels CPU/GPU only from published SMC key tables (on M5, confirmed to respond to CPU and GPU load on this Mac) and shows the rest as SoC die, battery and SSD.
 - **Archives:** Tutto uses the libarchive built into macOS, so encrypted RAR and 7z archives and zstd/lz4 compression can't be opened (password-protected zip works). Compression produces zip.
 - **Screen Recording:** macOS may periodically ask you to re-confirm it; that's macOS policy.
+- **Window switcher:** while you type in a password field macOS hides keystrokes from every app, so ⌘Tab shows macOS's own switcher there. If Tutto quits or crashes, macOS's ⌘Tab is back immediately (nothing in the system is switched off). It relies on private window-server calls to list windows on other Spaces and switch to them; a window on another Space that nothing has touched since its app started is reached through that app's Window menu. Video that apps protect from capture shows as a dark picture.
 - **Shortcut clashes:** if another app registers the same keys, macOS may deliver them to both apps. Change one of the shortcuts.
 - **Not included:** remote, clock and Bluetooth monitoring, alerts, scrolling capture, pinned screenshots, blur, cloud upload, an app launcher.
 

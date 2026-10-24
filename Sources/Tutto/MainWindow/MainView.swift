@@ -12,7 +12,7 @@ import TuttoKit
 enum MainPage: String, Hashable, CaseIterable, Identifiable {
     case overview
     case battery, cpu, gpu, memory, disk, network, sensors
-    case clipboard, windows, screenshots, archives, corner, wordCounter, sound
+    case clipboard, windows, switcher, screenshots, archives, corner, wordCounter, sound
     case shortcuts, permissions, general
 
     var id: String { rawValue }
@@ -34,6 +34,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .corner: "Trackpad Corner"
         case .wordCounter: "Word Counter"
         case .sound: "Sound"
+        case .switcher: "Window Switcher"
         case .shortcuts: "Shortcuts"
         case .permissions: "Permissions"
         case .general: "General"
@@ -57,6 +58,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .corner: ModuleID.corner.symbol
         case .wordCounter: ModuleID.wordCounter.symbol
         case .sound: ModuleID.sound.symbol
+        case .switcher: ModuleID.switcher.symbol
         case .shortcuts: "command"
         case .permissions: "lock.shield"
         case .general: "gearshape"
@@ -74,12 +76,13 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .corner: .corner
         case .wordCounter: .wordCounter
         case .sound: .sound
+        case .switcher: .switcher
         case .overview, .shortcuts, .permissions, .general: nil
         }
     }
 
     static let systemPages: [MainPage] = [.battery, .cpu, .gpu, .memory, .disk, .network, .sensors]
-    static let toolPages: [MainPage] = [.clipboard, .windows, .screenshots, .archives, .corner, .wordCounter, .sound]
+    static let toolPages: [MainPage] = [.clipboard, .windows, .switcher, .screenshots, .archives, .corner, .wordCounter, .sound]
     static let settingsPages: [MainPage] = [.shortcuts, .permissions, .general]
 }
 
@@ -155,6 +158,7 @@ struct MainView: View {
         case .corner: CornerPage(model: model)
         case .wordCounter: WordCounterPage(model: model)
         case .sound: SoundPage(model: model)
+        case .switcher: SwitcherPage(model: model)
         case .shortcuts: ShortcutsPage(model: model)
         case .permissions: PermissionsPage(model: model)
         case .general: GeneralPage(model: model)

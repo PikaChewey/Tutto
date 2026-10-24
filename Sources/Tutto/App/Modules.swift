@@ -2,7 +2,7 @@
 //  Modules.swift
 //  Tutto
 //
-//  The nine tools inside Tutto. Each can be switched off on its own, and a module
+//  The ten tools inside Tutto. Each can be switched off on its own, and a module
 //  that is off holds no timers, taps, hotkeys, helpers or memory.
 //
 
@@ -18,6 +18,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
     case corner
     case wordCounter
     case sound
+    case switcher
 
     var id: String { rawValue }
 
@@ -32,6 +33,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .corner: "Trackpad Corner"
         case .wordCounter: "Word Counter"
         case .sound: "Sound"
+        case .switcher: "Window Switcher"
         }
     }
 
@@ -46,6 +48,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .corner: "rectangle.inset.bottomright.filled"
         case .wordCounter: "text.word.spacing"
         case .sound: "speaker.slash"
+        case .switcher: "rectangle.stack"
         }
     }
 
@@ -61,6 +64,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .corner: "Click or tap a trackpad corner to right-click."
         case .wordCounter: "Words, characters and reading time of any text."
         case .sound: "Mute any app at the speakers; it still plays to recorders."
+        case .switcher: "⌘Tab shows every window, not just every app."
         }
     }
 
@@ -73,6 +77,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .archives: "Nothing in Tutto. Finder loads the small menu extension."
         case .corner: "Nothing until a finger touches the trackpad."
         case .sound: "Nothing until a muted app plays a sound."
+        case .switcher: "Nothing but a key filter that waits for ⌘Tab. Windows are listed only when you press it."
         }
     }
 }

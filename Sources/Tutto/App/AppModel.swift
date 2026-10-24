@@ -30,6 +30,7 @@ final class AppModel {
     private(set) var corner: CornerModule?
     private(set) var wordCounter: WordCounterModule?
     private(set) var sound: SoundModule?
+    private(set) var switcher: SwitcherModule?
 
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
     /// On notched MacBooks a crowded menu bar puts new icons behind the notch, where they can't be clicked.
@@ -122,6 +123,9 @@ final class AppModel {
         case .sound:
             if sound == nil { sound = SoundModule() }
             sound?.start()
+        case .switcher:
+            if switcher == nil { switcher = SwitcherModule(model: self) }
+            switcher?.start()
         }
     }
 
@@ -151,6 +155,9 @@ final class AppModel {
         case .sound:
             sound?.stop()
             sound = nil
+        case .switcher:
+            switcher?.stop()
+            switcher = nil
         case .corner:
             corner?.stop()
             corner = nil

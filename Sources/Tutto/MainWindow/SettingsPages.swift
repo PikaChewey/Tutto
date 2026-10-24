@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 import TuttoKit
 
@@ -124,6 +125,9 @@ struct ShortcutsPage: View {
             PageHeader(title: "Shortcuts", subtitle: "Click a shortcut, then press the keys you want. Esc cancels, Delete removes it.")
             group("Everyday", [.captureArea, .captureScreen, .captureAreaEdit, .clipboardHistory, .windowPalette, .wordCounter])
             group("App", [.openTutto, .toggleCorner, .muteFrontApp])
+            if let switcher = model.switcher {
+                switcherGroup(switcher)
+            }
             group("Window actions", WindowAction.allCases.map { .window($0) })
             HStack(alignment: .top) {
                 Text("If another app uses the same keys, macOS may deliver them to both. Change the shortcut here or in that app.")
@@ -134,6 +138,41 @@ struct ShortcutsPage: View {
                     .buttonStyle(OutlineButtonStyle(compact: true))
                     .disabled(!model.shortcuts.isCustomized)
             }
+        }
+    }
+
+    /// The switcher's keys are fixed (held modifier + Tab); they're chosen on its page.
+    private func switcherGroup(_ switcher: SwitcherModule) -> some View {
+        let modifier: KeyShortcut.Modifiers = switcher.trigger == .command ? .command : .option
+        return InkGroup("Window switcher") {
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Every window").font(.system(size: 12.5))
+                    Text("Hold, press Tab to move, let go to switch").font(.system(size: 11)).foregroundStyle(Color.ink3)
+                }
+                Spacer()
+                KeyCaps(shortcut: KeyShortcut(keyCode: UInt16(kVK_Tab), modifiers: modifier), compact: true)
+            }
+            .frame(minHeight: 34)
+            .overlay(alignment: .bottom) { Hairline().opacity(0.6) }
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("The front app's windows").font(.system(size: 12.5))
+                    if !switcher.appWindowsKey {
+                        Text("Off on the Window Switcher page").font(.system(size: 11)).foregroundStyle(Color.ink3)
+                    }
+                }
+                Spacer()
+                KeyCaps(shortcut: KeyShortcut(keyCode: UInt16(kVK_ANSI_Grave), modifiers: modifier), compact: true)
+            }
+            .frame(minHeight: 34)
+            .opacity(switcher.appWindowsKey ? 1 : 0.5)
+            HStack {
+                Spacer()
+                Button("Window Switcher Settings…") { MainWindowController.shared.show(page: .switcher) }
+                    .buttonStyle(OutlineButtonStyle(compact: true))
+            }
+            .padding(.vertical, 6)
         }
     }
 

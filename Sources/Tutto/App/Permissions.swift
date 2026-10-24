@@ -35,8 +35,8 @@ enum Permission: String, CaseIterable, Identifiable {
     /// What breaks without it, in plain words.
     var powers: String {
         switch self {
-        case .accessibility: "Trackpad Corner, moving windows, and pasting from clipboard history."
-        case .screenRecording: "Screenshots, color picking and text recognition."
+        case .accessibility: "Trackpad Corner, the window switcher, moving windows, and pasting from clipboard history."
+        case .screenRecording: "Screenshots, color picking, text recognition, and window titles and pictures in the switcher."
         case .systemAudio: "Muting apps in Sound. Tutto holds their sound back; nothing is recorded."
         case .finderExtension: "Extract and Compress in Finder's right-click menu."
         case .fanHelper: "Setting fan speeds. Reading temperatures and fans doesn't need it."
@@ -45,8 +45,8 @@ enum Permission: String, CaseIterable, Identifiable {
 
     var modules: [ModuleID] {
         switch self {
-        case .accessibility: [.corner, .windows, .clipboard]
-        case .screenRecording: [.screenshots]
+        case .accessibility: [.corner, .windows, .switcher, .clipboard]
+        case .screenRecording: [.screenshots, .switcher]
         case .systemAudio: [.sound]
         case .finderExtension: [.archives]
         case .fanHelper: [.sensors]

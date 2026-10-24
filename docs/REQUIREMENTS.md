@@ -103,7 +103,7 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 
 | ID | Requirement | Acceptance criteria | Status |
 |---|---|---|---|
-| WC-1 | ⌃⇧C opens a panel with the cursor already in the text, so ⌘V pastes immediately | Default shortcut ⌃⇧C, re-recordable; text focused on open; ⌘V pastes | [x] Live with the real ⌃⇧C (Raycast, which also binds it here, quit for the test): ⌃⇧C → panel with the cursor in the text → ⌘V → 7 words, 37 characters. Earlier, with a stand-in shortcut: shortcut → panel → ⌘V pasted the clipboard and counted it. Default ⌃⇧C shown on the Shortcuts page. Bugs found and fixed: focus was requested before the text view was in the window; ⌘V relied on Tutto's Edit menu, which a non-activating panel never reaches (editing keys now go straight to the text) |
+| WC-1 | ⌃⇧C opens a panel with the cursor already in the text, so ⌘V pastes immediately | Default shortcut ⌃⇧C, re-recordable; text focused on open; ⌘V pastes | [x] Live with the real ⌃⇧C (another launcher app, which also binds it here, quit for the test): ⌃⇧C → panel with the cursor in the text → ⌘V → 7 words, 37 characters. Earlier, with a stand-in shortcut: shortcut → panel → ⌘V pasted the clipboard and counted it. Default ⌃⇧C shown on the Shortcuts page. Bugs found and fixed: focus was requested before the text view was in the window; ⌘V relied on Tutto's Edit menu, which a non-activating panel never reaches (editing keys now go straight to the text) |
 | WC-2 | Called "Word Counter" in the UI; shows words and characters plus more | Words, characters, characters without spaces, sentences, paragraphs, reading time, speaking time, selection counts | [x] All shown; selection counts appear when part of the text is selected |
 | WC-3 | Counts match word-processor rules | Hyphenated words, contractions, numbers = 1 word; lone dashes = 0; emoji = 1 character; CJK/Thai split by the system word breaker; paragraphs = non-empty lines | [x] 9 unit tests (`TextStatsTests`) |
 | WC-4 | Fast, light | Counting inline under 20,000 UTF-16 units, off the main thread above (edits coalesced); nothing runs until opened; panel released on close | [x] Live on the installed app: never opened, Tutto settles at 14 MB / 0.0 % CPU (unchanged); a 1 MB paste (180,000 words) counted within 0.32 s of ⌘V; 77 MB while showing that 1 MB of text, 28 MB 15 s after closing, CPU back to 0.0 %; six open/paste/close rounds stayed at 32–38 MB (no growth) |
@@ -119,6 +119,20 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | SND-4 | Costs nothing while a muted app is quiet | The device starts only when a muted app plays and is re-armed 0.5 s after it goes quiet | [x] No `PreventUserIdleSystemSleep` assertion and 0.0 % CPU while the muted app is silent; device stops/re-arms each ping (log) |
 | SND-5 | Compact, fits Tutto | One panel row of icons (muted = grey + badge, playing = dot, `+N` menu); Sound page with switches, muted-while-closed list, shortcut | [x] Rendered; panel row adds 26 pt |
 | SND-6 | Persistent | Muted apps stay muted after they relaunch and after Tutto restarts (bundle IDs in defaults) | [~] Stored and re-applied on process-list changes; live relaunch check was cut short |
+
+## SW — Window Switcher (⌘Tab)
+
+| ID | Requirement | Acceptance criteria | Status |
+|---|---|---|---|
+| SW-1 | ⌘Tab shows every window, not every app (each Firefox window separately) | Windows on every Space, full screen, minimized and hidden apps; helper surfaces, sheets, invisible and toolbar windows left out (window-server flags) | [x] Live on a Mac where every app is full screen on its own Space: 3 Firefox windows + ChatGPT, Discord, Claude, Notion (Desktop 1) and Finder (no windows) = 8 cards; 11 admission/title/order tests against flags read from this Mac |
+| SW-2 | Takes over ⌘Tab safely | Session event tap swallows ⌘Tab only; macOS's switcher never appears while Tutto runs and works again the instant Tutto dies | [x] Real HID ⌘Tab: Tutto overlay up, macOS switcher absent; after `kill -9` the macOS switcher appeared on the next ⌘Tab; heartbeat releases the keyboard if the switcher stops checking in (unit test) |
+| SW-3 | Switches to the exact window, across Spaces | Element (remembered, window list or remote token) + make-key + raise; the app's Window menu for a window with no element yet | [x] Quick tap Firefox → other Firefox window (other full-screen Space) and back; Tab Tab → ChatGPT; never-visited lecture window reached via Firefox's Window menu (log) |
+| SW-4 | Feels native | Hold ⌘ + Tab, release switches; quick tap = previous window without UI; reveal after 0.1 s; ⇧Tab/arrows/1–9/Return/Esc/click | [x] Quick tap switched with no overlay; list built in 9–18 ms (41 ms first); overlay at +121–150 ms |
+| SW-5 | Acts on windows from the switcher | W close (card stays until really closed), M minimize, Q quit, H hide, F/C/N place via Windows | [~] Wired; not exercised live on the user's own windows |
+| SW-6 | Rename windows | R names the selected window; the name follows the window and finds it again after the app restarts (title, else unique place) | [x] Live: "school" stored for the lecture window and shown on its card; 2 matching tests (restart by title, no jump when ambiguous, 14-day expiry) |
+| SW-7 | Search and same-app view | `/` filters by name, title, app (names rank first); ⌘\` or \` shows only one app's windows | [x] Live: "lecture" → 1 of 8; ⌘\` → "Firefox windows 3"; ranking tests |
+| SW-8 | Light | No polling; pictures only while open, 2 at a time, cache dropped 30 s after closing | [x] Idle 0.0 % CPU, 28 MB; after one use with 8 pictures 30 MB, unchanged 40 s later |
+| SW-9 | Fits Tutto, not in the panel | Own page (trigger ⌘Tab/⌥Tab, scope, what to show, keys, renamed windows, leave-out list), Shortcuts group, Permissions; nothing added to the menu bar panel | [x] Rendered light and dark |
 
 ## UX — design
 

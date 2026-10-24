@@ -122,6 +122,25 @@ struct SnapshotExtras {
             state.selection = TextStats.measure("well-known pangram")
             return AnyView(WordCounterView(model: state, module: counter, editor: editor).frame(width: 720, height: 440))
         })
+        // Real windows and pictures of them: for checking the look, not for publishing.
+        extras.append(SnapshotExtras(name: "switcher", inDefaultSet: false) { model in
+            guard let switcher = model.switcher else { return AnyView(EmptyView()) }
+            let session = SwitcherSession()
+            session.all = switcher.buildItems()
+            session.showPreviews = CGPreflightScreenCaptureAccess()
+            session.showHints = true
+            session.refilter(keepSelection: false)
+            session.selection = min(1, max(session.visible.count - 1, 0))
+            for item in session.visible.prefix(7) {
+                if let id = item.windowID, let image = WindowServer.capture(id).flatMap({ ThumbnailStore.scaled($0, to: ThumbnailStore.pixelSize) }) {
+                    session.thumbnails[id] = NSImage(cgImage: image, size: NSSize(width: image.width / 2, height: image.height / 2))
+                }
+            }
+            let width = min(CGFloat(session.visible.count), 6) * 222 - 14 + 44
+            return AnyView(SwitcherView(session: session, actions: SwitcherActions(
+                select: { _ in }, commit: { _ in }, saveRename: {}, cancelRename: {}, searchCommit: {}, searchCancel: {},
+                searchStep: { _ in }, clickedOutside: {})).frame(width: width, height: 286))
+        })
         extras.append(SnapshotExtras(name: "editor") { model in
             guard let screenshots = model.screenshots, let image = sampleImage() else { return AnyView(EmptyView()) }
             let editor = EditorWindowController(image: image, module: screenshots)
