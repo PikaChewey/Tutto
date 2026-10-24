@@ -19,6 +19,7 @@ import AppKit
 import Carbon.HIToolbox
 import Observation
 import os
+import SwiftUI
 import TuttoKit
 
 private let log = Logger(subsystem: "ca.bryanyao.Tutto", category: "switcher")
@@ -78,6 +79,9 @@ final class SwitcherSession {
     var showHints = true
     /// Stays open without the modifier held (searching, renaming).
     var pinned = false
+    /// Changes with every opening, so the overlay draws fresh cards instead of animating
+    /// from the previous opening's order.
+    var generation = 0
 
     var selected: SwitcherItem? { visible.indices.contains(selection) ? visible[selection] : nil }
 
@@ -180,6 +184,10 @@ final class SwitcherModule: ModuleController {
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             MainActor.assumeIsolated { self?.appActivated(app) }
         })
+        // Swiping to another full-screen Space of the same app doesn't announce an app change.
+        observers.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.spaceChanged() }
+        })
         observers.append(center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             MainActor.assumeIsolated { self?.appTerminated(app) }
@@ -201,6 +209,7 @@ final class SwitcherModule: ModuleController {
 
     func stop() {
         cancel()
+        stopObservingFocus()
         tap?.stop()
         tap = nil
         isListening = false
@@ -288,19 +297,26 @@ final class SwitcherModule: ModuleController {
             tap?.mode = .idle
             return NSSound.beep()
         }
-        session.all = items
-        session.query = nil
-        session.appFilter = appWindows ? frontBundle : nil
-        session.renaming = nil
-        session.closing = []
-        session.pinned = false
-        session.showPreviews = showPreviews && CGPreflightScreenCaptureAccess()
-        session.showHints = showHints
-        session.thumbnails = thumbnails.cachedImages(for: items.compactMap(\.windowID))
-        session.refilter(keepSelection: false)
-        session.selection = SwitcherOrder.initialSelection(count: session.visible.count,
-                                                           firstIsCurrent: session.visible.first?.windowID == front?.id,
-                                                           backward: backward)
+        // The window you're in first, the one before it second and selected: set all at once,
+        // with no animation, so the switcher opens already in that state.
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            session.generation += 1
+            session.all = items
+            session.query = nil
+            session.appFilter = appWindows ? frontBundle : nil
+            session.renaming = nil
+            session.closing = []
+            session.pinned = false
+            session.showPreviews = showPreviews && CGPreflightScreenCaptureAccess()
+            session.showHints = showHints
+            session.thumbnails = thumbnails.cachedImages(for: items.compactMap(\.windowID))
+            session.refilter(keepSelection: false)
+            session.selection = SwitcherOrder.initialSelection(count: session.visible.count,
+                                                               firstIsCurrent: session.visible.first?.windowID == front?.id,
+                                                               backward: backward)
+        }
         isOpen = true
         startHeartbeat()
         log.notice("open: \(self.session.visible.count) cards in \(Int((ProcessInfo.processInfo.systemUptime - started) * 1000)) ms, selected \(self.session.selection)")
@@ -443,6 +459,7 @@ final class SwitcherModule: ModuleController {
 
     private func appActivated(_ app: NSRunningApplication?) {
         guard let pid = app?.processIdentifier, pid != getpid() else { return }
+        observeFocus(of: pid)
         // The window comes forward a moment after its app is announced.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             MainActor.assumeIsolated {
@@ -452,6 +469,55 @@ final class SwitcherModule: ModuleController {
             // impossible later from another Space).
             DispatchQueue.global(qos: .utility).async { WindowElements.rememberFocusedWindow(of: pid) }
         }
+    }
+
+    private func spaceChanged() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, let front = WindowServer.frontWindow() else { return }
+                self.recent.touch(front.id)
+                let pid = front.pid
+                DispatchQueue.global(qos: .utility).async { WindowElements.rememberFocusedWindow(of: pid) }
+            }
+        }
+    }
+
+    // MARK: Focus inside the front app
+
+    private var focusObserver: AXObserver?
+    private var observedPID: pid_t = 0
+
+    /// Follows which of the front app's windows has focus (another Firefox window clicked,
+    /// macOS's own window cycling), so "the window you were just in" stays exact. Only the
+    /// front app is observed, and only focus changes are delivered.
+    private func observeFocus(of pid: pid_t) {
+        guard pid != observedPID else { return }
+        stopObservingFocus()
+        var created: AXObserver?
+        let callback: AXObserverCallback = { _, element, _, refcon in
+            guard let refcon else { return }
+            let module = Unmanaged<SwitcherModule>.fromOpaque(refcon).takeUnretainedValue()
+            WindowElements.remember(element)
+            guard let id = WindowElements.windowID(of: element) else { return }
+            MainActor.assumeIsolated { module.recent.touch(id) }
+        }
+        guard AXObserverCreate(pid, callback, &created) == .success, let observer = created else { return }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.25)
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        AXObserverAddNotification(observer, app, kAXFocusedWindowChangedNotification as CFString, refcon)
+        AXObserverAddNotification(observer, app, kAXMainWindowChangedNotification as CFString, refcon)
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        focusObserver = observer
+        observedPID = pid
+    }
+
+    private func stopObservingFocus() {
+        if let focusObserver {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(focusObserver), .defaultMode)
+        }
+        focusObserver = nil
+        observedPID = 0
     }
 
     private func appTerminated(_ app: NSRunningApplication?) {

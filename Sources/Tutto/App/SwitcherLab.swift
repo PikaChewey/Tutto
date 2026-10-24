@@ -63,6 +63,31 @@ enum SwitcherLab {
                 } catch {
                     say("shareable content failed: \(error.localizedDescription)")
                 }
+            case "film":
+                // film <seconds> <outdir>: every frame of Tutto's switcher window while it's on screen,
+                // straight from the window server, with timestamps (what the eye would see).
+                let seconds = Double(rest[1])!, out = URL(fileURLWithPath: rest[2], isDirectory: true)
+                try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+                // Captures the panel's surface whether or not it's on screen (so the frame shown at the
+                // instant it appears is recorded), marking each frame on- or off-screen.
+                let end = Date().addingTimeInterval(seconds)
+                let started = Date()
+                var frame = 0
+                while Date() < end {
+                    let all = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+                    let overlay = all.first { ($0[kCGWindowOwnerName as String] as? String) == "Tutto" && ($0[kCGWindowLayer as String] as? Int ?? 0) == 101 }
+                    if let id = overlay?[kCGWindowNumber as String] as? CGWindowID {
+                        let onScreen = overlay?[kCGWindowIsOnscreen as String] as? Bool ?? false
+                        if let image = WindowServer.capture(id), let small = ThumbnailStore.scaled(image, to: CGSize(width: 1000, height: 220)) {
+                            let ms = Int(Date().timeIntervalSince(started) * 1000)
+                            try? NSBitmapImageRep(cgImage: small).representation(using: .png, properties: [:])?
+                                .write(to: out.appendingPathComponent(String(format: "f%03d-%04dms-%@.png", frame, ms, onScreen ? "ON" : "off")))
+                            frame += 1
+                        }
+                    }
+                    Thread.sleep(forTimeInterval: 0.006)
+                }
+                say("\(frame) frames")
             case "hwcapture":
                 // The window server's own capture, by window ID (works for other Spaces?).
                 typealias Capture = @convention(c) (Int32, UnsafeMutablePointer<UInt32>, Int32, UInt32) -> Unmanaged<CFArray>?

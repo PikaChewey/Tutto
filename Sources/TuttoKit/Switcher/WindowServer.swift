@@ -282,6 +282,11 @@ public enum WindowElements {
         }
     }
 
+    /// Remembers a window element handed over by a focus notification.
+    public static func remember(_ element: AXUIElement) {
+        if let id = windowID(of: element) { remember(element, as: id) }
+    }
+
     /// Forgets elements of windows that no longer exist.
     public static func prune(keeping live: Set<CGWindowID>) {
         cacheLock.withLock { cache = cache.filter { live.contains($0.key) } }

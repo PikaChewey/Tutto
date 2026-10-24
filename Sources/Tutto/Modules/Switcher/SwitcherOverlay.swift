@@ -51,6 +51,10 @@ final class SwitcherOverlay {
     func show(near screen: NSScreen?) {
         guard let screen = screen ?? NSScreen.main else { return }
         layout(on: screen)
+        // Lay out and draw this opening's cards before the panel is on screen, so its first
+        // frame is already the final one (a reused panel would otherwise show last time's).
+        panel.contentView?.layoutSubtreeIfNeeded()
+        panel.displayIfNeeded()
         if !panel.isVisible { panel.orderFrontRegardless() }
         if clickMonitor == nil {
             clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
@@ -148,10 +152,13 @@ struct SwitcherView: View {
         VStack(spacing: 0) {
             topRow
                 .frame(height: 40)
+            // New cards for every opening: nothing animates from the last opening's order.
             strip
+                .id(session.generation)
             if overflow {
                 indicator
                     .frame(height: 22)
+                    .id(session.generation)
             }
             if session.showHints {
                 hints
