@@ -200,6 +200,16 @@ public enum WindowServer {
         return result
     }
 
+    /// Every Space in the order Mission Control shows them, display by display.
+    public static func spaceOrder() -> [UInt64] {
+        guard let copyManagedSpaces, let displays = copyManagedSpaces(connection)?.takeRetainedValue() as? [[String: Any]] else {
+            return []
+        }
+        return displays.flatMap { display in
+            (display["Spaces"] as? [[String: Any]] ?? []).compactMap { ($0["ManagedSpaceID"] as? NSNumber)?.uint64Value }
+        }
+    }
+
     /// The Space a window is on (the first, if it's briefly on two during a transition).
     public static func space(of window: CGWindowID) -> UInt64? {
         guard let copySpaces,
@@ -421,6 +431,15 @@ public enum WindowFocus {
     /// Blocks briefly on Accessibility; call off the main thread.
     @discardableResult
     public static func focus(window: CGWindowID, pid: pid_t, element: AXUIElement?) -> Bool {
+        // One of Tutto's own windows: Accessibility would run AppKit on this (background)
+        // thread, which aborts. Bring it forward on the main thread instead.
+        if pid == getpid() {
+            DispatchQueue.main.async {
+                NSApp.windows.first { $0.windowNumber == Int(window) }?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            return true
+        }
         if let element {
             var minimized: CFTypeRef?
             if AXUIElementCopyAttributeValue(element, kAXMinimizedAttribute as CFString, &minimized) == .success, (minimized as? Bool) == true {

@@ -62,6 +62,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         #if DEBUG
+        // `--page <name>`: open the main window on that page (live tests of a page).
+        if let index = CommandLine.arguments.firstIndex(of: "--page"), CommandLine.arguments.count > index + 1,
+           let page = MainPage(rawValue: CommandLine.arguments[index + 1]) {
+            return MainWindowController.shared.show(page: page)
+        }
         if CommandLine.arguments.contains("--strip-only") { return }
         #endif
         if !model.hasCompletedOnboarding {

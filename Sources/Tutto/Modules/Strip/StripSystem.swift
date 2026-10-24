@@ -272,6 +272,9 @@ final class StripMover: @unchecked Sendable {
     private var enhancedOff: [pid_t: DispatchWorkItem] = [:]
 
     func move(_ window: CGWindowID, pid: pid_t, element: AXUIElement, to frame: CGRect, setSize: Bool) {
+        // Tutto's own windows answer Accessibility in-process, on the calling thread; AppKit
+        // windows can't be moved from these background queues.
+        guard pid != getpid() else { return }
         lock.lock()
         let waiting = pending[window] != nil
         var request = Request(element: element, frame: frame, setSize: setSize)

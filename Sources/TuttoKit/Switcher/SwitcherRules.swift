@@ -102,6 +102,27 @@ public enum SwitcherOrder {
 }
 
 /// Windows used most recently, newest first. Bounded; ids of closed windows age out.
+/// The pointer picks a card only after it has really moved. A pointer that was resting where
+/// the switcher happens to open, or a card sliding under a pointer that's standing still,
+/// leaves the selection alone; moving it is what says "this one".
+public struct PointerIntent: Sendable, Equatable {
+    /// Points it has to travel; a nudge of the desk or a resting finger doesn't count.
+    public static let threshold: CGFloat = 2
+    private var last: CGPoint
+
+    /// `point`: where the pointer is as the switcher opens.
+    public init(at point: CGPoint) {
+        last = point
+    }
+
+    /// True when the pointer is now somewhere else than it last was (and remembers where).
+    public mutating func moved(to point: CGPoint) -> Bool {
+        guard abs(point.x - last.x) > Self.threshold || abs(point.y - last.y) > Self.threshold else { return false }
+        last = point
+        return true
+    }
+}
+
 public struct RecentWindows: Sendable, Equatable {
     public private(set) var ids: [CGWindowID] = []
     public let limit: Int

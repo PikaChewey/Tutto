@@ -244,7 +244,11 @@ struct SwitcherView: View {
                                      thumbnail: item.windowID.flatMap { session.thumbnails[$0] }, showPreviews: session.showPreviews,
                                      closing: session.closing.contains(item.id))
                             .id(item.id)
-                            .onHover { inside in if inside { actions.select(index) } }
+                            // Only a pointer that moves picks a card: one that was just resting where
+                            // the switcher opened (or a card sliding under it) changes nothing.
+                            .onContinuousHover { phase in
+                                if case .active = phase, session.pointer.moved(to: NSEvent.mouseLocation) { actions.select(index) }
+                            }
                             .onTapGesture { actions.commit(index) }
                     }
                 }

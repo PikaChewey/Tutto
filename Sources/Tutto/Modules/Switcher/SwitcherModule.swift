@@ -82,6 +82,8 @@ final class SwitcherSession {
     /// Changes with every opening, so the overlay draws fresh cards instead of animating
     /// from the previous opening's order.
     var generation = 0
+    /// Hovering picks a card only once the pointer has moved since the switcher opened.
+    @ObservationIgnored var pointer = PointerIntent(at: .zero)
 
     var selected: SwitcherItem? { visible.indices.contains(selection) ? visible[selection] : nil }
 
@@ -303,6 +305,7 @@ final class SwitcherModule: ModuleController {
         transaction.disablesAnimations = true
         withTransaction(transaction) {
             session.generation += 1
+            session.pointer = PointerIntent(at: NSEvent.mouseLocation)
             session.all = items
             session.query = nil
             session.appFilter = appWindows ? frontBundle : nil
@@ -434,6 +437,12 @@ final class SwitcherModule: ModuleController {
         }
         recent.touch(window)
         if app.isHidden { app.unhide() }
+        if let own = ownWindow(item) {
+            log.notice("switch to Tutto's own window \(window)")
+            if own.isMiniaturized { own.deminiaturize(nil) }
+            AppActivation.present(own)
+            return
+        }
         let pid = item.pid
         let title = item.rawTitle
         let opened = openedAt
@@ -541,11 +550,15 @@ final class SwitcherModule: ModuleController {
         guard let item = session.selected, let window = item.windowID else { return quitSelected() }
         session.closing.insert(item.id)
         let pid = item.pid
-        DispatchQueue.global(qos: .userInitiated).async {
+        if let own = ownWindow(item) {
+            own.performClose(nil)
+        } else {
+            DispatchQueue.global(qos: .userInitiated).async {
             guard let element = WindowElements.element(for: window, pid: pid) else { return }
-            var button: CFTypeRef?
-            if AXUIElementCopyAttributeValue(element, kAXCloseButtonAttribute as CFString, &button) == .success, let button {
-                AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString)  // swiftlint:disable:this force_cast
+                var button: CFTypeRef?
+                if AXUIElementCopyAttributeValue(element, kAXCloseButtonAttribute as CFString, &button) == .success, let button {
+                    AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString)  // swiftlint:disable:this force_cast
+                }
             }
         }
         // The card goes when the window really closes (an app asking to save keeps it open).
@@ -573,6 +586,7 @@ final class SwitcherModule: ModuleController {
     private func minimizeSelected() {
         guard let item = session.selected, let window = item.windowID, !item.isMinimized else { return }
         mark(item.id) { $0.isMinimized = true }
+        if let own = ownWindow(item) { return own.miniaturize(nil) }
         let pid = item.pid
         DispatchQueue.global(qos: .userInitiated).async {
             guard let element = WindowElements.element(for: window, pid: pid) else { return }
@@ -594,6 +608,13 @@ final class SwitcherModule: ModuleController {
         close()
         focus(item)
         let pid = item.pid
+        if ownWindow(item) != nil {
+            // Tutto's own window answers Accessibility in-process: ask on the main thread.
+            if let element = WindowElements.element(for: window, pid: pid) {
+                windows.perform(action, on: element, app: NSRunningApplication.current)
+            }
+            return
+        }
         DispatchQueue.global(qos: .userInitiated).async {
             guard let element = WindowElements.element(for: window, pid: pid) else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
@@ -602,6 +623,14 @@ final class SwitcherModule: ModuleController {
                 }
             }
         }
+    }
+
+    /// Tutto's own window (its main or welcome window). An Accessibility call on it is answered
+    /// inside Tutto, on whatever thread made it, and AppKit windows only work on the main
+    /// thread: a raise from the background crashed Tutto. These are handled directly instead.
+    private func ownWindow(_ item: SwitcherItem) -> NSWindow? {
+        guard item.pid == getpid(), let id = item.windowID else { return nil }
+        return NSApp.windows.first { $0.windowNumber == Int(id) }
     }
 
     private func mark(_ id: String, _ change: (inout SwitcherItem) -> Void) {

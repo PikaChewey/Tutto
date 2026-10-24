@@ -122,6 +122,9 @@ final class StripModule: ModuleController {
     private(set) var windowCount = 0
     private(set) var displayList: [StripDisplay] = []
     private(set) var setupChecks: [MacSetupCheck] = []
+    /// Windows in native full screen, each on a Space of its own, which the strip leaves alone.
+    private(set) var fullScreenWindowCount = 0
+    private(set) var isBringingHome = false
 
     weak var model: AppModel?
 
@@ -155,6 +158,9 @@ final class StripModule: ModuleController {
     @ObservationIgnored private var hoverWork: DispatchWorkItem?
     @ObservationIgnored private var quietFocusUntil: TimeInterval = 0
     @ObservationIgnored private var decorWindow: CGWindowID?
+    /// Windows coming out of full screen to join the strip: full width, in their Spaces' order.
+    @ObservationIgnored private var arrivals: [CGWindowID: Int] = [:]
+    @ObservationIgnored private var lastNoStripHint: TimeInterval = -1_000
     /// The strip a swipe started on keeps it until the fingers lift, wherever the pointer goes.
     @ObservationIgnored private var swipeKey: StripKey?
     @ObservationIgnored private var icons: [pid_t: NSImage] = [:]
@@ -386,6 +392,78 @@ final class StripModule: ModuleController {
         let reading = Self.readMacSetup()
         let tiling = ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: 15, minorVersion: 0, patchVersion: 0))
         setupChecks = MacSetup.checks(reading, swipeFingers: swipeFingers > 0 ? swipeFingers : nil, hasEdgeTiling: tiling)
+        fullScreenWindowCount = fullScreenWindows().count
+    }
+
+    /// Said when you switch the strip on: what it's doing, or why it has nothing to do yet.
+    func announce() {
+        refreshSetupChecks()
+        if !isTrusted {
+            Toast.shared.show("Scrolling Strip needs Accessibility", detail: "Allow Tutto in Privacy & Security › Accessibility. Click for details.",
+                              duration: 4) { MainWindowController.shared.show(page: .strip) }
+        } else if windowCount == 0, fullScreenWindowCount > 0 {
+            Toast.shared.show("Scrolling Strip is on", detail: "Your apps are in full screen, each on its own Space, so there's nothing on the strip yet. Click to bring them onto it.",
+                              duration: 6) { MainWindowController.shared.show(page: .strip) }
+        } else {
+            Toast.shared.show("Scrolling Strip is on", detail: "\(windowCount) \(windowCount == 1 ? "window" : "windows") side by side · ⌃⌥ ← → or ⌃⌥ + scroll to move along",
+                              duration: 4) { MainWindowController.shared.show(page: .strip) }
+        }
+    }
+
+    /// Real windows of regular apps that sit in native full screen, in Mission Control's order.
+    private func fullScreenWindows() -> [ServerWindow] {
+        let spaces = WindowServer.spaces()
+        let order = WindowServer.spaceOrder()
+        let pids = Set(NSWorkspace.shared.runningApplications.filter {
+            $0.activationPolicy == .regular && $0.processIdentifier != ownPID && !floatingApps.contains($0.bundleIdentifier ?? "")
+        }.map(\.processIdentifier))
+        let found = WindowServer.windows(of: pids).compactMap { window -> (ServerWindow, Int)? in
+            guard WindowAdmission.admits(window), !window.isMinimized, !window.isAppHidden,
+                  let space = WindowServer.space(of: window.id), spaces[space]?.isFullScreen == true else { return nil }
+            return (window, order.firstIndex(of: space) ?? Int.max)
+        }
+        return found.sorted { $0.1 < $1.1 }.map(\.0)
+    }
+
+    /// Takes every window out of native full screen so it lands on the desktop and joins the
+    /// strip at full width: each one still fills the screen, and the strip slides between them
+    /// (⌃⌥ ← →, ⌃⌥ + scroll) where macOS's Spaces used to.
+    func bringFullScreenWindowsHere() {
+        guard isRunning, !isBringingHome else { return }
+        let windows = fullScreenWindows()
+        guard !windows.isEmpty else { return refreshSetupChecks() }
+        isBringingHome = true
+        for (rank, window) in windows.enumerated() { arrivals[window.id] = rank }
+        let targets = windows.map { (id: $0.id, pid: $0.pid, title: $0.title) }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var brought = 0
+            for target in targets {
+                var element = WindowElements.element(for: target.id, pid: target.pid, budget: 0.4)
+                if element == nil, WindowElements.chooseFromWindowMenu(title: target.title, pid: target.pid) {
+                    // The app brings the window forward; on its own Space it can be asked.
+                    Thread.sleep(forTimeInterval: 0.7)
+                    element = WindowElements.element(for: target.id, pid: target.pid, budget: 0.2)
+                }
+                guard let element else { continue }
+                AXUIElementSetAttributeValue(element, "AXFullScreen" as CFString, kCFBooleanFalse)
+                brought += 1
+                // One at a time: macOS animates each window back out to the desktop.
+                Thread.sleep(forTimeInterval: 1.1)
+            }
+            let count = brought
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.isBringingHome = false
+                    self.rebuild()
+                    self.refreshSetupChecks()
+                    let missed = targets.count - count
+                    Toast.shared.show(count > 0 ? "\(count) \(count == 1 ? "window" : "windows") on the strip" : "Couldn't reach those windows",
+                                      detail: missed > 0 ? "\(missed) didn't answer; open each once and try again." : "⌃⌥ ← → or ⌃⌥ + scroll slides between them.",
+                                      duration: 4)
+                }
+            }
+        }
     }
 
     private static func readMacSetup() -> MacSetupReading {
@@ -491,11 +569,11 @@ final class StripModule: ModuleController {
             }
         }
         for state in states {
-            let arrivals = found[state.key] ?? []
-            guard !arrivals.isEmpty else { continue }
+            let incoming = found[state.key] ?? []
+            guard !incoming.isEmpty else { continue }
             var strip = state.strip
             if restoring.contains(state.key), let saved = savedLayouts[state.key.storageKey] {
-                let live = Set(arrivals.map(\.0.id))
+                let live = Set(incoming.map(\.0.id))
                 strip.columns = saved.compactMap { column in
                     var column = column
                     let before = column.windows.count
@@ -508,11 +586,16 @@ final class StripModule: ModuleController {
                 }
             }
             let metrics = metrics(for: state)
-            for (w, _) in arrivals.sorted(by: { $0.0.shown.minX != $1.0.shown.minX ? $0.0.shown.minX < $1.0.shown.minX : $0.1 < $1.1 })
-            where !strip.contains(w.id) {
-                strip.insert(w.id, width: initialWidth(w.shown, metrics: metrics), besideFocused: false, focus: false)
+            // Windows back from full screen keep their Spaces' order, after everything else.
+            func rank(_ w: StripManagedWindow) -> Int { self.arrivals[w.id].map { 1_000 + $0 } ?? 0 }
+            for (w, _) in incoming.sorted(by: { a, b in
+                if rank(a.0) != rank(b.0) { return rank(a.0) < rank(b.0) }
+                return a.0.shown.minX != b.0.shown.minX ? a.0.shown.minX < b.0.shown.minX : a.1 < b.1
+            }) where !strip.contains(w.id) {
+                let full = self.arrivals.removeValue(forKey: w.id) != nil
+                strip.insert(w.id, width: full ? 1 : initialWidth(w.shown, metrics: metrics), besideFocused: false, focus: false)
             }
-            if let front = arrivals.min(by: { $0.1 < $1.1 })?.0, restoring.contains(state.key) { strip.focus(front.id) }
+            if let front = incoming.min(by: { $0.1 < $1.1 })?.0, restoring.contains(state.key) { strip.focus(front.id) }
             state.strip = strip
         }
         // Back from full screen (or the Dock) while the strip was looking elsewhere.
@@ -712,7 +795,8 @@ final class StripModule: ModuleController {
         let app = NSRunningApplication(processIdentifier: pid)
         guard let w = admit(element, pid: pid, bundleID: app?.bundleIdentifier, into: state) else { return }
         let front = focus ?? (NSWorkspace.shared.frontmostApplication?.processIdentifier == pid)
-        state.strip.insert(w.id, width: defaultWidth, besideFocused: front, focus: front)
+        let width = arrivals.removeValue(forKey: w.id) != nil ? 1 : defaultWidth
+        state.strip.insert(w.id, width: width, besideFocused: front, focus: front)
         if front { reveal(state) }
         apply(state, animated: true)
         windowCount = windows.count
@@ -897,10 +981,16 @@ final class StripModule: ModuleController {
             Toast.shared.show("The strip is stopped", detail: isTrusted ? "⌃⌥Q starts it again." : "Allow Accessibility for Tutto first.")
             return
         }
-        // A full-screen app's Space (or a display the strip is off for) has no strip: the key
-        // quietly does nothing there.
+        // A full-screen app's Space (or a display the strip is off for) has no strip: say why,
+        // once in a while, instead of doing nothing silently.
         guard let state = activeState() else {
             log.notice("\(command.id, privacy: .public): no strip here")
+            let now = ProcessInfo.processInfo.systemUptime
+            if now - lastNoStripHint > 60 {
+                lastNoStripHint = now
+                Toast.shared.show("Not on the strip", detail: "This app is in full screen, on a Space of its own. Click to bring your full-screen apps onto the strip.",
+                                  duration: 4) { MainWindowController.shared.show(page: .strip) }
+            }
             return
         }
         #if DEBUG
@@ -1033,7 +1123,9 @@ final class StripModule: ModuleController {
     }
 
     private func toggleFloat(in state: StripState) {
-        guard let app = NSWorkspace.shared.frontmostApplication, let element = StripAX.focusedWindow(of: app.processIdentifier),
+        // Tutto's own windows never join the strip (they float above it, like dialogs).
+        guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != ownPID,
+              let element = StripAX.focusedWindow(of: app.processIdentifier),
               let id = StripAX.windowID(element) else { return NSSound.beep() }
         if let w = windows[id], let owner = strips[w.key] {
             owner.strip.remove(id)

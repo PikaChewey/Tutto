@@ -128,6 +128,28 @@ enum SwitcherLab {
                         say("\(name)\(settable.boolValue ? " (settable)" : ""): \(String(describing: value).prefix(80))")
                     }
                 }
+            case "ownfocus":
+                // Tutto's own window raised the way the switcher raises any window: element found,
+                // then focus from a background queue. That aborted Tutto ("Must only be used from the
+                // main thread": the raise runs in-process, on the calling thread).
+                let window = NSWindow(contentRect: NSRect(x: 300, y: 300, width: 420, height: 260),
+                                      styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+                window.title = "Tutto own-window test"
+                window.isReleasedWhenClosed = false
+                window.orderFrontRegardless()
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                let id = CGWindowID(window.windowNumber)
+                let element = WindowElements.element(for: id, pid: getpid(), budget: 0.5)
+                say("own window \(id), element found: \(element != nil)")
+                nonisolated(unsafe) let unsafeElement = element
+                let raised: Bool = await withCheckedContinuation { continuation in
+                    DispatchQueue.global(qos: .userInteractive).async {
+                        continuation.resume(returning: WindowFocus.focus(window: id, pid: getpid(), element: unsafeElement))
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                say("focus from a background queue returned \(raised); Tutto still running; test window visible: \(window.isVisible)")
+                window.close()
             case "hwcapture":
                 // The window server's own capture, by window ID (works for other Spaces?).
                 typealias Capture = @convention(c) (Int32, UnsafeMutablePointer<UInt32>, Int32, UInt32) -> Unmanaged<CFArray>?

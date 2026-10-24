@@ -73,7 +73,7 @@ private struct StripSettings: View {
             } else {
                 LabeledRow(strip.isRunning ? "\(strip.windowCount) \(strip.windowCount == 1 ? "window" : "windows") on the strip" : "Stopped",
                            detail: strip.isRunning
-                               ? "Stopping puts every window back on screen where you can see it."
+                               ? "Hold ⌃⌥ and press ← → or scroll to slide along it. Stopping puts every window back on screen."
                                : "Windows are where you left them. Start lays them out again.") {
                     HStack(spacing: 8) {
                         if strip.isRunning {
@@ -83,6 +83,15 @@ private struct StripSettings: View {
                         }
                         Button(strip.isRunning ? "Stop" : "Start") { strip.perform(.toggleRunning) }
                             .buttonStyle(InkButtonStyle(compact: true))
+                    }
+                }
+                if strip.isRunning, strip.fullScreenWindowCount > 0 {
+                    Hairline().opacity(0.6)
+                    LabeledRow("\(strip.fullScreenWindowCount) \(strip.fullScreenWindowCount == 1 ? "window is" : "windows are") in full screen",
+                               detail: "A window in native full screen keeps a Space of its own, so the strip leaves it alone. Bring them here and each becomes a full-width column: it still fills the screen, and ⌃⌥ ← → slides between them.") {
+                        Button(strip.isBringingHome ? "Bringing…" : "Bring Them Here") { strip.bringFullScreenWindowsHere() }
+                            .buttonStyle(InkButtonStyle(compact: true))
+                            .disabled(strip.isBringingHome)
                     }
                 }
             }

@@ -95,6 +95,7 @@ final class AppModel {
         if on {
             enabled.insert(id)
             start(id)
+            if id == .strip { strip?.announce() }
         } else {
             enabled.remove(id)
             stop(id)

@@ -227,3 +227,23 @@ final class SwitcherKeyTapTests: XCTestCase {
         XCTAssertEqual(tap.mode, .idle)
     }
 }
+
+final class PointerIntentTests: XCTestCase {
+    func testARestingPointerNeverPicksACard() {
+        var pointer = PointerIntent(at: CGPoint(x: 500, y: 400))
+        // The switcher opens under it, cards slide beneath it: same spot, nothing picked.
+        XCTAssertFalse(pointer.moved(to: CGPoint(x: 500, y: 400)))
+        XCTAssertFalse(pointer.moved(to: CGPoint(x: 501, y: 399)))  // a nudge
+        XCTAssertFalse(pointer.moved(to: CGPoint(x: 500, y: 400)))
+    }
+
+    func testMovingItPicksTheCardUnderIt() {
+        var pointer = PointerIntent(at: CGPoint(x: 500, y: 400))
+        XCTAssertTrue(pointer.moved(to: CGPoint(x: 540, y: 400)))
+        // Standing still again (while Tab moves the selection and cards slide): nothing.
+        XCTAssertFalse(pointer.moved(to: CGPoint(x: 540, y: 400)))
+        // Slow moves add up from where it last picked.
+        XCTAssertFalse(pointer.moved(to: CGPoint(x: 541.5, y: 400)))
+        XCTAssertTrue(pointer.moved(to: CGPoint(x: 543, y: 400)))
+    }
+}
