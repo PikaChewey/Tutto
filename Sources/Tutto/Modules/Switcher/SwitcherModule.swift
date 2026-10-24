@@ -884,12 +884,12 @@ final class ThumbnailStore {
             if let entry = images[id], Date().timeIntervalSince(entry.taken) < 2 { continue }
             inFlight.insert(id)
             queue.addOperation {
-                let image = WindowServer.capture(id).flatMap { Self.scaled($0, to: Self.pixelSize) }
+                // The whole window, or nothing (the card keeps its icon): never a clipped sliver.
+                let picture = WindowPictures.capture(id, fitting: Self.pixelSize)
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         self.inFlight.remove(id)
-                        guard let image else { return }
-                        let picture = NSImage(cgImage: image, size: NSSize(width: CGFloat(image.width) / 2, height: CGFloat(image.height) / 2))
+                        guard let picture else { return }
                         self.images[id] = (picture, Date())
                         completion(id, picture)
                     }

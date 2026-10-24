@@ -12,12 +12,26 @@ final class StripModelTests: XCTestCase {
               focusColumn: focus)
     }
 
-    func testCycleWidthGoesUpThroughThePresetsAndWraps() {
+    func testCycleWidthGoesUpToFullWidthAndWraps() {
         var s = strip([2.0 / 3.0])
         var seen: [String] = []
-        for _ in 0..<5 { seen.append(s.cycleWidth().message) }
-        XCTAssertEqual(seen, ["Cycle width · 75%", "Cycle width · 25%", "Cycle width · 33%", "Cycle width · 50%", "Cycle width · 67%"])
+        for _ in 0..<6 { seen.append(s.cycleWidth().message) }
+        XCTAssertEqual(seen, ["Cycle width · 75%", "Cycle width · Full", "Cycle width · 25%", "Cycle width · 33%",
+                              "Cycle width · 50%", "Cycle width · 67%"])
         XCTAssertEqual(s.columns[0].width, 2.0 / 3.0, accuracy: 0.0001)
+    }
+
+    func testCyclingOntoFullWidthIsTheSameAsFullWidth() {
+        var s = strip([0.75])
+        XCTAssertEqual(s.cycleWidth(), .done("Cycle width · Full"))
+        XCTAssertEqual(s.columns[0].width, 1)
+        // Full width remembers the width before, like the full width key does.
+        XCTAssertEqual(s.toggleFullWidth(), .done("Full width · back to 75%"))
+        XCTAssertEqual(s.columns[0].width, 0.75)
+        // A preset list that already ends at full width doesn't get it twice.
+        var t = strip([0.5])
+        XCTAssertEqual(t.cycleWidth(presets: [0.5, 1]), .done("Cycle width · Full"))
+        XCTAssertEqual(t.cycleWidth(presets: [0.5, 1]), .done("Cycle width · 50%"))
     }
 
     func testFullWidthTogglesBackToTheWidthBefore() {

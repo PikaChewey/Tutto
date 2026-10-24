@@ -40,7 +40,7 @@ private struct StripSettings: View {
             keys
             layout
             InkGroup("Show") {
-                toggle("Strip bar", detail: "Along the bottom while you hold ⌃⌥ or move around: one tile per column. Click a tile to go there, drag one to reorder.",
+                toggle("Strip bar", detail: "Along the bottom while you hold ⌃⌥, gone when you let go: one tile per column. Click a tile to go there, drag one to reorder.",
                        isOn: $strip.showsIndicator)
                 Hairline().opacity(0.6)
                 toggle("Window pictures in the strip bar", detail: WindowPictures.canCapture
@@ -140,7 +140,7 @@ private struct StripSettings: View {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: Metrics.titleToDetail) {
                         Text("Widths to cycle through").font(.system(size: 13, weight: .medium))
-                        Text("⌃⌥R steps a window up through these, then back to the smallest.")
+                        Text("⌃⌥R steps a window up through these, then full width, then back to the smallest.")
                             .font(.system(size: 11.5)).foregroundStyle(Color.ink3)
                     }
                     Spacer()

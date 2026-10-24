@@ -112,15 +112,38 @@ enum StripAX {
     static func isMinimized(_ element: AXUIElement) -> Bool { bool(element, kAXMinimizedAttribute) }
     static func title(_ element: AXUIElement) -> String { string(element, kAXTitleAttribute) ?? "" }
 
-    /// Position, then size when it changes (size, position, size: an app may clamp a new size
-    /// to the screen it's on before it moves).
-    static func setFrame(_ frame: CGRect, of element: AXUIElement, size setSize: Bool) {
+    /// How a frame is sent. A window keeps its size unless asked; growing it moves it first
+    /// (macOS fits a new size into the room below and beside a window's current corner),
+    /// shrinking resizes it first, and a final frame is sent size, position, size so an app that
+    /// clamped the first size to its old spot gets it right.
+    enum FrameOrder: Sendable {
+        case positionOnly, growing, shrinking, settle
+    }
+
+    static func setFrame(_ frame: CGRect, of element: AXUIElement, order: FrameOrder) {
         var origin = frame.origin
         var size = frame.size
         guard let originValue = AXValueCreate(.cgPoint, &origin), let sizeValue = AXValueCreate(.cgSize, &size) else { return }
-        if setSize { AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, sizeValue) }
-        AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, originValue)
-        if setSize { AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, sizeValue) }
+        func position() { AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, originValue) }
+        func resize() { AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, sizeValue) }
+        switch order {
+        case .positionOnly:
+            position()
+        case .growing:
+            position()
+            resize()
+        case .shrinking:
+            resize()
+            position()
+        case .settle:
+            resize()
+            position()
+            resize()
+        }
+    }
+
+    static func setFrame(_ frame: CGRect, of element: AXUIElement, size setSize: Bool) {
+        setFrame(frame, of: element, order: setSize ? .settle : .positionOnly)
     }
 
     /// Every window id on screen right now (a background native tab isn't).
@@ -261,7 +284,7 @@ final class StripMover: @unchecked Sendable {
     private struct Request {
         var element: AXUIElement
         var frame: CGRect
-        var setSize: Bool
+        var order: StripAX.FrameOrder
     }
 
     private let lock = NSLock()
@@ -271,14 +294,15 @@ final class StripMover: @unchecked Sendable {
     /// on (assistive apps turn it on), an app animates every move itself, slowly.
     private var enhancedOff: [pid_t: DispatchWorkItem] = [:]
 
-    func move(_ window: CGWindowID, pid: pid_t, element: AXUIElement, to frame: CGRect, setSize: Bool) {
+    func move(_ window: CGWindowID, pid: pid_t, element: AXUIElement, to frame: CGRect, order: StripAX.FrameOrder) {
         // Tutto's own windows answer Accessibility in-process, on the calling thread; AppKit
         // windows can't be moved from these background queues.
         guard pid != getpid() else { return }
         lock.lock()
         let waiting = pending[window] != nil
-        var request = Request(element: element, frame: frame, setSize: setSize)
-        if let older = pending[window], older.setSize { request.setSize = true }
+        var request = Request(element: element, frame: frame, order: order)
+        // A frame that replaces one not sent yet still carries its size change.
+        if let older = pending[window], older.order != .positionOnly, order == .positionOnly { request.order = .settle }
         pending[window] = request
         let queue = queue(for: pid)
         lock.unlock()
@@ -326,7 +350,7 @@ final class StripMover: @unchecked Sendable {
         lock.unlock()
         guard let request else { return }
         holdEnhancedInterfaceOff(pid)
-        StripAX.setFrame(request.frame, of: request.element, size: request.setSize)
+        StripAX.setFrame(request.frame, of: request.element, order: request.order)
     }
 
     /// Called on the app's queue before each move; switches the app's enhanced interface back

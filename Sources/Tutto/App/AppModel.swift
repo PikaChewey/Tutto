@@ -51,7 +51,7 @@ final class AppModel {
         }
         #if DEBUG
         // Live tests of the strip with test windows only: nothing else of Tutto runs.
-        if CommandLine.arguments.contains("--strip-only") { enabled = [.strip] }
+        if CommandLine.arguments.contains("--strip-only") { enabled = [.strip, .switcher] }
         #endif
         hasCompletedOnboarding = defaults.bool(forKey: Keys.onboarded)
     }

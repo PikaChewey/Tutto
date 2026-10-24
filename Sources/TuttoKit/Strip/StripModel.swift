@@ -267,15 +267,17 @@ public struct Strip: Equatable, Codable, Sendable {
 
     public static let defaultPresets: [Double] = [0.25, 1.0 / 3.0, 0.5, 2.0 / 3.0, 0.75]
 
-    /// The next larger preset, wrapping to the smallest.
+    /// The next larger preset, thinnest to widest, and the widest is always full width; after
+    /// that it wraps to the thinnest. Landing on full width is the same as the full width key:
+    /// the width before is remembered, so that key goes back to it.
     public mutating func cycleWidth(presets: [Double] = Strip.defaultPresets) -> StripOutcome {
-        guard columns.indices.contains(focusColumn), !presets.isEmpty else { return .refused("The strip is empty.") }
-        let sorted = presets.sorted()
+        guard columns.indices.contains(focusColumn) else { return .refused("The strip is empty.") }
+        let steps = presets.filter { $0 < 0.995 }.sorted() + [1]
         let current = columns[focusColumn].width
-        let next = sorted.first { $0 > current + 0.005 } ?? sorted[0]
+        let next = steps.first { $0 > current + 0.005 } ?? steps[0]
+        columns[focusColumn].widthBeforeFull = next >= 0.999 ? current : nil
         columns[focusColumn].width = next
-        columns[focusColumn].widthBeforeFull = nil
-        return .done("Cycle width · \(Self.percent(next))")
+        return .done("Cycle width · \(next >= 0.999 ? "Full" : Self.percent(next))")
     }
 
     public mutating func toggleFullWidth(fallback: Double = 0.5) -> StripOutcome {

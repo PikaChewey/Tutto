@@ -49,22 +49,30 @@ final class StripIndicatorState {
 
 @MainActor
 final class StripIndicator {
+    /// How long it stays: while ⌃⌥ are held (it goes the moment they're let go), or for a moment
+    /// after something moved the strip without them (a swipe).
+    enum Lifetime: Equatable {
+        case whileHeld
+        case briefly(TimeInterval)
+    }
+
     let state = StripIndicatorState()
     var onSelect: ((Int) -> Void)?
     var onMove: ((Int, Int) -> Void)?
+    /// Whether ⌃⌥ are held right now (the strip asks its key filter as well as macOS).
+    var isHeld: () -> Bool = { StripIndicator.modifiersHeld() }
 
     private var panel: NSPanel?
     private var hideWork: DispatchWorkItem?
-    private var holdTimer: Timer?
+    private var watchdog: Timer?
     private var shownOn: CGDirectDisplayID?
+    private var shown = false
 
     static let padding: CGFloat = 14
 
-    var isVisible: Bool { panel?.isVisible == true && (panel?.alphaValue ?? 0) > 0 }
+    var isVisible: Bool { shown }
 
-    /// Shows (or refreshes) the indicator. It hides itself `duration` after the last call,
-    /// or once ⌃⌥ is let go, whichever is later.
-    func show(tiles: [StripIndicatorState.Tile], message: String?, refused: Bool, display: StripDisplay, duration: TimeInterval = 1.1) {
+    func show(tiles: [StripIndicatorState.Tile], message: String?, refused: Bool, display: StripDisplay, lifetime: Lifetime) {
         state.tiles = tiles
         state.message = message
         state.refused = refused
@@ -75,69 +83,80 @@ final class StripIndicator {
         let frame = NSRect(x: (visible.midX - size.width / 2).rounded(), y: (visible.minY + 28).rounded(),
                            width: size.width, height: size.height)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
-        if !isVisible || shownOn != display.id {
-            panel.alphaValue = 0
+        if !shown || shownOn != display.id {
+            if !panel.isVisible { panel.alphaValue = 0 }
             panel.orderFrontRegardless()
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.05 : 0.12
+                context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.04 : 0.1
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 panel.animator().alphaValue = 1
             }
         }
+        shown = true
         shownOn = display.id
-        scheduleHide(after: duration)
+        hideWork?.cancel()
+        switch lifetime {
+        case .whileHeld:
+            startWatchdog()
+        case .briefly(let duration):
+            watchdog?.invalidate()
+            watchdog = nil
+            let work = DispatchWorkItem { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, !self.isHeld() else { return }
+                    self.hide()
+                }
+            }
+            hideWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
+        }
     }
 
-    /// Keeps the tiles current while it's on screen.
+    /// Keeps the tiles current while it's on screen (pictures arriving, columns moving).
     func update(tiles: [StripIndicatorState.Tile]) {
-        guard isVisible, tiles != state.tiles else { return }
+        guard shown, tiles != state.tiles else { return }
         state.tiles = tiles
     }
 
+    /// Gone, with a short fade.
     func hide() {
         hideWork?.cancel()
-        holdTimer?.invalidate()
-        holdTimer = nil
-        guard let panel, isVisible else { return }
+        hideWork = nil
+        watchdog?.invalidate()
+        watchdog = nil
+        guard shown, let panel else { return }
+        shown = false
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.18
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.04 : 0.12
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
-        }, completionHandler: {
+        }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {
-                if panel.alphaValue == 0 { panel.orderOut(nil) }
+                if self?.shown == false { panel.orderOut(nil) }
             }
         })
     }
 
     func close() {
         hideWork?.cancel()
-        holdTimer?.invalidate()
+        watchdog?.invalidate()
         panel?.orderOut(nil)
         panel = nil
+        shown = false
     }
 
-    private func scheduleHide(after duration: TimeInterval) {
-        hideWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated { self?.hideUnlessHeld() }
-        }
-        hideWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
-    }
-
-    /// Holding ⌃⌥ keeps it up; watched only while it's showing.
-    private func hideUnlessHeld() {
-        guard Self.modifiersHeld() || panel?.frame.contains(NSEvent.mouseLocation) == true else { return hide() }
-        holdTimer?.invalidate()
-        holdTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+    /// A safety net while the bar waits for ⌃⌥ to be let go: the key filter reports that at
+    /// once, but macOS hides keys from filters in password fields, so check now and then too.
+    private func startWatchdog() {
+        guard watchdog == nil else { return }
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self else { return timer.invalidate() }
-                if !Self.modifiersHeld(), self.panel?.frame.contains(NSEvent.mouseLocation) != true {
-                    timer.invalidate()
-                    self.holdTimer = nil
-                    self.scheduleHide(after: 0.35)
-                }
+                guard let self else { return }
+                if !self.isHeld() { self.hide() }
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        watchdog = timer
     }
 
     static func modifiersHeld() -> Bool {
@@ -190,6 +209,8 @@ private struct StripIndicatorView: View {
     @State private var dragging: Int?
     @State private var dragOffset: CGFloat = 0
 
+    private var focusIndex: Int? { state.tiles.firstIndex(where: \.focused) }
+
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: state.spacing) {
@@ -212,6 +233,18 @@ private struct StripIndicatorView: View {
                         .simultaneousGesture(TapGesture().onEnded { select(tile.id) })
                 }
             }
+            // One outline that slides to the focused column on a spring; the pictures themselves
+            // never animate (a picture arriving just replaces the icon).
+            .overlay(alignment: .leading) {
+                if let focusIndex {
+                    RoundedRectangle(cornerRadius: corner + 3, style: .continuous)
+                        .strokeBorder(Color.ink, lineWidth: 2.5)
+                        .frame(width: state.tileSize.width + 6, height: state.tileSize.height + 6)
+                        .offset(x: CGFloat(focusIndex) * (state.tileSize.width + state.spacing) - 3)
+                        .animation(Motion.snappy, value: focusIndex)
+                        .allowsHitTesting(false)
+                }
+            }
             if let message = state.message {
                 Text(message)
                     .font(.geist(12, weight: .medium))
@@ -224,7 +257,6 @@ private struct StripIndicatorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(PaletteBackground())
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.hairline))
-        .animation(Motion.micro, value: state.tiles)
     }
 
     private var corner: CGFloat { state.previews ? 10 : 12 }
@@ -248,11 +280,13 @@ private struct StripIndicatorView: View {
             }
         }
         .frame(width: size.width, height: size.height)
+        // Out of view: dimmed with an opaque shade (see-through tiles let whatever is behind the
+        // bar bleed into them), and a little greyer.
+        .saturation(tile.visible > 0.02 ? 1 : 0.55)
+        .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous)
+            .fill(Color.black.opacity(tile.visible > 0.02 ? 0 : 0.42)))
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: corner + 3, style: .continuous)
-            .strokeBorder(tile.focused ? Color.ink : Color.clear, lineWidth: 2.5)
-            .padding(-3))
-        .opacity(tile.visible > 0.02 ? 1 : 0.45)
+        .animation(.easeOut(duration: 0.15), value: tile.visible > 0.02)
         .contentShape(Rectangle())
         .accessibilityLabel(tile.focused ? "Focused column" : "Column \(tile.id + 1)")
     }

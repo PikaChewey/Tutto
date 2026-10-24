@@ -169,7 +169,11 @@ final class StripModule: ModuleController {
     /// Windows coming out of full screen to join the strip: full width, in their Spaces' order.
     @ObservationIgnored private var arrivals: [CGWindowID: Int] = [:]
     @ObservationIgnored private var lastNoStripHint: TimeInterval = -1_000
-    @ObservationIgnored private var holdWork: DispatchWorkItem?
+    /// ⌃⌥ held right now, as the key filter reports it.
+    @ObservationIgnored private var holdingModifiers = false
+    @ObservationIgnored private var lastModifierEvent: TimeInterval = 0
+    /// The window a strip key just gave focus to, and until when other reports are stale.
+    @ObservationIgnored private var expectedFocus: (window: CGWindowID, until: TimeInterval)?
     @ObservationIgnored private var pictureTaken: [CGWindowID: TimeInterval] = [:]
     @ObservationIgnored private let pictureQueue: OperationQueue = {
         let queue = OperationQueue()
@@ -234,6 +238,13 @@ final class StripModule: ModuleController {
             savedLayouts = [:]
         }
         indicator.onSelect = { [weak self] column in self?.indicatorSelected(column) }
+        // macOS's own modifier state misses keys posted by software (remote control, automation);
+        // the key filter sees those. Either one saying ⌃⌥ are down keeps the bar.
+        indicator.isHeld = { [weak self] in
+            if StripIndicator.modifiersHeld() { return true }
+            guard let self else { return false }
+            return self.holdingModifiers && ProcessInfo.processInfo.systemUptime - self.lastModifierEvent < 10
+        }
         indicator.onMove = { [weak self] from, to in self?.indicatorMoved(from, to) }
         tabBars.onSelect = { [weak self] window in self?.tabSelected(window) }
     }
@@ -347,21 +358,16 @@ final class StripModule: ModuleController {
         keyTap?.isSuspended = suspended
     }
 
-    /// Holding ⌃⌥ by itself brings up the strip bar (after a moment, so quick ⌃⌥ chords don't
-    /// flash it); it stays while they're held.
+    /// The strip bar is hold-to-see: it appears as soon as ⌃⌥ are both held, stays while they
+    /// are (strip keys update it in place), and goes the moment they're let go.
     private func modifiersChanged(_ modifiers: KeyShortcut.Modifiers) {
-        holdWork?.cancel()
-        guard modifiers.contains(.control), modifiers.contains(.option), isRunning, showsIndicator else { return }
-        let work = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, StripIndicator.modifiersHeld(), let state = self.activeState(), !state.strip.isEmpty else { return }
-                if !self.indicator.isVisible || self.indicatorKey != state.key {
-                    self.showIndicator(state, message: nil, refused: false, duration: 0.25)
-                }
-            }
-        }
-        holdWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+        lastModifierEvent = ProcessInfo.processInfo.systemUptime
+        let held = modifiers.contains(.control) && modifiers.contains(.option)
+        guard held != holdingModifiers else { return }
+        holdingModifiers = held
+        guard held else { return indicator.hide() }
+        guard isRunning, showsIndicator, let state = activeState(), !state.strip.isEmpty else { return }
+        showIndicator(state, message: nil, refused: false)
     }
 
     private func startKeyTap() {
@@ -1006,6 +1012,13 @@ final class StripModule: ModuleController {
             return updateDecor()
         }
         guard let state = strips[w.key], isCurrent(w.key), !w.held else { return updateDecor() }
+        if let expected = expectedFocus {
+            if expected.window == id || ProcessInfo.processInfo.systemUptime > expected.until {
+                expectedFocus = nil
+            } else {
+                return updateDecor()  // a late report of the window the strip just moved focus away from
+            }
+        }
         guard state.strip.focusedWindow != id || (w.parked && !arrangesAlways) else { return updateDecor() }
         state.strip.focus(id)
         // Arranged only on strip keys: a window you can see stays put; one out of view (you
@@ -1033,6 +1046,9 @@ final class StripModule: ModuleController {
     /// Gives the focused column's window the keyboard, after its first move is on its way.
     private func focusWindow(in state: StripState) {
         guard let id = state.strip.focusedWindow, let w = windows[id] else { return }
+        // While macOS catches up it can still report the window that had focus before; those
+        // reports mustn't send the strip back there.
+        expectedFocus = (id, ProcessInfo.processInfo.systemUptime + 0.8)
         let element = w.element
         let pid = w.pid
         nonisolated(unsafe) let unsafeElement = element
@@ -1135,6 +1151,10 @@ final class StripModule: ModuleController {
             if state.strip.focusedWindow != before { focusWindow(in: state) }
             if mouseFollowsFocus { warpPointer(to: state) }
             saveLayoutsSoon()
+        } else if !arrangesAlways {
+            // A strip key arranges the strip even when its own move can't happen (already at
+            // the end): windows moved by hand go back in place.
+            apply(state, animated: true)
         }
         log.notice("\(command.id, privacy: .public): \(outcome.message, privacy: .public)")
         #if DEBUG
@@ -1199,7 +1219,7 @@ final class StripModule: ModuleController {
             let size = CGSize(width: min(w.target.width, visible.width * 0.7).rounded(), height: min(w.target.height, visible.height * 0.8).rounded())
             let frame = CGRect(x: (visible.midX - size.width / 2).rounded(), y: (visible.midY - size.height / 2).rounded(),
                                width: size.width, height: size.height)
-            mover.move(id, pid: w.pid, element: w.element, to: frame, setSize: true)
+            mover.move(id, pid: w.pid, element: w.element, to: frame, order: .settle)
             forget(id)
             userFloated.insert(id)
             reveal(owner)
@@ -1279,11 +1299,8 @@ final class StripModule: ModuleController {
                 spring = SpringFrame(w.parked ? (entry[w.id] ?? placement.frame) : w.shown)
                 if state.strip.columns[placement.column].pin == nil { spring.x.velocity = -state.offset.velocity }
             }
-            // A window that gets taller goes to its new top at once: macOS clamps a new height to
-            // the room below a window's current top.
-            if abs(spring.height.value - placement.frame.height) > 0.5 { spring.y.snap(to: placement.frame.minY) }
-            spring.width.snap(to: placement.frame.width)
-            spring.height.snap(to: placement.frame.height)
+            // Position and size follow the same spring, so columns stay exactly a gap apart while
+            // widths change (the order each frame is sent in keeps macOS from clamping a size).
             if instant { spring.snap(to: placement.frame) }
             w.spring = spring
             animating.insert(w.id)
@@ -1309,7 +1326,7 @@ final class StripModule: ModuleController {
             }
         }
         var settled: [StripManagedWindow] = []
-        for id in Array(animating) {
+        for id in Self.sendingOrder(Array(animating), windows: windows) {
             guard let w = windows[id], var spring = w.spring, let state = strips[w.key], let geometry = geometries[w.key], !w.held else {
                 animating.remove(id)
                 windows[id]?.spring = nil
@@ -1325,7 +1342,7 @@ final class StripModule: ModuleController {
                 w.spring = spring
                 moving = true
             }
-            place(w, at: done ? w.target : spring.roundedRect, state: state, geometry: geometry)
+            place(w, at: done ? w.target : spring.roundedRect, state: state, geometry: geometry, settling: done)
         }
         #if DEBUG
         if dt > 0 { frames += 1 }
@@ -1337,12 +1354,29 @@ final class StripModule: ModuleController {
         }
     }
 
-    private func place(_ w: StripManagedWindow, at rect: CGRect, state: StripState, geometry: StripGeometry) {
+    /// The order a frame's moves are sent in, so neighbours never overlap on the way: windows
+    /// heading right go first (the rightmost first, making room), then ones that only change
+    /// size, then ones heading left (the leftmost first, filling in behind).
+    private static func sendingOrder(_ ids: [CGWindowID], windows: [CGWindowID: StripManagedWindow]) -> [CGWindowID] {
+        func heading(_ id: CGWindowID) -> Double {
+            guard let w = windows[id] else { return 0 }
+            return w.target.minX - w.shown.minX
+        }
+        func x(_ id: CGWindowID) -> Double { Double(windows[id]?.shown.minX ?? 0) }
+        let right = ids.filter { heading($0) > 0.5 }.sorted { x($0) > x($1) }
+        let still = ids.filter { abs(heading($0)) <= 0.5 }
+        let left = ids.filter { heading($0) < -0.5 }.sorted { x($0) < x($1) }
+        return right + still + left
+    }
+
+    private func place(_ w: StripManagedWindow, at rect: CGRect, state: StripState, geometry: StripGeometry, settling: Bool = false) {
         let inView = geometry.isInView(rect, column: w.column) && !overhangsAnotherDisplay(rect, state.display)
         if inView {
-            guard w.parked || rect != w.shown else { return }
+            guard w.parked || rect != w.shown || (settling && w.resized) else { return }
             let resize = w.parked || abs(rect.width - w.shown.width) > 0.5 || abs(rect.height - w.shown.height) > 0.5
-            send(w, rect, resize: resize)
+            let grows = rect.width > w.shown.width + 0.5 || rect.height > w.shown.height + 0.5
+            let order: StripAX.FrameOrder = settling && (resize || w.resized) ? .settle : (resize ? (grows ? .growing : .shrinking) : .positionOnly)
+            send(w, rect, order: order)
             if w.parked {
                 w.parked = false
                 parkedChanged()
@@ -1368,7 +1402,7 @@ final class StripModule: ModuleController {
         }
         let others = displayList.filter { $0.uuid != state.display.uuid }.map(\.frame)
         let frame = StripParking.frame(size: w.shown.size, side: side, display: state.display.visible, others: others)
-        send(w, frame, resize: false)
+        send(w, frame, order: .positionOnly)
         w.parked = true
         parkedChanged()
     }
@@ -1380,11 +1414,11 @@ final class StripModule: ModuleController {
         if arrangesAlways { apply(state, animated: true) }
     }
 
-    private func send(_ w: StripManagedWindow, _ frame: CGRect, resize: Bool) {
-        mover.move(w.id, pid: w.pid, element: w.element, to: frame, setSize: resize)
+    private func send(_ w: StripManagedWindow, _ frame: CGRect, order: StripAX.FrameOrder) {
+        mover.move(w.id, pid: w.pid, element: w.element, to: frame, order: order)
         w.shown = frame
         w.lastMove = ProcessInfo.processInfo.systemUptime
-        if resize { w.resized = true }
+        if order == .growing || order == .shrinking { w.resized = true }
         #if DEBUG
         if let started = commandStarted {
             log.notice("first move \(Int((ProcessInfo.processInfo.systemUptime - started) * 1000)) ms after the key")
@@ -1405,6 +1439,8 @@ final class StripModule: ModuleController {
         frames = 0
         #endif
         updateDecor()
+        // Pictures are taken of windows at rest: the bar's are refreshed once a move is over.
+        if indicator.isVisible, barPreviews { refreshBarPictures() }
         for w in settled where w.resized && !w.parked {
             w.resized = false
             let id = w.id
@@ -1683,11 +1719,15 @@ final class StripModule: ModuleController {
 
     // MARK: Overlays
 
-    private func showIndicator(_ state: StripState, message: String?, refused: Bool, force: Bool = false, duration: TimeInterval = 1.1) {
+    /// While ⌃⌥ are held the bar stays until they're let go; a move made without them (a swipe,
+    /// a rebound key) shows it for a moment.
+    private func showIndicator(_ state: StripState, message: String?, refused: Bool, force: Bool = false, duration: TimeInterval = 1) {
         guard showsIndicator || force else { return }
         indicatorKey = state.key
         indicator.state.previews = barPreviews && WindowPictures.canCapture
-        indicator.show(tiles: tiles(for: state), message: message, refused: refused, display: state.display, duration: duration)
+        let held = indicator.isHeld()
+        indicator.show(tiles: tiles(for: state), message: message, refused: refused, display: state.display,
+                       lifetime: held ? .whileHeld : .briefly(duration))
         if indicator.state.previews { refreshBarPictures() }
     }
 
@@ -1699,6 +1739,7 @@ final class StripModule: ModuleController {
         for id in state.strip.allWindows {
             guard let w = windows[id] else { continue }
             if w.parked, WindowPictures.shared.picture(for: id) != nil { continue }
+            if animating.contains(id) { continue }  // mid-move: photographed when it settles
             if let taken = pictureTaken[id], now - taken < 1.5 { continue }
             pictureTaken[id] = now
             pictureQueue.addOperation { [weak self] in
