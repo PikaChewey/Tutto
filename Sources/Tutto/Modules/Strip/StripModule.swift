@@ -111,6 +111,14 @@ final class StripModule: ModuleController {
     var modifierScroll: Bool { didSet { save(modifierScroll, Keys.scroll); configureInput() } }
     var focusFollowsMouse: Bool { didSet { save(focusFollowsMouse, Keys.focusFollowsMouse); configureInput() } }
     var mouseFollowsFocus: Bool { didSet { save(mouseFollowsFocus, Keys.mouseFollowsFocus) } }
+    /// When windows are put in their places: only on a strip key (and when you switch to a
+    /// window that's out of view), or all the time.
+    var arrangeMode: ArrangeMode { didSet { save(arrangeMode.rawValue, Keys.arrange) } }
+    /// Window pictures in the strip bar instead of app icons.
+    var barPreviews: Bool { didSet { save(barPreviews, Keys.barPreviews); if barPreviews { refreshBarPictures() } } }
+
+    enum ArrangeMode: String, CaseIterable { case onCommand, always }
+    private var arrangesAlways: Bool { arrangeMode == .always }
     private(set) var disabledDisplays: [String]
     private(set) var floatingApps: [String]
 
@@ -161,6 +169,15 @@ final class StripModule: ModuleController {
     /// Windows coming out of full screen to join the strip: full width, in their Spaces' order.
     @ObservationIgnored private var arrivals: [CGWindowID: Int] = [:]
     @ObservationIgnored private var lastNoStripHint: TimeInterval = -1_000
+    @ObservationIgnored private var holdWork: DispatchWorkItem?
+    @ObservationIgnored private var pictureTaken: [CGWindowID: TimeInterval] = [:]
+    @ObservationIgnored private let pictureQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 2
+        queue.qualityOfService = .userInitiated
+        queue.name = "Strip pictures"
+        return queue
+    }()
     /// The strip a swipe started on keeps it until the fingers lift, wherever the pointer goes.
     @ObservationIgnored private var swipeKey: StripKey?
     @ObservationIgnored private var icons: [pid_t: NSImage] = [:]
@@ -207,6 +224,8 @@ final class StripModule: ModuleController {
         modifierScroll = d.object(forKey: Keys.scroll) as? Bool ?? true
         focusFollowsMouse = d.bool(forKey: Keys.focusFollowsMouse)
         mouseFollowsFocus = d.bool(forKey: Keys.mouseFollowsFocus)
+        arrangeMode = ArrangeMode(rawValue: d.string(forKey: Keys.arrange) ?? "") ?? .onCommand
+        barPreviews = d.object(forKey: Keys.barPreviews) as? Bool ?? true
         disabledDisplays = d.stringArray(forKey: Keys.disabledDisplays) ?? []
         floatingApps = d.stringArray(forKey: Keys.floatingApps) ?? []
         if let data = d.data(forKey: Keys.layouts), let saved = try? JSONDecoder().decode([String: [StripColumn]].self, from: data) {
@@ -328,6 +347,23 @@ final class StripModule: ModuleController {
         keyTap?.isSuspended = suspended
     }
 
+    /// Holding ⌃⌥ by itself brings up the strip bar (after a moment, so quick ⌃⌥ chords don't
+    /// flash it); it stays while they're held.
+    private func modifiersChanged(_ modifiers: KeyShortcut.Modifiers) {
+        holdWork?.cancel()
+        guard modifiers.contains(.control), modifiers.contains(.option), isRunning, showsIndicator else { return }
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, StripIndicator.modifiersHeld(), let state = self.activeState(), !state.strip.isEmpty else { return }
+                if !self.indicator.isVisible || self.indicatorKey != state.key {
+                    self.showIndicator(state, message: nil, refused: false, duration: 0.25)
+                }
+            }
+        }
+        holdWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+    }
+
     private func startKeyTap() {
         guard AXIsProcessTrusted() else { return }
         let tap = keyTap ?? ShortcutTap { [weak self] id in
@@ -340,6 +376,9 @@ final class StripModule: ModuleController {
         }
         keyTap = tap
         tap.bindings = keyBindings.mapValues(\.id)
+        tap.onModifiers = { [weak self] modifiers in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.modifiersChanged(modifiers) } }
+        }
         if !tap.isRunning || !tap.isEnabled { tap.start(name: "Strip keys") }
     }
 
@@ -384,7 +423,7 @@ final class StripModule: ModuleController {
     /// Lays the strip out again from the windows on screen now.
     func retileNow() {
         guard isRunning else { return begin() }
-        rebuild()
+        rebuild(arrange: true)
         if let state = activeState() { showIndicator(state, message: "Tiled every window", refused: false) }
     }
 
@@ -455,7 +494,7 @@ final class StripModule: ModuleController {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.isBringingHome = false
-                    self.rebuild()
+                    self.rebuild(arrange: true)
                     self.refreshSetupChecks()
                     let missed = targets.count - count
                     Toast.shared.show(count > 0 ? "\(count) \(count == 1 ? "window" : "windows") on the strip" : "Couldn't reach those windows",
@@ -509,8 +548,9 @@ final class StripModule: ModuleController {
         rebuild()
     }
 
-    /// Finds each display's current Space, builds or refreshes its strip, and lays it out.
-    private func rebuild() {
+    /// Finds each display's current Space and builds or refreshes its strip. Windows are laid
+    /// out too when `arrange` is set or the strip keeps them in place all the time.
+    private func rebuild(arrange: Bool = false) {
         guard isRunning else { return }
         let displays = StripDisplay.all()
         displayList = displays
@@ -539,11 +579,18 @@ final class StripModule: ModuleController {
         let states = keys.values.compactMap { strips[$0] }
         collect(into: states, restoring: Set(fresh.map(\.key)))
         for state in states {
-            if fresh.contains(where: { $0 === state }) {
+            let isFresh = fresh.contains { $0 === state }
+            if isFresh {
                 state.strip.offset = geometry(for: state).offset(revealing: state.strip.focusColumn, from: 0, centring: centring)
                 state.offset.snap(to: state.strip.offset)
             }
-            apply(state, animated: false)
+            if arrange || arrangesAlways {
+                apply(state, animated: !isFresh && arrange)
+            } else if isFresh {
+                // Arranged only on a strip key: windows stay where they are, except any left out of
+                // view by an earlier run, which come back on screen.
+                for id in state.strip.allWindows { if let w = windows[id], w.parked { putOnScreen(w, in: state) } }
+            }
         }
         windowCount = windows.count
         updateDecor()
@@ -716,7 +763,7 @@ final class StripModule: ModuleController {
         away = away.filter { $0.value.pid != pid }
         for key in keys where isCurrent(key) {
             guard let state = strips[key] else { continue }
-            apply(state, animated: true)
+            arrangeIfAlways(state)
         }
         windowCount = windows.count
     }
@@ -798,7 +845,7 @@ final class StripModule: ModuleController {
         let width = arrivals.removeValue(forKey: w.id) != nil ? 1 : defaultWidth
         state.strip.insert(w.id, width: width, besideFocused: front, focus: front)
         if front { reveal(state) }
-        apply(state, animated: true)
+        arrangeIfAlways(state)
         windowCount = windows.count
         saveLayoutsSoon()
         log.debug("adopted \(id) into column \(state.strip.location(of: id)?.column ?? -1)")
@@ -853,7 +900,7 @@ final class StripModule: ModuleController {
         forget(id)
         guard isCurrent(state.key) else { return }
         if wasFocused { reveal(state) }
-        apply(state, animated: true)
+        arrangeIfAlways(state)
         windowCount = windows.count
         saveLayoutsSoon()
     }
@@ -889,6 +936,19 @@ final class StripModule: ModuleController {
             watchMouseUp()
             return
         }
+        guard arrangesAlways else {
+            // Moved or resized by something else (the window palette, the app itself): it stays
+            // where it was put. A new width becomes its column's width at the next strip key.
+            if abs(frame.width - w.shown.width) > 4, let (c, _) = state.strip.location(of: id), state.strip.columns[c].windows.count == 1 {
+                state.strip.setWidth(metrics(for: state).fraction(for: frame.width), forColumnOf: id)
+                w.enforcedWidth = nil
+                w.refusals = 0
+            }
+            w.shown = frame
+            w.parked = StripParking.isParked(frame, display: state.display.visible)
+            w.spring = nil
+            return
+        }
         // The app moved or resized itself: put it back once; if it insists on its width,
         // it keeps that width and the strip lays out around it.
         if abs(frame.width - w.target.width) > 12, abs(frame.width - w.shown.width) > 2 {
@@ -907,7 +967,7 @@ final class StripModule: ModuleController {
         animating.remove(w.id)
         guard isCurrent(state.key) else { return }
         reveal(state)
-        apply(state, animated: true)
+        arrangeIfAlways(state)
         windowCount = windows.count
     }
 
@@ -927,7 +987,7 @@ final class StripModule: ModuleController {
         }
         if focus { state.strip.focus(w.id) }
         reveal(state)
-        apply(state, animated: true)
+        arrangeIfAlways(state)
         windowCount = windows.count
     }
 
@@ -946,8 +1006,14 @@ final class StripModule: ModuleController {
             return updateDecor()
         }
         guard let state = strips[w.key], isCurrent(w.key), !w.held else { return updateDecor() }
-        guard state.strip.focusedWindow != id else { return updateDecor() }
+        guard state.strip.focusedWindow != id || (w.parked && !arrangesAlways) else { return updateDecor() }
         state.strip.focus(id)
+        // Arranged only on strip keys: a window you can see stays put; one out of view (you
+        // switched to it with ⌘Tab) slides into view.
+        if !arrangesAlways, !w.parked {
+            updateIndicatorTiles()
+            return updateDecor()
+        }
         // A click on a window can be the start of a drag: scroll once the mouse is up.
         if NSEvent.pressedMouseButtons & 1 != 0 {
             revealOnMouseUp = true
@@ -1286,13 +1352,32 @@ final class StripModule: ModuleController {
         }
     }
 
+    /// A window out of view waits in a corner at its own size: a window resized while out of
+    /// view never redraws, and the switcher would show it blank. It's photographed first, so
+    /// the switcher and the strip bar can show what's in it.
     private func park(_ w: StripManagedWindow, in state: StripState, side: StripSide) {
         guard !w.parked else { return }
+        if WindowPictures.canCapture {
+            let id = w.id
+            mover.run(pid: w.pid) {
+                let picture = WindowPictures.capture(id)
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { if let picture { WindowPictures.shared.store(picture, for: id) } }
+                }
+            }
+        }
         let others = displayList.filter { $0.uuid != state.display.uuid }.map(\.frame)
-        let frame = StripParking.frame(size: w.target.size, side: side, display: state.display.visible, others: others)
-        send(w, frame, resize: abs(frame.width - w.shown.width) > 0.5 || abs(frame.height - w.shown.height) > 0.5)
+        let frame = StripParking.frame(size: w.shown.size, side: side, display: state.display.visible, others: others)
+        send(w, frame, resize: false)
         w.parked = true
         parkedChanged()
+    }
+
+    /// Whether the strip has a window waiting out of view (the switcher shows its picture).
+    func isParked(_ window: CGWindowID) -> Bool { windows[window]?.parked == true }
+
+    private func arrangeIfAlways(_ state: StripState) {
+        if arrangesAlways { apply(state, animated: true) }
     }
 
     private func send(_ w: StripManagedWindow, _ frame: CGRect, resize: Bool) {
@@ -1402,6 +1487,17 @@ final class StripModule: ModuleController {
         let resized = abs(frame.width - w.shown.width) > 4 || abs(frame.height - w.shown.height) > 4
         w.shown = frame
         w.spring = nil
+        w.parked = false
+        guard arrangesAlways else {
+            // Arranged only on strip keys: a window you moved stays there; a new width is kept
+            // for its column at the next strip key.
+            if resized, state.strip.columns[c].windows.count == 1 {
+                state.strip.setWidth(metrics(for: state).fraction(for: frame.width), forColumnOf: w.id)
+                w.enforcedWidth = nil
+                w.refusals = 0
+            }
+            return saveLayoutsSoon()
+        }
         if resized {
             let metrics = metrics(for: state)
             state.strip.setWidth(metrics.fraction(for: frame.width), forColumnOf: w.id)
@@ -1590,7 +1686,32 @@ final class StripModule: ModuleController {
     private func showIndicator(_ state: StripState, message: String?, refused: Bool, force: Bool = false, duration: TimeInterval = 1.1) {
         guard showsIndicator || force else { return }
         indicatorKey = state.key
+        indicator.state.previews = barPreviews && WindowPictures.canCapture
         indicator.show(tiles: tiles(for: state), message: message, refused: refused, display: state.display, duration: duration)
+        if indicator.state.previews { refreshBarPictures() }
+    }
+
+    /// Fresh pictures for the strip bar: windows in view now, and ones out of view the strip
+    /// hasn't photographed yet. Two at a time, at most every 1.5 s per window.
+    private func refreshBarPictures() {
+        guard barPreviews, WindowPictures.canCapture, let key = indicatorKey, let state = strips[key] else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        for id in state.strip.allWindows {
+            guard let w = windows[id] else { continue }
+            if w.parked, WindowPictures.shared.picture(for: id) != nil { continue }
+            if let taken = pictureTaken[id], now - taken < 1.5 { continue }
+            pictureTaken[id] = now
+            pictureQueue.addOperation { [weak self] in
+                let picture = WindowPictures.capture(id)
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let picture else { return }
+                        WindowPictures.shared.store(picture, for: id)
+                        self?.updateIndicatorTiles()
+                    }
+                }
+            }
+        }
     }
 
     private func updateIndicatorTiles() {
@@ -1601,10 +1722,15 @@ final class StripModule: ModuleController {
     private func tiles(for state: StripState) -> [StripIndicatorState.Tile] {
         let geometry = geometry(for: state)
         return state.strip.columns.enumerated().map { c, column in
-            StripIndicatorState.Tile(id: c, icons: column.windows.compactMap { windows[$0].flatMap { icon(for: $0.pid) } },
-                                     focused: c == state.strip.focusColumn,
-                                     visible: geometry.visibleFraction(of: c, offset: state.strip.offset),
-                                     pin: column.pin, tabbed: column.tabbed)
+            let members = column.windows.compactMap { windows[$0] }
+            // Faded when its windows wait out of view; partly cut off counts as in view.
+            let outOfView = !members.isEmpty && members.allSatisfy(\.parked)
+            let visible = outOfView ? 0 : (arrangesAlways ? max(geometry.visibleFraction(of: c, offset: state.strip.offset), 0.05) : 1)
+            return StripIndicatorState.Tile(id: c, icons: members.compactMap { icon(for: $0.pid) },
+                                            pictures: column.windows.map { WindowPictures.shared.picture(for: $0) },
+                                            activeTab: column.activeTab,
+                                            focused: c == state.strip.focusColumn, visible: visible,
+                                            pin: column.pin, tabbed: column.tabbed)
         }
     }
 
@@ -1768,6 +1894,8 @@ final class StripModule: ModuleController {
         static let scroll = "strip.modifierScroll"
         static let focusFollowsMouse = "strip.focusFollowsMouse"
         static let mouseFollowsFocus = "strip.mouseFollowsFocus"
+        static let arrange = "strip.arrange"
+        static let barPreviews = "strip.barPreviews"
         static let disabledDisplays = "strip.disabledDisplays"
         static let floatingApps = "strip.floatingApps"
         static let layouts = "strip.layouts"

@@ -138,13 +138,13 @@ struct OnboardingView: View {
                 Text("One app, all of it.")
                     .font(.system(size: 30, weight: .semibold))
                     .tracking(-0.6)
-                Text("Eleven quiet tools in your menu bar. Keep what you use — anything you switch off uses nothing.")
+                Text("Ten quiet tools in your menu bar. Keep what you use — anything you switch off uses nothing.")
                     .font(.system(size: 13.5))
                     .foregroundStyle(Color.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
             VStack(spacing: 0) {
-                ForEach(ModuleID.allCases) { module in
+                ForEach(ModuleID.listed) { module in
                     HStack(spacing: 12) {
                         Image(systemName: module.symbol).frame(width: 20).foregroundStyle(Color.ink2)
                         VStack(alignment: .leading, spacing: 1) {
@@ -156,7 +156,7 @@ struct OnboardingView: View {
                                   label: module.title)
                     }
                     .frame(height: 44)
-                    .overlay(alignment: .bottom) { if module != ModuleID.allCases.last { Hairline().opacity(0.6) } }
+                    .overlay(alignment: .bottom) { if module != ModuleID.listed.last { Hairline().opacity(0.6) } }
                 }
             }
         }

@@ -84,6 +84,8 @@ final class SwitcherSession {
     var generation = 0
     /// Hovering picks a card only once the pointer has moved since the switcher opened.
     @ObservationIgnored var pointer = PointerIntent(at: .zero)
+    /// Where each card is in the panel, for pointer and click handling.
+    @ObservationIgnored var cardFrames: [Int: CGRect] = [:]
 
     var selected: SwitcherItem? { visible.indices.contains(selection) ? visible[selection] : nil }
 
@@ -306,6 +308,7 @@ final class SwitcherModule: ModuleController {
         withTransaction(transaction) {
             session.generation += 1
             session.pointer = PointerIntent(at: NSEvent.mouseLocation)
+            session.cardFrames = [:]
             session.all = items
             session.query = nil
             session.appFilter = appWindows ? frontBundle : nil
@@ -314,7 +317,7 @@ final class SwitcherModule: ModuleController {
             session.pinned = false
             session.showPreviews = showPreviews && CGPreflightScreenCaptureAccess()
             session.showHints = showHints
-            session.thumbnails = thumbnails.cachedImages(for: items.compactMap(\.windowID))
+            session.thumbnails = thumbnails.cachedImages(for: items.compactMap(\.windowID)).merging(stripPictures(for: items)) { _, strip in strip }
             session.refilter(keepSelection: false)
             session.selection = SwitcherOrder.initialSelection(count: session.visible.count,
                                                                firstIsCurrent: session.visible.first?.windowID == front?.id,
@@ -795,11 +798,25 @@ final class SwitcherModule: ModuleController {
             let side = offset % 2 == 0 ? offset / 2 : -(offset + 1) / 2
             return SwitcherOrder.move(session.selection, by: side, count: items.count)
         }
-        let ids = around.compactMap { items[$0].windowID }
+        // Windows the scrolling strip keeps out of view don't draw; show the picture it took
+        // before tucking them away instead of capturing a blank one.
+        let fromStrip = stripPictures(for: around.map { items[$0] })
+        for (id, picture) in fromStrip { session.thumbnails[id] = picture }
+        let ids = around.compactMap { items[$0].windowID }.filter { fromStrip[$0] == nil }
         thumbnails.capture(ids) { [weak self] id, image in
             guard let self, self.isOpen else { return }
             self.session.thumbnails[id] = image
         }
+    }
+
+    private func stripPictures(for items: [SwitcherItem]) -> [CGWindowID: NSImage] {
+        guard let strip = model?.strip else { return [:] }
+        var pictures: [CGWindowID: NSImage] = [:]
+        for item in items {
+            guard let id = item.windowID, strip.isParked(id), let picture = WindowPictures.shared.picture(for: id) else { continue }
+            pictures[id] = picture
+        }
+        return pictures
     }
 
     private func frontWindowScreen() -> NSScreen? {

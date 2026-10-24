@@ -40,8 +40,13 @@ private struct StripSettings: View {
             keys
             layout
             InkGroup("Show") {
-                toggle("Strip indicator", detail: "App icons along the bottom while you move around. Hold ⌃⌥ to keep it up; click a tile to go there, drag one to reorder.",
+                toggle("Strip bar", detail: "Along the bottom while you hold ⌃⌥ or move around: one tile per column. Click a tile to go there, drag one to reorder.",
                        isOn: $strip.showsIndicator)
+                Hairline().opacity(0.6)
+                toggle("Window pictures in the strip bar", detail: WindowPictures.canCapture
+                       ? "A picture of each window instead of its app's icon. Windows out of view show how they looked before they slid away."
+                       : "Needs Screen Recording (Permissions). Until then the bar shows app icons.",
+                       isOn: $strip.barPreviews)
                 Hairline().opacity(0.6)
                 toggle("Border around the focused window", detail: "A thin outline on the window you're in.", isOn: $strip.focusBorder)
                 Hairline().opacity(0.6)
@@ -121,6 +126,12 @@ private struct StripSettings: View {
 
     private var layout: some View {
         InkGroup("Layout") {
+            LabeledRow("Arrange windows", detail: strip.arrangeMode == .onCommand
+                       ? "Only when you use a strip key, or switch to a window that's out of view. Windows you move yourself (or with the window palette) stay where you put them until then."
+                       : "All the time: every window keeps its place on the strip, whatever moves it.") {
+                InkSegmented(selection: $strip.arrangeMode, options: [(StripModule.ArrangeMode.onCommand, "On a strip key"), (.always, "All the time")])
+            }
+            Hairline().opacity(0.6)
             LabeledRow("Gap", detail: strip.gap == 0 ? "None: windows edge to edge." : "\(Int(strip.gap)) pt between windows and at the screen edges.") {
                 InkSegmented(selection: $strip.gap, options: [(0, "0"), (4, "4"), (8, "8"), (12, "12"), (16, "16")])
             }

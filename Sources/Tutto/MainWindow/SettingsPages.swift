@@ -38,7 +38,7 @@ struct OverviewPage: View {
                     .watching(system, [.load])
             }
             InkGroup("Tools") {
-                ForEach(ModuleID.allCases) { module in
+                ForEach(ModuleID.listed) { module in
                     HStack(spacing: 12) {
                         Image(systemName: module.symbol)
                             .font(.system(size: 14))
@@ -53,7 +53,7 @@ struct OverviewPage: View {
                         ModuleSwitch(model: model, module: module)
                     }
                     .padding(.vertical, Metrics.rowPadding)
-                    .overlay(alignment: .bottom) { if module != ModuleID.allCases.last { Hairline().opacity(0.6) } }
+                    .overlay(alignment: .bottom) { if module != ModuleID.listed.last { Hairline().opacity(0.6) } }
                 }
             }
         }
@@ -294,7 +294,7 @@ struct GeneralPage: View {
         VStack(alignment: .leading, spacing: 22) {
             PageHeader(title: "General", subtitle: "Turn any tool off and it stops completely: no memory, no CPU, no battery.")
             InkGroup("Tools") {
-                ForEach(ModuleID.allCases) { module in
+                ForEach(ModuleID.listed) { module in
                     HStack(spacing: 12) {
                         Image(systemName: module.symbol).frame(width: 20).foregroundStyle(Color.ink2)
                         VStack(alignment: .leading, spacing: Metrics.titleToDetail) {
@@ -306,7 +306,7 @@ struct GeneralPage: View {
                         ModuleSwitch(model: model, module: module)
                     }
                     .padding(.vertical, Metrics.rowPadding)
-                    .overlay(alignment: .bottom) { if module != ModuleID.allCases.last { Hairline().opacity(0.6) } }
+                    .overlay(alignment: .bottom) { if module != ModuleID.listed.last { Hairline().opacity(0.6) } }
                 }
             }
             InkGroup("App") {

@@ -21,6 +21,8 @@ public final class ShortcutTap: @unchecked Sendable {
     private var _bindings: [KeyShortcut: String] = [:]
     private var _suspended = false
     private var swallowed = Set<Int64>()
+    private var _onModifiers: (@Sendable (KeyShortcut.Modifiers) -> Void)?
+    private var heldModifiers: KeyShortcut.Modifiers = []
     private let deliver: @Sendable (String) -> Void
 
     /// `deliver` gets the id bound to the shortcut, on the tap's thread.
@@ -40,6 +42,13 @@ public final class ShortcutTap: @unchecked Sendable {
         set { lock.withLock { _suspended = newValue } }
     }
 
+    /// Told (on the tap's thread) whenever the held modifiers change, e.g. to show something
+    /// while ⌃⌥ is held. Modifier changes always pass through.
+    public var onModifiers: (@Sendable (KeyShortcut.Modifiers) -> Void)? {
+        get { lock.withLock { _onModifiers } }
+        set { lock.withLock { _onModifiers = newValue } }
+    }
+
     public var isRunning: Bool { lock.withLock { port != nil } }
 
     public var isEnabled: Bool {
@@ -51,7 +60,7 @@ public final class ShortcutTap: @unchecked Sendable {
     @discardableResult
     public func start(name: String = "Shortcut tap") -> Bool {
         stop()
-        let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
+        let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
         guard let port = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
             eventsOfInterest: CGEventMask(mask),
@@ -118,6 +127,15 @@ public final class ShortcutTap: @unchecked Sendable {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             if let port = lock.withLock({ self.port }) { CGEvent.tapEnable(tap: port, enable: true) }
+            return event
+        case .flagsChanged:
+            let modifiers = Self.shortcut(code: 0, flags: event.flags).modifiers
+            let changed = lock.withLock { () -> (@Sendable (KeyShortcut.Modifiers) -> Void)? in
+                guard modifiers != heldModifiers else { return nil }
+                heldModifiers = modifiers
+                return _onModifiers
+            }
+            changed?(modifiers)
             return event
         case .keyDown, .keyUp:
             let code = event.getIntegerValueField(.keyboardEventKeycode)

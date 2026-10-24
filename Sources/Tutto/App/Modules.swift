@@ -27,6 +27,10 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
     /// so it waits until you ask for it.
     var isOnByDefault: Bool { self != .strip }
 
+    /// The tools listed with on/off switches in Overview, General and the welcome window. The
+    /// strip is switched on and off on its own page only.
+    static var listed: [ModuleID] { allCases.filter { $0 != .strip } }
+
     var title: String {
         switch self {
         case .system: "System"

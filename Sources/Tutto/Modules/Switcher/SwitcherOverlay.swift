@@ -31,6 +31,8 @@ final class SwitcherOverlay {
     private let actions: SwitcherActions
     private let panel: SwitcherPanel
     private var clickMonitor: Any?
+    private var cardClickMonitor: Any?
+    private var pointerTimer: Timer?
 
     enum Metrics {
         static let card = CGSize(width: 208, height: 130)
@@ -61,6 +63,39 @@ final class SwitcherOverlay {
                 MainActor.assumeIsolated { self?.actions.clickedOutside() }
             }
         }
+        // Clicks and the pointer are handled here rather than by the cards: Tutto isn't the active
+        // app while the switcher is up, and SwiftUI's hover tracking can go quiet then.
+        if cardClickMonitor == nil {
+            cardClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                MainActor.assumeIsolated {
+                    guard let self, event.window === self.panel, let index = self.card(at: NSEvent.mouseLocation) else { return event }
+                    self.actions.commit(index)
+                    return nil
+                }
+            }
+        }
+        if pointerTimer == nil {
+            let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.followPointer() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            pointerTimer = timer
+        }
+    }
+
+    /// The card under the pointer becomes the selection, but only once the pointer has moved:
+    /// one resting where the switcher opened, or a card sliding under a still pointer, picks nothing.
+    private func followPointer() {
+        let point = NSEvent.mouseLocation
+        guard panel.frame.contains(point), session.pointer.moved(to: point),
+              let index = card(at: point), index != session.selection else { return }
+        actions.select(index)
+    }
+
+    /// The card at a screen point (AppKit coordinates).
+    private func card(at point: NSPoint) -> Int? {
+        let inWindow = CGPoint(x: point.x - panel.frame.minX, y: panel.frame.maxY - point.y)
+        return session.cardFrames.first { $0.value.contains(inWindow) }?.key
     }
 
     /// Sizes the panel for the cards it shows, centred on `screen`.
@@ -82,6 +117,10 @@ final class SwitcherOverlay {
     func hide() {
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
+        if let cardClickMonitor { NSEvent.removeMonitor(cardClickMonitor) }
+        cardClickMonitor = nil
+        pointerTimer?.invalidate()
+        pointerTimer = nil
         panel.orderOut(nil)
     }
 
@@ -244,16 +283,16 @@ struct SwitcherView: View {
                                      thumbnail: item.windowID.flatMap { session.thumbnails[$0] }, showPreviews: session.showPreviews,
                                      closing: session.closing.contains(item.id))
                             .id(item.id)
-                            // Only a pointer that moves picks a card: one that was just resting where
-                            // the switcher opened (or a card sliding under it) changes nothing.
-                            .onContinuousHover { phase in
-                                if case .active = phase, session.pointer.moved(to: NSEvent.mouseLocation) { actions.select(index) }
-                            }
-                            .onTapGesture { actions.commit(index) }
+                            // Where each card is, for the overlay's own pointer and click handling.
+                            .background(GeometryReader { proxy in
+                                Color.clear.preference(key: CardFramesKey.self, value: [index: proxy.frame(in: .global)])
+                            })
+                            .accessibilityAction { actions.commit(index) }
                     }
                 }
                 .padding(.horizontal, SwitcherOverlay.Metrics.sidePadding)
                 .padding(.vertical, 4)
+                .onPreferenceChange(CardFramesKey.self) { frames in session.cardFrames = frames }
             }
             .frame(height: SwitcherOverlay.Metrics.cardBlock + 8)
             .mask(edgeFade)
@@ -314,6 +353,14 @@ struct SwitcherView: View {
             .lineLimit(1)
             .minimumScaleFactor(0.7)
             .padding(.horizontal, SwitcherOverlay.Metrics.sidePadding)
+    }
+}
+
+/// Each card's frame in the panel (top-left origin), keyed by its position.
+private struct CardFramesKey: PreferenceKey {
+    static let defaultValue: [Int: CGRect] = [:]
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
     }
 }
 

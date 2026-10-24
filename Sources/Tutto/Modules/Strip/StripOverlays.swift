@@ -23,6 +23,9 @@ final class StripIndicatorState {
     struct Tile: Identifiable, Equatable {
         let id: Int
         let icons: [NSImage]
+        /// One per window in the column (nil until it has been photographed).
+        let pictures: [NSImage?]
+        let activeTab: Int
         let focused: Bool
         /// 0…1 of the column on screen.
         let visible: Double
@@ -33,6 +36,15 @@ final class StripIndicatorState {
     var tiles: [Tile] = []
     var message: String?
     var refused = false
+    /// Window pictures instead of app icons.
+    var previews = false
+    /// Below 1 when there are more columns than fit across the screen.
+    var scale: CGFloat = 1
+
+    var tileSize: CGSize {
+        previews ? CGSize(width: 200 * scale, height: 125 * scale) : CGSize(width: 56 * scale, height: 56 * scale)
+    }
+    var spacing: CGFloat { (previews ? 12 : 10) * max(scale, 0.6) }
 }
 
 @MainActor
@@ -46,8 +58,7 @@ final class StripIndicator {
     private var holdTimer: Timer?
     private var shownOn: CGDirectDisplayID?
 
-    static let tile: CGFloat = 34
-    static let spacing: CGFloat = 6
+    static let padding: CGFloat = 14
 
     var isVisible: Bool { panel?.isVisible == true && (panel?.alphaValue ?? 0) > 0 }
 
@@ -59,8 +70,8 @@ final class StripIndicator {
         state.refused = refused
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        let size = fittingSize(tiles.count, message: message)
         let visible = StripDisplay.cocoa(display.visible)
+        let size = fit(tiles.count, message: message, within: visible.width * 0.92)
         let frame = NSRect(x: (visible.midX - size.width / 2).rounded(), y: (visible.minY + 28).rounded(),
                            width: size.width, height: size.height)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
@@ -134,14 +145,21 @@ final class StripIndicator {
         return flags.contains(.control) && flags.contains(.option)
     }
 
-    private func fittingSize(_ count: Int, message: String?) -> NSSize {
-        let tiles = CGFloat(max(count, 1)) * (Self.tile + Self.spacing) - Self.spacing + 20
+    /// The panel's size for `count` tiles, shrinking the tiles when they don't fit `width`.
+    private func fit(_ count: Int, message: String?, within width: CGFloat) -> NSSize {
+        state.scale = 1
+        let columns = CGFloat(max(count, 1))
+        let natural = columns * state.tileSize.width + (columns - 1) * state.spacing
+        let room = width - Self.padding * 2
+        if natural > room { state.scale = max(room / natural, 0.45) }
+        let tiles = columns * state.tileSize.width + (columns - 1) * state.spacing + Self.padding * 2
         var text: CGFloat = 0
         if let message {
-            let font = NSFont(name: "Geist", size: 10.5) ?? .systemFont(ofSize: 10.5, weight: .medium)
-            text = (message as NSString).size(withAttributes: [.font: font]).width.rounded(.up) + 32
+            let font = NSFont(name: "Geist", size: 12) ?? .systemFont(ofSize: 12, weight: .medium)
+            text = (message as NSString).size(withAttributes: [.font: font]).width.rounded(.up) + 36
         }
-        return NSSize(width: min(max(tiles, text, 60), 1400), height: Self.tile + 20 + (message != nil ? 22 : 0))
+        let height = state.tileSize.height + Self.padding * 2 + (message != nil ? 26 : 0)
+        return NSSize(width: min(max(tiles, text, 80), width), height: height)
     }
 
     private func makePanel() -> NSPanel {
@@ -173,8 +191,8 @@ private struct StripIndicatorView: View {
     @State private var dragOffset: CGFloat = 0
 
     var body: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: StripIndicator.spacing) {
+        VStack(spacing: 8) {
+            HStack(spacing: state.spacing) {
                 ForEach(state.tiles) { tile in
                     tileView(tile)
                         .offset(x: dragging == tile.id ? dragOffset : 0)
@@ -185,7 +203,7 @@ private struct StripIndicatorView: View {
                                 dragOffset = value.translation.width
                             }
                             .onEnded { value in
-                                let step = StripIndicator.tile + StripIndicator.spacing
+                                let step = state.tileSize.width + state.spacing
                                 let shift = Int((value.translation.width / step).rounded())
                                 dragging = nil
                                 dragOffset = 0
@@ -196,58 +214,107 @@ private struct StripIndicatorView: View {
             }
             if let message = state.message {
                 Text(message)
-                    .font(.geist(10.5, weight: .medium))
+                    .font(.geist(12, weight: .medium))
                     .foregroundStyle(state.refused ? Color.ink3 : Color.ink2)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
         }
-        .padding(10)
+        .padding(StripIndicator.padding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(PaletteBackground())
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hairline))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.hairline))
         .animation(Motion.micro, value: state.tiles)
     }
 
+    private var corner: CGFloat { state.previews ? 10 : 12 }
+
     private func tileView(_ tile: StripIndicatorState.Tile) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(tile.focused ? Color.wash : Color.clear)
-            icons(tile)
+        let size = state.tileSize
+        return ZStack {
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .fill(tile.focused || state.previews ? Color.wash : Color.clear)
+            if state.previews {
+                pictures(tile, size: size)
+            } else {
+                icons(tile, size: size)
+            }
             if let pin = tile.pin {
                 Capsule()
-                    .fill(Color.ink3)
-                    .frame(width: 2.5, height: 14)
+                    .fill(Color.ink2)
+                    .frame(width: 3, height: size.height * 0.36)
                     .frame(maxWidth: .infinity, alignment: pin == .left ? .leading : .trailing)
-                    .padding(.horizontal, 2)
+                    .padding(.horizontal, 3)
             }
         }
-        .frame(width: StripIndicator.tile, height: StripIndicator.tile)
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
-            .strokeBorder(tile.focused ? Color.ink : Color.clear, lineWidth: 1.5))
-        .opacity(tile.visible > 0.02 ? 1 : 0.42)
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: corner + 3, style: .continuous)
+            .strokeBorder(tile.focused ? Color.ink : Color.clear, lineWidth: 2.5)
+            .padding(-3))
+        .opacity(tile.visible > 0.02 ? 1 : 0.45)
         .contentShape(Rectangle())
         .accessibilityLabel(tile.focused ? "Focused column" : "Column \(tile.id + 1)")
     }
 
     @ViewBuilder
-    private func icons(_ tile: StripIndicatorState.Tile) -> some View {
+    private func icons(_ tile: StripIndicatorState.Tile, size: CGSize) -> some View {
         if tile.icons.count <= 1 {
             if let icon = tile.icons.first {
-                Image(nsImage: icon).resizable().interpolation(.high).frame(width: 26, height: 26)
+                Image(nsImage: icon).resizable().interpolation(.high).frame(width: size.width * 0.72, height: size.height * 0.72)
             }
         } else {
             // A stack: its windows' icons, one above the other (tabs side by side).
             let shown = Array(tile.icons.prefix(3))
-            let size: CGFloat = shown.count == 2 ? 15 : 11
+            let side = size.width * (shown.count == 2 ? 0.44 : 0.32)
             if tile.tabbed {
-                HStack(spacing: 1) {
-                    ForEach(shown.indices, id: \.self) { Image(nsImage: shown[$0]).resizable().interpolation(.high).frame(width: size, height: size) }
+                HStack(spacing: 2) {
+                    ForEach(shown.indices, id: \.self) { Image(nsImage: shown[$0]).resizable().interpolation(.high).frame(width: side, height: side) }
                 }
             } else {
                 VStack(spacing: 0) {
-                    ForEach(shown.indices, id: \.self) { Image(nsImage: shown[$0]).resizable().interpolation(.high).frame(width: size, height: size) }
+                    ForEach(shown.indices, id: \.self) { Image(nsImage: shown[$0]).resizable().interpolation(.high).frame(width: side, height: side) }
                 }
+            }
+        }
+    }
+
+    /// The column's windows as pictures: one, a stack one above the other, or a tabbed
+    /// column's front tab. The app's icon sits in the corner.
+    @ViewBuilder
+    private func pictures(_ tile: StripIndicatorState.Tile, size: CGSize) -> some View {
+        let showing: [Int] = tile.tabbed ? [min(tile.activeTab, max(tile.pictures.count - 1, 0))] : Array(tile.pictures.indices.prefix(3))
+        VStack(spacing: 2) {
+            ForEach(showing, id: \.self) { index in
+                ZStack {
+                    if tile.pictures.indices.contains(index), let picture = tile.pictures[index] {
+                        Image(nsImage: picture).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
+                    } else if tile.icons.indices.contains(index) {
+                        Image(nsImage: tile.icons[index]).resizable().interpolation(.high)
+                            .frame(width: min(size.height * 0.4, 48), height: min(size.height * 0.4, 48))
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .padding(4)
+        .overlay(alignment: .bottomLeading) {
+            if let icon = tile.icons.first {
+                Image(nsImage: icon).resizable().interpolation(.high)
+                    .frame(width: 22 * max(state.scale, 0.7), height: 22 * max(state.scale, 0.7))
+                    .padding(5)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if tile.tabbed {
+                Text("\(tile.pictures.count) TABS")
+                    .font(.geist(9, weight: .semibold))
+                    .tracking(0.5)
+                    .foregroundStyle(Color.ink)
+                    .padding(.horizontal, 6)
+                    .frame(height: 16)
+                    .background(Capsule().fill(Color.paper.opacity(0.92)))
+                    .padding(5)
             }
         }
     }

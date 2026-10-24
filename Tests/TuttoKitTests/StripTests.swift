@@ -401,6 +401,24 @@ final class ShortcutTapTests: XCTestCase {
         XCTAssertEqual(box.ids, ["right", "width"])
     }
 
+    func testHoldingModifiersIsReportedOnceAndPassesThrough() {
+        final class Held: @unchecked Sendable { var changes: [KeyShortcut.Modifiers] = [] }
+        let held = Held()
+        let tap = ShortcutTap { _ in }
+        tap.onModifiers = { held.changes.append($0) }
+        func flags(_ value: CGEventFlags) -> CGEvent {
+            let event = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_Control), keyDown: true)!
+            event.type = .flagsChanged
+            event.flags = value
+            return event
+        }
+        XCTAssertNotNil(tap.handle(type: .flagsChanged, event: flags([.maskControl])))
+        XCTAssertNotNil(tap.handle(type: .flagsChanged, event: flags([.maskControl, .maskAlternate])))
+        XCTAssertNotNil(tap.handle(type: .flagsChanged, event: flags([.maskControl, .maskAlternate, .maskSecondaryFn])))
+        XCTAssertNotNil(tap.handle(type: .flagsChanged, event: flags([])))
+        XCTAssertEqual(held.changes, [[.control], [.control, .option], []])
+    }
+
     func testRecordingAShortcutLetsEveryKeyThrough() {
         let box = Box()
         let tap = ShortcutTap { box.ids.append($0) }
