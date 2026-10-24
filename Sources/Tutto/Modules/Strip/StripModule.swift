@@ -752,8 +752,9 @@ final class StripModule: ModuleController {
         guard isRunning, NSRunningApplication(processIdentifier: pid)?.isHidden == false else { return }
         ensureObserver(pid)
         for element in StripAX.windows(of: pid) {
-            if let id = StripAX.windowID(element), windows[id] != nil || floating.contains(id) { continue }
-            adopt(element, pid: pid)
+            guard let id = StripAX.windowID(element) else { continue }
+            if windows[id] != nil || floating.contains(id) { continue }
+            adopt(element, pid: pid, id: id)
         }
     }
 
@@ -821,19 +822,23 @@ final class StripModule: ModuleController {
                 MainActor.assumeIsolated { self?.windowClosed(id) }
             }
         case .moved(let element), .resized(let element):
-            guard let id = StripAX.windowID(element) else { return }
-            windowChanged(id, element: element, pid: pid)
+            // Every frame the strip sends comes back as one of these.
+            if let match = observers[pid]?.watchedWindow(for: element) {
+                windowChanged(match.id, element: match.element, pid: pid)
+            } else if let id = StripAX.windowID(element) {
+                windowChanged(id, element: element, pid: pid)
+            }
         case .minimized(let element):
             guard let id = observers[pid]?.window(for: element), let w = windows[id], let state = strips[w.key] else { return }
             sendAway(w, from: state, reason: .minimized)
         case .deminimized(let element):
-            guard let id = StripAX.windowID(element) else { return }
+            guard let id = observers[pid]?.window(for: element) else { return }
             // After the window has finished growing back out of the Dock.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 MainActor.assumeIsolated { self?.comeBack(id, element: element, pid: pid, focus: true) }
             }
         case .titleChanged(let element):
-            guard let id = StripAX.windowID(element), let w = windows[id], let state = strips[w.key],
+            guard let id = observers[pid]?.window(for: element), let w = windows[id], let state = strips[w.key],
                   state.strip.location(of: id).map({ state.strip.columns[$0.column].tabbed }) == true else { return }
             updateTabBars()
         }
@@ -841,8 +846,14 @@ final class StripModule: ModuleController {
 
     /// A window the strip hasn't met: tile it beside the focused window (or at the end, quietly,
     /// when its app is in the background).
-    private func adopt(_ element: AXUIElement, pid: pid_t, focus: Bool? = nil) {
-        guard isRunning, let id = StripAX.windowID(element), windows[id] == nil, !floating.contains(id), !userFloated.contains(id) else { return }
+    private func adopt(_ element: AXUIElement, pid: pid_t, focus: Bool? = nil, id known: CGWindowID? = nil) {
+        guard isRunning, let id = known ?? StripAX.windowID(element), windows[id] == nil, !floating.contains(id), !userFloated.contains(id) else { return }
+        #if DEBUG
+        if let onlyBundle, NSRunningApplication(processIdentifier: pid)?.bundleIdentifier != onlyBundle { return }
+        #endif
+        // A window on a Space without a strip (an app in full screen) is left alone before its
+        // app is asked anything: busy apps keep the strip waiting.
+        if let space = WindowServer.space(of: id), !currentKeys.values.contains(where: { $0.space == space }) { return }
         if takeOverNativeTab(id, element: element, pid: pid) { return }
         guard let frame = StripAX.frame(element), let state = state(for: frame) else { return }
         let app = NSRunningApplication(processIdentifier: pid)
@@ -933,9 +944,11 @@ final class StripModule: ModuleController {
             return
         }
         guard let state = strips[w.key] else { return }
-        if StripAX.isFullScreen(element) { return sendAway(w, from: state, reason: .fullScreen) }
+        // The strip's own moves, and a drag in progress, need nothing from the app. (A window
+        // gone full screen is also caught by the Space change.)
         let now = ProcessInfo.processInfo.systemUptime
         if animating.contains(id) || now - w.lastMove < 0.5 || w.held || state.swiping { return }
+        if StripAX.isFullScreen(element) { return sendAway(w, from: state, reason: .fullScreen) }
         guard let frame = StripAX.frame(element), !Self.sameFrame(frame, w.shown) else { return }
         if NSEvent.pressedMouseButtons & 1 != 0 {
             w.held = true
@@ -1007,7 +1020,7 @@ final class StripModule: ModuleController {
         }
         guard let w = windows[id] else {
             if !floating.contains(id), !userFloated.contains(id), away[id] == nil {
-                adopt(element, pid: app.processIdentifier, focus: true)
+                adopt(element, pid: app.processIdentifier, focus: true, id: id)
             }
             return updateDecor()
         }
@@ -1387,13 +1400,15 @@ final class StripModule: ModuleController {
     }
 
     /// A window out of view waits in a corner at its own size: a window resized while out of
-    /// view never redraws, and the switcher would show it blank. It's photographed first, so
-    /// the switcher and the strip bar can show what's in it.
+    /// view never redraws, and the switcher would show it blank. It's photographed as it goes,
+    /// so the switcher and the strip bar can show what's in it (the picture is of the whole
+    /// window wherever it is, so it doesn't hold up the move or the app's other windows).
     private func park(_ w: StripManagedWindow, in state: StripState, side: StripSide) {
         guard !w.parked else { return }
         if WindowPictures.canCapture {
             let id = w.id
-            mover.run(pid: w.pid) {
+            pictureTaken[id] = ProcessInfo.processInfo.systemUptime
+            pictureQueue.addOperation {
                 let picture = WindowPictures.capture(id)
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated { if let picture { WindowPictures.shared.store(picture, for: id) } }
@@ -1700,7 +1715,9 @@ final class StripModule: ModuleController {
 
     /// The strip of the window you're in, else the one under the pointer.
     private func activeState(pointer preferPointer: Bool = false) -> StripState? {
-        if preferPointer, let state = pointerState() { return state }
+        // With one display there's one current strip: no need to ask the frontmost app (which
+        // can keep the bar waiting while it's busy).
+        if preferPointer || displayList.count == 1, let state = pointerState() { return state }
         if let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != ownPID,
            let element = StripAX.focusedWindow(of: app.processIdentifier), let id = StripAX.windowID(element) {
             if let w = windows[id], isCurrent(w.key), let state = strips[w.key] { return state }

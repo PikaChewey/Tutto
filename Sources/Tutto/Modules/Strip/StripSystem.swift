@@ -231,6 +231,8 @@ final class StripAppObserver {
             unwatch(window)
         }
         watched[window] = element
+        // A window element handed over by a notice waits as long as macOS allows on a hung app.
+        AXUIElementSetMessagingTimeout(element, StripAX.timeout)
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         for name in Self.windowNotifications {
             AXObserverAddNotification(observer, element, name as CFString, refcon)
@@ -248,8 +250,13 @@ final class StripAppObserver {
 
     /// The window an element belongs to, even once it's destroyed and can't be asked.
     func window(for element: AXUIElement) -> CGWindowID? {
-        if let id = StripAX.windowID(element) { return id }
-        return watched.first { CFEqual($0.value, element) }?.key
+        watchedWindow(for: element)?.id ?? StripAX.windowID(element)
+    }
+
+    /// The watched window an element is, found without asking its app (busy redrawing while the
+    /// strip moves it), with the element it's watched by.
+    func watchedWindow(for element: AXUIElement) -> (id: CGWindowID, element: AXUIElement)? {
+        watched.first { CFEqual($0.value, element) }.map { ($0.key, $0.value) }
     }
 
     func invalidate() {
