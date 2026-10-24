@@ -183,6 +183,23 @@ public enum WindowServer {
         return result
     }
 
+    /// The Space showing on each display, keyed by display UUID ("Main" for every display
+    /// when Displays have separate Spaces is off).
+    public static func currentSpaces() -> [String: SpaceInfo] {
+        guard let copyManagedSpaces, let displays = copyManagedSpaces(connection)?.takeRetainedValue() as? [[String: Any]] else {
+            return [:]
+        }
+        var result: [String: SpaceInfo] = [:]
+        for display in displays {
+            guard let identifier = display["Display Identifier"] as? String,
+                  let current = display["Current Space"] as? [String: Any],
+                  let id = (current["ManagedSpaceID"] as? NSNumber)?.uint64Value else { continue }
+            let fullScreen = (current["type"] as? NSNumber)?.intValue == 4
+            result[identifier] = SpaceInfo(id: id, isFullScreen: fullScreen, desktopNumber: 0, isCurrent: true)
+        }
+        return result
+    }
+
     /// The Space a window is on (the first, if it's briefly on two during a transition).
     public static func space(of window: CGWindowID) -> UInt64? {
         guard let copySpaces,

@@ -129,6 +129,7 @@ struct ShortcutsPage: View {
                 switcherGroup(switcher)
             }
             group("Window actions", WindowAction.allCases.map { .window($0) })
+            stripGroups
             HStack(alignment: .top) {
                 Text("If another app uses the same keys, macOS may deliver them to both. Change the shortcut here or in that app.")
                     .font(.system(size: 11.5)).foregroundStyle(Color.ink3)
@@ -137,6 +138,24 @@ struct ShortcutsPage: View {
                 Button("Restore Defaults") { model.resetShortcuts() }
                     .buttonStyle(OutlineButtonStyle(compact: true))
                     .disabled(!model.shortcuts.isCustomized)
+            }
+        }
+    }
+
+    /// Every key of the scrolling strip once it's on; until then one line pointing at it.
+    @ViewBuilder
+    private var stripGroups: some View {
+        if model.isEnabled(.strip) {
+            ForEach(StripCommand.Group.allCases, id: \.self) { section in
+                group("Scrolling strip · \(section.rawValue.lowercased())",
+                      StripCommand.allCases.filter { $0.group == section }.map { .strip($0) })
+            }
+        } else {
+            InkGroup("Scrolling strip") {
+                LabeledRow("Its keys show here once it's on", detail: "Every one uses ⌃⌥, which macOS leaves free.") {
+                    Button("Scrolling Strip…") { MainWindowController.shared.show(page: .strip) }
+                        .buttonStyle(OutlineButtonStyle(compact: true))
+                }
             }
         }
     }

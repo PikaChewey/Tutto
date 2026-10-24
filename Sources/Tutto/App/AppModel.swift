@@ -31,6 +31,7 @@ final class AppModel {
     private(set) var wordCounter: WordCounterModule?
     private(set) var sound: SoundModule?
     private(set) var switcher: SwitcherModule?
+    private(set) var strip: StripModule?
 
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
     /// On notched MacBooks a crowded menu bar puts new icons behind the notch, where they can't be clicked.
@@ -43,11 +44,15 @@ final class AppModel {
         if let saved = defaults.array(forKey: Keys.enabled) as? [String] {
             // Tools added since the choice was saved start on, like everything does on a first run.
             let known = defaults.array(forKey: Keys.known) as? [String] ?? Self.originalModules
-            let added = ModuleID.allCases.filter { !known.contains($0.rawValue) }
+            let added = ModuleID.allCases.filter { !known.contains($0.rawValue) && $0.isOnByDefault }
             enabled = Set(saved.compactMap(ModuleID.init(rawValue:))).union(added)
         } else {
-            enabled = Set(ModuleID.allCases)  // everything on, the way the spec describes Tutto
+            enabled = Set(ModuleID.allCases.filter(\.isOnByDefault))  // everything on, the way the spec describes Tutto
         }
+        #if DEBUG
+        // Live tests of the strip with test windows only: nothing else of Tutto runs.
+        if CommandLine.arguments.contains("--strip-only") { enabled = [.strip] }
+        #endif
         hasCompletedOnboarding = defaults.bool(forKey: Keys.onboarded)
     }
 
@@ -55,6 +60,9 @@ final class AppModel {
 
     /// `quietly` (offscreen snapshots) starts modules without taking any global shortcuts.
     func launch(quietly: Bool = false) {
+        hotkeys.onSuspendChange = { [weak self] suspended in self?.strip?.setShortcutsSuspended(suspended) }
+        // A window left out of view by a strip that didn't get to stop (a crash) comes back.
+        if !enabled.contains(.strip) && !quietly { StripModule.rescueParkedWindows() }
         for id in ModuleID.allCases where enabled.contains(id) { start(id) }
         // Things that live outside Tutto's process must match the switch even if it was
         // turned off in an earlier session: Finder only loads the menu extension when Archives is on.
@@ -91,6 +99,9 @@ final class AppModel {
             enabled.remove(id)
             stop(id)
         }
+        #if DEBUG
+        if CommandLine.arguments.contains("--strip-only") { return bindShortcuts() }
+        #endif
         defaults.set(enabled.map(\.rawValue).sorted(), forKey: Keys.enabled)
         defaults.set(ModuleID.allCases.map(\.rawValue), forKey: Keys.known)
         bindShortcuts()
@@ -126,6 +137,9 @@ final class AppModel {
         case .switcher:
             if switcher == nil { switcher = SwitcherModule(model: self) }
             switcher?.start()
+        case .strip:
+            if strip == nil { strip = StripModule(model: self) }
+            strip?.start()
         }
     }
 
@@ -158,6 +172,9 @@ final class AppModel {
         case .switcher:
             switcher?.stop()
             switcher = nil
+        case .strip:
+            strip?.stop()
+            strip = nil
         case .corner:
             corner?.stop()
             corner = nil
@@ -168,12 +185,17 @@ final class AppModel {
 
     /// Registers every shortcut whose module is on; releases the rest.
     func bindShortcuts() {
+        var stripKeys: [KeyShortcut: StripCommand] = [:]
         for action in ShortcutAction.all {
             let active = action.module.map { enabled.contains($0) } ?? true
-            hotkeys.bind(action.id, to: active ? shortcuts.shortcut(for: action) : nil) { [weak self] in
+            let shortcut = active ? shortcuts.shortcut(for: action) : nil
+            hotkeys.bind(action.id, to: shortcut) { [weak self] in
                 self?.perform(action)
             }
+            if case .strip(let command) = action, let shortcut { stripKeys[shortcut] = command }
         }
+        // The strip's keys win even where another app registered the same ones first.
+        strip?.setShortcuts(stripKeys)
     }
 
     func setShortcut(_ shortcut: KeyShortcut?, for action: ShortcutAction) {
@@ -202,6 +224,7 @@ final class AppModel {
         case .toggleCorner:
             if let corner { corner.isEnabled.toggle() }
         case .window(let windowAction): windows?.perform(windowAction)
+        case .strip(let command): strip?.perform(command)
         }
     }
 

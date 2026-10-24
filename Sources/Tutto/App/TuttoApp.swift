@@ -29,8 +29,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 
+    private var terminationSignal: DispatchSourceSignal?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !isRunningTests else { return }
+        // `kill` (SIGTERM) quits properly too: fans back to automatic, every window the strip
+        // moved back on screen.
+        signal(SIGTERM, SIG_IGN)
+        let termination = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        termination.setEventHandler { NSApp.terminate(nil) }
+        termination.resume()
+        terminationSignal = termination
         #if DEBUG
         if Snapshots.runIfRequested() { return NSApp.terminate(nil) }
         if AudioProbe.runIfRequested() { return NSApp.terminate(nil) }
@@ -52,6 +61,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        #if DEBUG
+        if CommandLine.arguments.contains("--strip-only") { return }
+        #endif
         if !model.hasCompletedOnboarding {
             OnboardingWindowController.shared.show()
         } else if !launchedAtLogin && !CommandLine.arguments.contains("--background") {

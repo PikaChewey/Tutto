@@ -24,6 +24,7 @@ enum ShortcutAction: Hashable, Identifiable {
     case openTutto
     case toggleCorner
     case window(WindowAction)
+    case strip(StripCommand)
 
     var id: String {
         switch self {
@@ -37,6 +38,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .openTutto: "app.open"
         case .toggleCorner: "corner.toggle"
         case .window(let action): "windows.\(action.rawValue)"
+        case .strip(let command): command.id
         }
     }
 
@@ -52,6 +54,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .openTutto: "Open Tutto"
         case .toggleCorner: "Pause or resume Trackpad Corner"
         case .window(let action): action.title
+        case .strip(let command): command.title
         }
     }
 
@@ -63,6 +66,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .wordCounter: .wordCounter
         case .muteFrontApp: .sound
         case .toggleCorner: .corner
+        case .strip: .strip
         case .openTutto: nil
         }
     }
@@ -76,6 +80,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureScreen: .cmdShift(kVK_ANSI_1)
         case .captureAreaEdit: .cmdShift(kVK_ANSI_Grave)
         case .wordCounter: .ctrlShift(kVK_ANSI_C)
+        case .strip(let command): command.defaultShortcut
         case .openTutto, .toggleCorner, .muteFrontApp, .window: nil
         }
     }
@@ -84,7 +89,9 @@ enum ShortcutAction: Hashable, Identifiable {
         [.clipboardHistory, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .wordCounter, .muteFrontApp, .openTutto, .toggleCorner]
     }
 
-    static var all: [ShortcutAction] { fixed + WindowAction.allCases.map { .window($0) } }
+    static var all: [ShortcutAction] {
+        fixed + WindowAction.allCases.map { .window($0) } + StripCommand.allCases.map { .strip($0) }
+    }
 }
 
 /// The user's shortcut choices, persisted. `nil` means "no shortcut".
@@ -151,6 +158,9 @@ final class HotkeyCenter {
 
     /// Shortcuts that macOS refused (another app or the system owns them).
     private(set) var failed: Set<String> = []
+    /// Told when recording a shortcut starts (true) and ends, for key filters that sit in
+    /// front of these registrations.
+    var onSuspendChange: ((Bool) -> Void)?
 
     init() {
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
@@ -193,6 +203,7 @@ final class HotkeyCenter {
     func suspend() {
         guard !suspended else { return }
         suspended = true
+        onSuspendChange?(true)
         for (number, registration) in registrations {
             if let ref = registration.ref { UnregisterEventHotKey(ref) }
             registrations[number]?.ref = nil
@@ -202,6 +213,7 @@ final class HotkeyCenter {
     func resume() {
         guard suspended else { return }
         suspended = false
+        onSuspendChange?(false)
         for (id, number) in ids {
             guard let registration = registrations[number] else { continue }
             registrations[number]?.ref = register(registration.shortcut, number: number, id: id)

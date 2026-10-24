@@ -112,6 +112,19 @@ private struct SwitcherSettings: View {
                     if index < switcher.excluded.count - 1 { Hairline().opacity(0.6) }
                 }
             }
+            InkGroup("Scrolling strip") {
+                LabeledRow("Every window full height, side by side",
+                           detail: "One strip of windows that scrolls, moved along with ⌃⌥ ← → and rearranged with ⌃⌥ keys you can change. Off until you want it.") {
+                    HStack(spacing: 8) {
+                        if model.isEnabled(.strip) {
+                            Button("Settings…") { MainWindowController.shared.show(page: .strip) }
+                                .buttonStyle(OutlineButtonStyle(compact: true))
+                        }
+                        InkSwitch(isOn: Binding(get: { model.isEnabled(.strip) }, set: { model.setEnabled(.strip, $0) }),
+                                  label: "Scrolling strip")
+                    }
+                }
+            }
             Text("While you type in a password field, macOS keeps keystrokes private from every app, so ⌘Tab shows macOS's own switcher there.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(Color.ink3)

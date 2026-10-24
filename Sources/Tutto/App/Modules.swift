@@ -2,7 +2,7 @@
 //  Modules.swift
 //  Tutto
 //
-//  The ten tools inside Tutto. Each can be switched off on its own, and a module
+//  The eleven tools inside Tutto. Each can be switched off on its own, and a module
 //  that is off holds no timers, taps, hotkeys, helpers or memory.
 //
 
@@ -19,8 +19,13 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
     case wordCounter
     case sound
     case switcher
+    case strip
 
     var id: String { rawValue }
+
+    /// On for a new install (and when a new tool arrives). The strip rearranges every window,
+    /// so it waits until you ask for it.
+    var isOnByDefault: Bool { self != .strip }
 
     var title: String {
         switch self {
@@ -34,6 +39,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .wordCounter: "Word Counter"
         case .sound: "Sound"
         case .switcher: "Window Switcher"
+        case .strip: "Scrolling Strip"
         }
     }
 
@@ -49,6 +55,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .wordCounter: "text.word.spacing"
         case .sound: "speaker.slash"
         case .switcher: "rectangle.stack"
+        case .strip: "rectangle.split.3x1"
         }
     }
 
@@ -65,6 +72,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .wordCounter: "Words, characters and reading time of any text."
         case .sound: "Mute any app at the speakers; it still plays to recorders."
         case .switcher: "⌘Tab shows every window, not just every app."
+        case .strip: "Windows side by side on one strip that scrolls. ⌃⌥ ← → to move along it."
         }
     }
 
@@ -78,6 +86,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .corner: "Nothing until a finger touches the trackpad."
         case .sound: "Nothing until a muted app plays a sound."
         case .switcher: "Nothing but a key filter that waits for ⌘Tab. Windows are listed only when you press it."
+        case .strip: "Nothing while windows sit still: macOS tells it when one changes, and it moves only then."
         }
     }
 }

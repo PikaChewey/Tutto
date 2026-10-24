@@ -26,21 +26,33 @@ let keyCodes: [String: Int] = [
     "space": kVK_Space, "return": kVK_Return, "enter": kVK_Return, "esc": kVK_Escape, "escape": kVK_Escape, "tab": kVK_Tab,
     "delete": kVK_Delete, "down": kVK_DownArrow, "up": kVK_UpArrow, "left": kVK_LeftArrow, "right": kVK_RightArrow,
     "[": kVK_ANSI_LeftBracket, "]": kVK_ANSI_RightBracket, "-": kVK_ANSI_Minus, ".": kVK_ANSI_Period, "/": kVK_ANSI_Slash,
+    "=": kVK_ANSI_Equal, "equal": kVK_ANSI_Equal, "minus": kVK_ANSI_Minus,
 ]
 
+/// Like a keyboard: modifiers go down (flagsChanged), the key, then the modifiers come up,
+/// so global shortcuts that look at the modifier state see them held.
 func press(_ combo: String) {
     var flags: CGEventFlags = []
     var key = ""
+    var modifierKeys: [(CGEventFlags, Int)] = []
     for part in combo.lowercased().split(separator: "+") {
         switch part {
-        case "cmd", "command": flags.insert(.maskCommand)
-        case "shift": flags.insert(.maskShift)
-        case "opt", "option", "alt": flags.insert(.maskAlternate)
-        case "ctrl", "control": flags.insert(.maskControl)
+        case "cmd", "command": modifierKeys.append((.maskCommand, kVK_Command))
+        case "shift": modifierKeys.append((.maskShift, kVK_Shift))
+        case "opt", "option", "alt": modifierKeys.append((.maskAlternate, kVK_Option))
+        case "ctrl", "control": modifierKeys.append((.maskControl, kVK_Control))
         default: key = String(part)
         }
     }
     guard let code = keyCodes[key] else { fatalError("unknown key \(key)") }
+    for (flag, modifier) in modifierKeys {
+        flags.insert(flag)
+        let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(modifier), keyDown: true)!
+        event.type = .flagsChanged
+        event.flags = flags
+        event.post(tap: .cghidEventTap)
+        usleep(8_000)
+    }
     let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(code), keyDown: true)!
     let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(code), keyDown: false)!
     down.flags = flags
@@ -48,7 +60,16 @@ func press(_ combo: String) {
     down.post(tap: .cghidEventTap)
     usleep(20_000)
     up.post(tap: .cghidEventTap)
-    usleep(30_000)
+    usleep(8_000)
+    for (flag, modifier) in modifierKeys.reversed() {
+        flags.remove(flag)
+        let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(modifier), keyDown: false)!
+        event.type = .flagsChanged
+        event.flags = flags
+        event.post(tap: .cghidEventTap)
+        usleep(8_000)
+    }
+    usleep(20_000)
 }
 
 /// Posts a key press straight into one app's event queue, so it can never land in another app

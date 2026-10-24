@@ -88,6 +88,46 @@ enum SwitcherLab {
                     Thread.sleep(forTimeInterval: 0.006)
                 }
                 say("\(frame) frames")
+            case "axmove", "axbench", "axinfo":
+                // axmove <pid> <wid> <x> <y> [w h]: move (and resize) by AX, then read back the window
+                // server's frame. axbench <pid> <wid> <n>: time n position sets. axinfo: AX attributes.
+                let pid = pid_t(rest[1])!, wid = CGWindowID(rest[2])!
+                guard let element = WindowElements.element(for: wid, pid: pid, budget: 0.5) else { say("no element"); break }
+                func frame() -> String {
+                    let info = (CGWindowListCopyWindowInfo([.optionIncludingWindow], wid) as? [[String: Any]])?.first
+                    let b = info?[kCGWindowBounds as String] as? [String: Double] ?? [:]
+                    return "x=\(b["X"] ?? -1) y=\(b["Y"] ?? -1) w=\(b["Width"] ?? -1) h=\(b["Height"] ?? -1) onscreen=\(info?[kCGWindowIsOnscreen as String] as? Bool ?? false)"
+                }
+                func set(_ x: Double, _ y: Double) -> AXError {
+                    var p = CGPoint(x: x, y: y)
+                    return AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &p)!)
+                }
+                switch rest[0] {
+                case "axmove":
+                    say("before: \(frame())")
+                    if rest.count > 6 {
+                        var size = CGSize(width: Double(rest[5])!, height: Double(rest[6])!)
+                        say("size -> \(AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &size)!).rawValue)")
+                    }
+                    say("position -> \(set(Double(rest[3])!, Double(rest[4])!).rawValue)")
+                    Thread.sleep(forTimeInterval: 0.15)
+                    say("after: \(frame())")
+                case "axbench":
+                    let n = Int(rest[3])!
+                    let t1 = Date()
+                    for i in 0..<n { _ = set(100 + Double(i % 2) * 40, 200) }
+                    say("\(n) moves in \(Int(Date().timeIntervalSince(t1) * 1000)) ms")
+                default:
+                    var names: CFArray?
+                    AXUIElementCopyAttributeNames(element, &names)
+                    for name in (names as? [String] ?? []) {
+                        var value: CFTypeRef?
+                        AXUIElementCopyAttributeValue(element, name as CFString, &value)
+                        var settable: DarwinBoolean = false
+                        AXUIElementIsAttributeSettable(element, name as CFString, &settable)
+                        say("\(name)\(settable.boolValue ? " (settable)" : ""): \(String(describing: value).prefix(80))")
+                    }
+                }
             case "hwcapture":
                 // The window server's own capture, by window ID (works for other Spaces?).
                 typealias Capture = @convention(c) (Int32, UnsafeMutablePointer<UInt32>, Int32, UInt32) -> Unmanaged<CFArray>?
