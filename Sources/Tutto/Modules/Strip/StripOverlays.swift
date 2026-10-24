@@ -73,16 +73,8 @@ final class StripIndicator {
     var isVisible: Bool { shown }
 
     func show(tiles: [StripIndicatorState.Tile], message: String?, refused: Bool, display: StripDisplay, lifetime: Lifetime) {
-        state.tiles = tiles
-        state.message = message
-        state.refused = refused
-        let panel = self.panel ?? makePanel()
-        self.panel = panel
-        let visible = StripDisplay.cocoa(display.visible)
-        let size = fit(tiles.count, message: message, within: visible.width * 0.92)
-        let frame = NSRect(x: (visible.midX - size.width / 2).rounded(), y: (visible.minY + 28).rounded(),
-                           width: size.width, height: size.height)
-        if panel.frame != frame { panel.setFrame(frame, display: true) }
+        let panel = layOut(tiles: tiles, message: message, refused: refused, display: display)
+        panel.ignoresMouseEvents = false
         if !shown || shownOn != display.id {
             if !panel.isVisible { panel.alphaValue = 0 }
             panel.orderFrontRegardless()
@@ -110,6 +102,36 @@ final class StripIndicator {
             hideWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
         }
+    }
+
+    /// Builds the bar and draws it once, unseen, so the first ⌃⌥ is as quick as the rest
+    /// (making the window and drawing its first frame is most of that first wait).
+    func prepare(tiles: [StripIndicatorState.Tile], display: StripDisplay) {
+        guard panel == nil, !tiles.isEmpty else { return }
+        let panel = layOut(tiles: tiles, message: nil, refused: false, display: display)
+        panel.alphaValue = 0
+        panel.ignoresMouseEvents = true
+        panel.orderFrontRegardless()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, !self.shown else { return }
+                panel.orderOut(nil)
+            }
+        }
+    }
+
+    private func layOut(tiles: [StripIndicatorState.Tile], message: String?, refused: Bool, display: StripDisplay) -> NSPanel {
+        state.tiles = tiles
+        state.message = message
+        state.refused = refused
+        let panel = self.panel ?? makePanel()
+        self.panel = panel
+        let visible = StripDisplay.cocoa(display.visible)
+        let size = fit(tiles.count, message: message, within: visible.width * 0.92)
+        let frame = NSRect(x: (visible.midX - size.width / 2).rounded(), y: (visible.minY + 28).rounded(),
+                           width: size.width, height: size.height)
+        if panel.frame != frame { panel.setFrame(frame, display: true) }
+        return panel
     }
 
     /// Keeps the tiles current while it's on screen (pictures arriving, columns moving).

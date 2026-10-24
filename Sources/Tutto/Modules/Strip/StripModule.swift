@@ -314,6 +314,16 @@ final class StripModule: ModuleController {
         rebuild()
         configureInput()
         log.notice("strip started: \(self.windows.count) windows on \(self.currentKeys.count) displays")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            MainActor.assumeIsolated { self?.prepareIndicator() }
+        }
+    }
+
+    /// The bar is built before the first hold of ⌃⌥ needs it.
+    private func prepareIndicator() {
+        guard isRunning, showsIndicator, let state = activeState(), !state.strip.isEmpty else { return }
+        indicator.state.previews = barPreviews && WindowPictures.canCapture
+        indicator.prepare(tiles: tiles(for: state), display: state.display)
     }
 
     /// Puts every window back on screen and lets go of everything; the settings stay.
