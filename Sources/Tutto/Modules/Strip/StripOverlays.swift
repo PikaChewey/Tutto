@@ -33,18 +33,32 @@ final class StripIndicatorState {
         let tabbed: Bool
     }
 
+    /// Pictures or icons, at a scale.
+    struct Layout: Equatable {
+        var previews: Bool
+        /// Below 1 when there are more columns than fit across the screen.
+        var scale: CGFloat
+
+        var tile: CGSize { previews ? CGSize(width: 200 * scale, height: 125 * scale) : CGSize(width: 56 * scale, height: 56 * scale) }
+        var spacing: CGFloat { (previews ? 12 : 10) * max(scale, 0.6) }
+        var corner: CGFloat { previews ? 10 : 12 }
+        /// The app icon: in the corner of a picture, or the whole tile.
+        var iconSide: CGFloat { previews ? 22 * max(scale, 0.7) : tile.width * 0.72 }
+    }
+
     var tiles: [Tile] = []
     var message: String?
     var refused = false
-    /// Window pictures instead of app icons.
-    var previews = false
-    /// Below 1 when there are more columns than fit across the screen.
-    var scale: CGFloat = 1
+    var layout = Layout(previews: false, scale: 1)
 
-    var tileSize: CGSize {
-        previews ? CGSize(width: 200 * scale, height: 125 * scale) : CGSize(width: 56 * scale, height: 56 * scale)
-    }
-    var spacing: CGFloat { (previews ? 12 : 10) * max(scale, 0.6) }
+    /// Window pictures instead of app icons.
+    var previews: Bool { layout.previews }
+    var tileSize: CGSize { layout.tile }
+    var spacing: CGFloat { layout.spacing }
+    var corner: CGFloat { layout.corner }
+    var iconSide: CGFloat { layout.iconSide }
+    /// 1 with pictures, 0 with icons.
+    var pictures: Double { layout.previews ? 1 : 0 }
 }
 
 @MainActor
@@ -56,32 +70,53 @@ final class StripIndicator {
         case briefly(TimeInterval)
     }
 
-    let state = StripIndicatorState()
+    /// One bar: a window and what it shows. There are two, so the bar can change between
+    /// pictures and icons by fading one window into the other (no redrawing while the strip
+    /// moves windows; a window fade is drawn by macOS, not by Tutto).
+    @MainActor
+    private final class Surface {
+        let state = StripIndicatorState()
+        var panel: NSPanel?
+    }
+
+    private let surfaces = [Surface(), Surface()]
+    private var front = 0
+    /// What the bar in front shows.
+    var state: StripIndicatorState { surfaces[front].state }
     var onSelect: ((Int) -> Void)?
     var onMove: ((Int, Int) -> Void)?
     /// Whether ⌃⌥ are held right now (the strip asks its key filter as well as macOS).
     var isHeld: () -> Bool = { StripIndicator.modifiersHeld() }
+    /// The bar went away (let go of ⌃⌥, or its moment was over).
+    var onHidden: (() -> Void)?
 
-    private var panel: NSPanel?
+    private var panel: NSPanel? { surfaces[front].panel }
     private var hideWork: DispatchWorkItem?
     private var watchdog: Timer?
     private var shownOn: CGDirectDisplayID?
     private var shown = false
 
     static let padding: CGFloat = 14
+    private static let messageFont = NSFont(name: "Geist", size: 12) ?? .systemFont(ofSize: 12, weight: .medium)
+    private var messageWidths: [String: CGFloat] = [:]
+    private static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     var isVisible: Bool { shown }
 
-    func show(tiles: [StripIndicatorState.Tile], message: String?, refused: Bool, display: StripDisplay, lifetime: Lifetime) {
-        let panel = layOut(tiles: tiles, message: message, refused: refused, display: display)
-        panel.ignoresMouseEvents = false
-        if !shown || shownOn != display.id {
-            if !panel.isVisible { panel.alphaValue = 0 }
-            panel.orderFrontRegardless()
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.04 : 0.1
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                panel.animator().alphaValue = 1
+    /// `previews`: window pictures, else app icons. Changing it while the bar is up fades the
+    /// bar into the other one.
+    func show(tiles: [StripIndicatorState.Tile], message: String?, refused: Bool, display: StripDisplay, previews: Bool, lifetime: Lifetime) {
+        let timing = PerfLog.begin("bar show"); defer { timing.end() }
+        let onScreen = shown && shownOn == display.id && panel?.isVisible == true
+        if onScreen, previews != state.previews, !Self.reduceMotion {
+            crossfade(to: previews, tiles: tiles, message: message, refused: refused, display: display)
+        } else {
+            let panel = layOut(surfaces[front], tiles: tiles, message: message, refused: refused, display: display, previews: previews)
+            panel.ignoresMouseEvents = false
+            if !shown || shownOn != display.id {
+                if !panel.isVisible { panel.alphaValue = 0 }
+                panel.orderFrontRegardless()
+                fade(panel, to: 1, duration: Self.reduceMotion ? 0.04 : 0.1, curve: .easeOut)
             }
         }
         shown = true
@@ -104,38 +139,71 @@ final class StripIndicator {
         }
     }
 
-    /// Builds the bar and draws it once, unseen, so the first ⌃⌥ is as quick as the rest
-    /// (making the window and drawing its first frame is most of that first wait).
-    func prepare(tiles: [StripIndicatorState.Tile], display: StripDisplay) {
-        guard panel == nil, !tiles.isEmpty else { return }
-        let panel = layOut(tiles: tiles, message: nil, refused: false, display: display)
-        panel.alphaValue = 0
-        panel.ignoresMouseEvents = true
-        panel.orderFrontRegardless()
+    /// The other bar takes the new layout (one redraw), comes in over this one and the two cross:
+    /// window fades only, nothing redrawn while they run.
+    private func crossfade(to previews: Bool, tiles: [StripIndicatorState.Tile], message: String?, refused: Bool, display: StripDisplay) {
+        guard let old = panel else { return }
+        front = 1 - front
+        let new = layOut(surfaces[front], tiles: tiles, message: message, refused: refused, display: display, previews: previews)
+        new.ignoresMouseEvents = false
+        new.alphaValue = 0
+        new.orderFrontRegardless()
+        old.ignoresMouseEvents = true
+        fade(new, to: 1, duration: 0.16, curve: .easeOut)
+        fade(old, to: 0, duration: 0.16, curve: .easeIn) { [weak self] in
+            guard let self, self.panel !== old else { return }
+            old.orderOut(nil)
+        }
+    }
+
+    /// Builds both bars and draws each once, unseen, so the first ⌃⌥ (and the first size key,
+    /// which fades to the other bar) is as quick as the rest: making a window and drawing its
+    /// first frame is most of that first wait.
+    func prepare(tiles: [StripIndicatorState.Tile], display: StripDisplay, previews: Bool) {
+        guard surfaces.allSatisfy({ $0.panel == nil }), !tiles.isEmpty else { return }
+        for (surface, pictures) in [(surfaces[front], previews), (surfaces[1 - front], false)] {
+            let panel = layOut(surface, tiles: tiles, message: nil, refused: false, display: display, previews: pictures)
+            panel.alphaValue = 0
+            panel.ignoresMouseEvents = true
+            panel.orderFrontRegardless()
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, !self.shown else { return }
-                panel.orderOut(nil)
+                guard let self else { return }
+                for surface in self.surfaces where !(self.shown && surface === self.surfaces[self.front]) {
+                    surface.panel?.orderOut(nil)
+                }
             }
         }
     }
 
-    private func layOut(tiles: [StripIndicatorState.Tile], message: String?, refused: Bool, display: StripDisplay) -> NSPanel {
+    @discardableResult
+    private func layOut(_ surface: Surface, tiles: [StripIndicatorState.Tile], message: String?, refused: Bool, display: StripDisplay, previews: Bool) -> NSPanel {
+        let state = surface.state
         state.tiles = tiles
         state.message = message
         state.refused = refused
-        let panel = self.panel ?? makePanel()
-        self.panel = panel
-        let visible = StripDisplay.cocoa(display.visible)
-        let size = fit(tiles.count, message: message, within: visible.width * 0.92)
-        let frame = NSRect(x: (visible.midX - size.width / 2).rounded(), y: (visible.minY + 28).rounded(),
-                           width: size.width, height: size.height)
-        if panel.frame != frame { panel.setFrame(frame, display: true) }
+        let panel = surface.panel ?? makePanel(showing: state)
+        surface.panel = panel
+        let target = destination(previews: previews, count: tiles.count, message: message, display: display)
+        state.layout = target.layout
+        if panel.frame != target.frame { panel.setFrame(target.frame, display: true) }
         return panel
+    }
+
+    private func fade(_ panel: NSPanel, to alpha: CGFloat, duration: TimeInterval, curve: CAMediaTimingFunctionName, then: (@MainActor () -> Void)? = nil) {
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: curve)
+            panel.animator().alphaValue = alpha
+        }, completionHandler: {
+            MainActor.assumeIsolated { then?() }
+        })
     }
 
     /// Keeps the tiles current while it's on screen (pictures arriving, columns moving).
     func update(tiles: [StripIndicatorState.Tile]) {
+        let timing = PerfLog.begin("bar update"); defer { timing.end() }
         guard shown, tiles != state.tiles else { return }
         state.tiles = tiles
     }
@@ -148,22 +216,20 @@ final class StripIndicator {
         watchdog = nil
         guard shown, let panel else { return }
         shown = false
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.04 : 0.12
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            panel.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
-            MainActor.assumeIsolated {
-                if self?.shown == false { panel.orderOut(nil) }
-            }
-        })
+        onHidden?()
+        fade(panel, to: 0, duration: Self.reduceMotion ? 0.04 : 0.12, curve: .easeIn) { [weak self] in
+            if self?.shown == false { panel.orderOut(nil) }
+        }
     }
 
     func close() {
         hideWork?.cancel()
         watchdog?.invalidate()
-        panel?.orderOut(nil)
-        panel = nil
+        for surface in surfaces {
+            surface.panel?.orderOut(nil)
+            surface.panel = nil
+        }
+        if shown { onHidden?() }
         shown = false
     }
 
@@ -186,24 +252,31 @@ final class StripIndicator {
         return flags.contains(.control) && flags.contains(.option)
     }
 
-    /// The panel's size for `count` tiles, shrinking the tiles when they don't fit `width`.
-    private func fit(_ count: Int, message: String?, within width: CGFloat) -> NSSize {
-        state.scale = 1
+    /// The layout and panel frame for `count` tiles, along the bottom of the display, the tiles
+    /// shrinking when they don't fit across it.
+    private func destination(previews: Bool, count: Int, message: String?, display: StripDisplay) -> (layout: StripIndicatorState.Layout, frame: NSRect) {
+        let visible = StripDisplay.cocoa(display.visible)
+        let width = visible.width * 0.92
         let columns = CGFloat(max(count, 1))
-        let natural = columns * state.tileSize.width + (columns - 1) * state.spacing
+        var layout = StripIndicatorState.Layout(previews: previews, scale: 1)
+        let natural = columns * layout.tile.width + (columns - 1) * layout.spacing
         let room = width - Self.padding * 2
-        if natural > room { state.scale = max(room / natural, 0.45) }
-        let tiles = columns * state.tileSize.width + (columns - 1) * state.spacing + Self.padding * 2
+        if natural > room { layout.scale = max(room / natural, 0.45) }
+        let tiles = columns * layout.tile.width + (columns - 1) * layout.spacing + Self.padding * 2
         var text: CGFloat = 0
         if let message {
-            let font = NSFont(name: "Geist", size: 12) ?? .systemFont(ofSize: 12, weight: .medium)
-            text = (message as NSString).size(withAttributes: [.font: font]).width.rounded(.up) + 36
+            // Looking a font up by name and measuring text took a few ms on every key: once each.
+            if messageWidths.count > 64 { messageWidths.removeAll() }
+            let measured = messageWidths[message] ?? (message as NSString).size(withAttributes: [.font: Self.messageFont]).width.rounded(.up)
+            messageWidths[message] = measured
+            text = measured + 36
         }
-        let height = state.tileSize.height + Self.padding * 2 + (message != nil ? 26 : 0)
-        return NSSize(width: min(max(tiles, text, 80), width), height: height)
+        let size = NSSize(width: min(max(tiles, text, 80), width), height: layout.tile.height + Self.padding * 2 + (message != nil ? 26 : 0))
+        let frame = NSRect(x: (visible.midX - size.width / 2).rounded(), y: (visible.minY + 28).rounded(), width: size.width, height: size.height)
+        return (layout, frame)
     }
 
-    private func makePanel() -> NSPanel {
+    private func makePanel(showing state: StripIndicatorState) -> NSPanel {
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 200, height: 60),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         panel.isFloatingPanel = true
@@ -259,7 +332,7 @@ private struct StripIndicatorView: View {
             // never animate (a picture arriving just replaces the icon).
             .overlay(alignment: .leading) {
                 if let focusIndex {
-                    RoundedRectangle(cornerRadius: corner + 3, style: .continuous)
+                    RoundedRectangle(cornerRadius: state.corner + 3, style: .continuous)
                         .strokeBorder(Color.ink, lineWidth: 2.5)
                         .frame(width: state.tileSize.width + 6, height: state.tileSize.height + 6)
                         .offset(x: CGFloat(focusIndex) * (state.tileSize.width + state.spacing) - 3)
@@ -281,17 +354,27 @@ private struct StripIndicatorView: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.hairline))
     }
 
-    private var corner: CGFloat { state.previews ? 10 : 12 }
-
+    /// A tile, with pictures or with icons: the app's icon sits in the corner of the picture, or
+    /// fills the tile.
     private func tileView(_ tile: StripIndicatorState.Tile) -> some View {
         let size = state.tileSize
+        let corner = state.corner
+        let pictures = state.pictures
+        let single = tile.icons.count <= 1
         return ZStack {
             RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .fill(tile.focused || state.previews ? Color.wash : Color.clear)
-            if state.previews {
-                pictures(tile, size: size)
-            } else {
-                icons(tile, size: size)
+                .fill(Color.wash.opacity(tile.focused ? 1 : pictures))
+            if pictures > 0 {
+                self.pictures(tile, size: size)
+                    .opacity(pictures)
+            }
+            if !single, pictures < 1 {
+                stackIcons(tile, size: size)
+                    .opacity(1 - pictures)
+            }
+            if let icon = tile.icons.first, single || pictures > 0 {
+                leadIcon(icon, in: size, pictures: pictures)
+                    .opacity(single ? 1 : pictures)
             }
             if let pin = tile.pin {
                 Capsule()
@@ -313,30 +396,35 @@ private struct StripIndicatorView: View {
         .accessibilityLabel(tile.focused ? "Focused column" : "Column \(tile.id + 1)")
     }
 
+    /// The app's icon: the whole of an icon tile, or small in the corner of a picture.
+    private func leadIcon(_ icon: NSImage, in size: CGSize, pictures: Double) -> some View {
+        let side = state.iconSide
+        let inset: CGFloat = 5
+        let centre = CGPoint(x: size.width / 2, y: size.height / 2)
+        let corner = CGPoint(x: inset + side / 2, y: size.height - inset - side / 2)
+        return Image(nsImage: icon).resizable().interpolation(.high)
+            .frame(width: side, height: side)
+            .position(x: centre.x + (corner.x - centre.x) * pictures, y: centre.y + (corner.y - centre.y) * pictures)
+    }
+
+    /// A stack's windows' icons, one above the other (tabs side by side).
     @ViewBuilder
-    private func icons(_ tile: StripIndicatorState.Tile, size: CGSize) -> some View {
-        if tile.icons.count <= 1 {
-            if let icon = tile.icons.first {
-                Image(nsImage: icon).resizable().interpolation(.high).frame(width: size.width * 0.72, height: size.height * 0.72)
+    private func stackIcons(_ tile: StripIndicatorState.Tile, size: CGSize) -> some View {
+        let shown = Array(tile.icons.prefix(3))
+        let side = size.width * (shown.count == 2 ? 0.44 : 0.32)
+        if tile.tabbed {
+            HStack(spacing: 2) {
+                ForEach(shown.indices, id: \.self) { Image(nsImage: shown[$0]).resizable().interpolation(.high).frame(width: side, height: side) }
             }
         } else {
-            // A stack: its windows' icons, one above the other (tabs side by side).
-            let shown = Array(tile.icons.prefix(3))
-            let side = size.width * (shown.count == 2 ? 0.44 : 0.32)
-            if tile.tabbed {
-                HStack(spacing: 2) {
-                    ForEach(shown.indices, id: \.self) { Image(nsImage: shown[$0]).resizable().interpolation(.high).frame(width: side, height: side) }
-                }
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(shown.indices, id: \.self) { Image(nsImage: shown[$0]).resizable().interpolation(.high).frame(width: side, height: side) }
-                }
+            VStack(spacing: 0) {
+                ForEach(shown.indices, id: \.self) { Image(nsImage: shown[$0]).resizable().interpolation(.high).frame(width: side, height: side) }
             }
         }
     }
 
     /// The column's windows as pictures: one, a stack one above the other, or a tabbed
-    /// column's front tab. The app's icon sits in the corner.
+    /// column's front tab (the app's icon is drawn over it, in the corner).
     @ViewBuilder
     private func pictures(_ tile: StripIndicatorState.Tile, size: CGSize) -> some View {
         let showing: [Int] = tile.tabbed ? [min(tile.activeTab, max(tile.pictures.count - 1, 0))] : Array(tile.pictures.indices.prefix(3))
@@ -354,13 +442,6 @@ private struct StripIndicatorView: View {
             }
         }
         .padding(4)
-        .overlay(alignment: .bottomLeading) {
-            if let icon = tile.icons.first {
-                Image(nsImage: icon).resizable().interpolation(.high)
-                    .frame(width: 22 * max(state.scale, 0.7), height: 22 * max(state.scale, 0.7))
-                    .padding(5)
-            }
-        }
         .overlay(alignment: .topTrailing) {
             if tile.tabbed {
                 Text("\(tile.pictures.count) TABS")

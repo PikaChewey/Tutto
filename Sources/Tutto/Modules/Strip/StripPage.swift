@@ -44,7 +44,7 @@ private struct StripSettings: View {
                        isOn: $strip.showsIndicator)
                 Hairline().opacity(0.6)
                 toggle("Window pictures in the strip bar", detail: WindowPictures.canCapture
-                       ? "A picture of each window instead of its app's icon. Windows out of view show how they looked before they slid away."
+                       ? "A picture of each window instead of its app's icon. Windows out of view show how they looked before they slid away. While you size a window (⌃⌥R, F, −, =) the bar turns to icons, so it doesn't cover what you're sizing."
                        : "Needs Screen Recording (Permissions). Until then the bar shows app icons.",
                        isOn: $strip.barPreviews)
                 Hairline().opacity(0.6)

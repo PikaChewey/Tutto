@@ -175,6 +175,14 @@ final class StripModule: ModuleController {
     /// The window a strip key just gave focus to, and until when other reports are stale.
     @ObservationIgnored private var expectedFocus: (window: CGWindowID, until: TimeInterval)?
     @ObservationIgnored private var pictureTaken: [CGWindowID: TimeInterval] = [:]
+    /// Set by a size key until the bar goes: the bar shows icons, so the window being sized
+    /// isn't hidden behind pictures.
+    @ObservationIgnored private var sizingBar = false
+    /// Counts questions to apps about their focused window; only the latest answer counts.
+    @ObservationIgnored private var focusQuestion = 0
+    /// Windows gone out of view that still need their picture taken (once the strip is still).
+    @ObservationIgnored private var unphotographed: Set<CGWindowID> = []
+    @ObservationIgnored private var photographWork: DispatchWorkItem?
     @ObservationIgnored private let pictureQueue: OperationQueue = {
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 2
@@ -192,14 +200,22 @@ final class StripModule: ModuleController {
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private let ownPID = ProcessInfo.processInfo.processIdentifier
     #if DEBUG
-    /// `--strip-only <bundle id>`: manage only that app's windows (live tests with test windows).
-    @ObservationIgnored private let onlyBundle: String? = {
+    /// `--strip-only <apps>`: manage only those apps' windows (live tests with test windows), as
+    /// bundle ids or `pid:<n>` (a second copy of an app the user also runs), comma-separated.
+    @ObservationIgnored private let onlyApps: [String]? = {
         let args = CommandLine.arguments
         guard let index = args.firstIndex(of: "--strip-only"), args.count > index + 1 else { return nil }
-        return args[index + 1]
+        return args[index + 1].split(separator: ",").map(String.init)
     }()
+
+    private func labAllows(pid: pid_t, bundleID: String?) -> Bool {
+        guard let onlyApps else { return true }
+        return onlyApps.contains("pid:\(pid)") || bundleID.map(onlyApps.contains) == true
+    }
     @ObservationIgnored private var commandStarted: TimeInterval?
     @ObservationIgnored private var frames = 0
+    @ObservationIgnored private var longestFrame = 0.0
+    @ObservationIgnored private var lastFrameAt = 0.0
     #endif
 
     private struct AwayWindow {
@@ -238,6 +254,7 @@ final class StripModule: ModuleController {
             savedLayouts = [:]
         }
         indicator.onSelect = { [weak self] column in self?.indicatorSelected(column) }
+        indicator.onHidden = { [weak self] in self?.sizingBar = false }
         // macOS's own modifier state misses keys posted by software (remote control, automation);
         // the key filter sees those. Either one saying ⌃⌥ are down keeps the bar.
         indicator.isHeld = { [weak self] in
@@ -322,8 +339,7 @@ final class StripModule: ModuleController {
     /// The bar is built before the first hold of ⌃⌥ needs it.
     private func prepareIndicator() {
         guard isRunning, showsIndicator, let state = activeState(), !state.strip.isEmpty else { return }
-        indicator.state.previews = barPreviews && WindowPictures.canCapture
-        indicator.prepare(tiles: tiles(for: state), display: state.display)
+        indicator.prepare(tiles: tiles(for: state), display: state.display, previews: barPreviews && WindowPictures.canCapture)
     }
 
     /// Puts every window back on screen and lets go of everything; the settings stay.
@@ -371,12 +387,15 @@ final class StripModule: ModuleController {
     /// The strip bar is hold-to-see: it appears as soon as ⌃⌥ are both held, stays while they
     /// are (strip keys update it in place), and goes the moment they're let go.
     private func modifiersChanged(_ modifiers: KeyShortcut.Modifiers) {
+        let timing = PerfLog.begin("strip modifiers"); defer { timing.end() }
         lastModifierEvent = ProcessInfo.processInfo.systemUptime
         let held = modifiers.contains(.control) && modifiers.contains(.option)
         guard held != holdingModifiers else { return }
         holdingModifiers = held
         guard held else { return indicator.hide() }
-        guard isRunning, showsIndicator, let state = activeState(), !state.strip.isEmpty else { return }
+        guard isRunning, let state = activeState(), !state.strip.isEmpty else { return }
+        if let front = NSWorkspace.shared.frontmostApplication?.processIdentifier, front != ownPID { mover.expectMoves(of: front) }
+        guard showsIndicator else { return }
         showIndicator(state, message: nil, refused: false)
     }
 
@@ -703,7 +722,7 @@ final class StripModule: ModuleController {
             return known
         }
         #if DEBUG
-        if let onlyBundle, bundleID != onlyBundle { return nil }
+        if !labAllows(pid: pid, bundleID: bundleID) { return nil }
         #endif
         let facts = StripAX.facts(element, bundleID: bundleID)
         switch StripRules.admission(facts, floatingApps: Set(floatingApps), ownBundleID: Bundle.main.bundleIdentifier) {
@@ -810,14 +829,15 @@ final class StripModule: ModuleController {
     // MARK: Window events
 
     private func handle(_ event: StripAppObserver.Event, pid: pid_t) {
+        let timing = PerfLog.begin("strip notice \(String(describing: event).prefix(14))", over: 0.004); defer { timing.end() }
         guard isRunning else { return }
         switch event {
         case .created(let element):
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                 MainActor.assumeIsolated { self?.adopt(element, pid: pid) }
             }
-        case .focusChanged:
-            syncFocus()
+        case .focusChanged(let element):
+            focusNoticed(element, pid: pid)
         case .destroyed(let element):
             guard let id = observers[pid]?.window(for: element) else { return }
             if windows[id] == nil {
@@ -859,7 +879,7 @@ final class StripModule: ModuleController {
     private func adopt(_ element: AXUIElement, pid: pid_t, focus: Bool? = nil, id known: CGWindowID? = nil) {
         guard isRunning, let id = known ?? StripAX.windowID(element), windows[id] == nil, !floating.contains(id), !userFloated.contains(id) else { return }
         #if DEBUG
-        if let onlyBundle, NSRunningApplication(processIdentifier: pid)?.bundleIdentifier != onlyBundle { return }
+        if !labAllows(pid: pid, bundleID: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier) { return }
         #endif
         // A window on a Space without a strip (an app in full screen) is left alone before its
         // app is asked anything: busy apps keep the strip waiting.
@@ -1023,14 +1043,40 @@ final class StripModule: ModuleController {
     // MARK: Focus
 
     /// The strip follows focus: a window you click or ⌘Tab to scrolls into view.
+    /// The app in front is asked which window has focus off the main thread: the app you just
+    /// switched to is often busy drawing, and its answer took 30–70 ms, a stall in whatever was
+    /// animating. A newer question makes an older answer moot.
     private func syncFocus() {
-        guard isRunning, let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != ownPID,
-              let element = StripAX.focusedWindow(of: app.processIdentifier), let id = StripAX.windowID(element) else {
-            return updateDecor()
+        guard isRunning, let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != ownPID else { return updateDecor() }
+        let pid = app.processIdentifier
+        focusQuestion += 1
+        let question = focusQuestion
+        mover.run(pid: pid) { [weak self] in
+            nonisolated(unsafe) let element = StripAX.focusedWindow(of: pid)
+            let id = element.flatMap(StripAX.windowID)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, question == self.focusQuestion else { return }
+                    self.focusMoved(to: element, id: id, pid: pid)
+                }
+            }
         }
+    }
+
+    /// An app's focus notice names its window: one the strip watches needs no question.
+    private func focusNoticed(_ element: AXUIElement?, pid: pid_t) {
+        guard let element, let match = observers[pid]?.watchedWindow(for: element) else { return syncFocus() }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return }
+        focusQuestion += 1
+        focusMoved(to: match.element, id: match.id, pid: pid)
+    }
+
+    private func focusMoved(to element: AXUIElement?, id: CGWindowID?, pid: pid_t) {
+        let timing = PerfLog.begin("strip focus"); defer { timing.end() }
+        guard isRunning, let element, let id else { return updateDecor() }
         guard let w = windows[id] else {
             if !floating.contains(id), !userFloated.contains(id), away[id] == nil {
-                adopt(element, pid: app.processIdentifier, focus: true, id: id)
+                adopt(element, pid: pid, focus: true, id: id)
             }
             return updateDecor()
         }
@@ -1081,6 +1127,7 @@ final class StripModule: ModuleController {
     // MARK: Commands
 
     func perform(_ command: StripCommand) {
+        let timing = PerfLog.begin("strip \(command.id)"); defer { timing.end() }
         if command == .toggleRunning { return toggleRunning() }
         guard isRunning else {
             Toast.shared.show("The strip is stopped", detail: isTrusted ? "⌃⌥Q starts it again." : "Allow Accessibility for Tutto first.")
@@ -1163,6 +1210,13 @@ final class StripModule: ModuleController {
             }
         }
         state.strip = strip
+        // Sizing a window: the bar turns to icons until it goes, so the pictures don't cover the
+        // bottom of the screen while you judge the size. It changes before anything moves, so its
+        // one redraw doesn't land on the move.
+        if [.cycleWidth, .fullWidth, .wider, .narrower, .taller, .shorter, .equalizeHeights].contains(command), !sizingBar {
+            sizingBar = true
+            if indicator.isVisible { showIndicator(state, message: outcome.message, refused: !outcome.changed) }
+        }
         if outcome.changed {
             if command == .centre {
                 state.centred = true
@@ -1294,6 +1348,7 @@ final class StripModule: ModuleController {
 
     /// Sends every window of a strip toward its place: sizes change at once, positions glide.
     private func apply(_ state: StripState, animated: Bool) {
+        let timing = PerfLog.begin("strip apply"); defer { timing.end() }
         guard isCurrent(state.key) else { return }
         let geometry = geometry(for: state)
         if !state.centred, centring != .always { state.strip.offset = geometry.clamped(state.strip.offset) }
@@ -1337,6 +1392,7 @@ final class StripModule: ModuleController {
 
     /// One display refresh: every moving window takes its next step.
     private func step(dt: Double) {
+        let timing = PerfLog.begin("strip frame", over: 0.004); defer { timing.end() }
         let omega = animation.omega
         var moving = false
         for key in currentKeys.values {
@@ -1368,7 +1424,12 @@ final class StripModule: ModuleController {
             place(w, at: done ? w.target : spring.roundedRect, state: state, geometry: geometry, settling: done)
         }
         #if DEBUG
-        if dt > 0 { frames += 1 }
+        if dt > 0 {
+            frames += 1
+            let now = CACurrentMediaTime()
+            if lastFrameAt > 0 { longestFrame = max(longestFrame, now - lastFrameAt) }
+            lastFrameAt = now
+        }
         #endif
         followWithOverlays()
         if !moving, dt > 0 || animating.isEmpty {
@@ -1410,20 +1471,14 @@ final class StripModule: ModuleController {
     }
 
     /// A window out of view waits in a corner at its own size: a window resized while out of
-    /// view never redraws, and the switcher would show it blank. It's photographed as it goes,
-    /// so the switcher and the strip bar can show what's in it (the picture is of the whole
-    /// window wherever it is, so it doesn't hold up the move or the app's other windows).
+    /// view never redraws, and the switcher would show it blank. It's photographed once the
+    /// strip is still, so the switcher and the strip bar can show what's in it (the picture is
+    /// of the whole window wherever it is).
     private func park(_ w: StripManagedWindow, in state: StripState, side: StripSide) {
         guard !w.parked else { return }
         if WindowPictures.canCapture {
-            let id = w.id
-            pictureTaken[id] = ProcessInfo.processInfo.systemUptime
-            pictureQueue.addOperation {
-                let picture = WindowPictures.capture(id)
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated { if let picture { WindowPictures.shared.store(picture, for: id) } }
-                }
-            }
+            unphotographed.insert(w.id)
+            photographSoon()
         }
         let others = displayList.filter { $0.uuid != state.display.uuid }.map(\.frame)
         let frame = StripParking.frame(size: w.shown.size, side: side, display: state.display.visible, others: others)
@@ -1459,13 +1514,16 @@ final class StripModule: ModuleController {
     /// Checks that apps took the sizes they were given; one that insists on its own width
     /// keeps it, and the strip makes room.
     private func didSettle(_ settled: [StripManagedWindow]) {
+        let timing = PerfLog.begin("strip settle"); defer { timing.end() }
         #if DEBUG
-        if frames > 0 { log.notice("settled after \(self.frames) frames") }
+        if frames > 0 { log.notice("settled after \(self.frames) frames, longest \(Int(self.longestFrame * 1000)) ms") }
         frames = 0
+        longestFrame = 0
+        lastFrameAt = 0
         #endif
         updateDecor()
-        // Pictures are taken of windows at rest: the bar's are refreshed once a move is over.
-        if indicator.isVisible, barPreviews { refreshBarPictures() }
+        // Pictures are taken of windows at rest: the bar's are refreshed once the strip is still.
+        if !unphotographed.isEmpty || (indicator.isVisible && indicator.state.previews) { photographSoon() }
         for w in settled where w.resized && !w.parked {
             w.resized = false
             let id = w.id
@@ -1749,19 +1807,21 @@ final class StripModule: ModuleController {
     /// While ⌃⌥ are held the bar stays until they're let go; a move made without them (a swipe,
     /// a rebound key) shows it for a moment.
     private func showIndicator(_ state: StripState, message: String?, refused: Bool, force: Bool = false, duration: TimeInterval = 1) {
+        let timing = PerfLog.begin("strip bar"); defer { timing.end() }
         guard showsIndicator || force else { return }
         indicatorKey = state.key
-        indicator.state.previews = barPreviews && WindowPictures.canCapture
+        let previews = barPreviews && !sizingBar && WindowPictures.canCapture
         let held = indicator.isHeld()
         indicator.show(tiles: tiles(for: state), message: message, refused: refused, display: state.display,
-                       lifetime: held ? .whileHeld : .briefly(duration))
-        if indicator.state.previews { refreshBarPictures() }
+                       previews: previews, lifetime: held ? .whileHeld : .briefly(duration))
+        if previews { animating.isEmpty ? refreshBarPictures() : photographSoon() }
     }
 
     /// Fresh pictures for the strip bar: windows in view now, and ones out of view the strip
     /// hasn't photographed yet. Two at a time, at most every 1.5 s per window.
     private func refreshBarPictures() {
-        guard barPreviews, WindowPictures.canCapture, let key = indicatorKey, let state = strips[key] else { return }
+        let timing = PerfLog.begin("strip bar pictures"); defer { timing.end() }
+        guard barPreviews, !sizingBar, WindowPictures.canCapture, let key = indicatorKey, let state = strips[key] else { return }
         let now = ProcessInfo.processInfo.systemUptime
         for id in state.strip.allWindows {
             guard let w = windows[id] else { continue }
@@ -1769,17 +1829,46 @@ final class StripModule: ModuleController {
             if animating.contains(id) { continue }  // mid-move: photographed when it settles
             if let taken = pictureTaken[id], now - taken < 1.5 { continue }
             pictureTaken[id] = now
-            pictureQueue.addOperation { [weak self] in
-                let picture = WindowPictures.capture(id)
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated {
-                        guard let picture else { return }
-                        WindowPictures.shared.store(picture, for: id)
-                        self?.updateIndicatorTiles()
-                    }
+            photograph(id)
+        }
+    }
+
+    private func photograph(_ id: CGWindowID) {
+        pictureQueue.addOperation { [weak self] in
+            let picture = WindowPictures.capture(id)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let picture else { return }
+                    WindowPictures.shared.store(picture, for: id)
+                    self?.updateIndicatorTiles()
                 }
             }
         }
+    }
+
+    /// Pictures are taken once the strip has been still for a moment: one costs the window
+    /// server and the GPU about as much as a frame of a move, so none are taken during one.
+    private func photographSoon() {
+        photographWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.photographWhenStill() }
+        }
+        photographWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
+    }
+
+    private func photographWhenStill() {
+        let timing = PerfLog.begin("strip photographs"); defer { timing.end() }
+        photographWork = nil
+        guard animating.isEmpty else { return photographSoon() }
+        let now = ProcessInfo.processInfo.systemUptime
+        // Windows back in view since are taken with the bar's pictures, or live by the switcher.
+        for id in unphotographed where windows[id]?.parked == true {
+            pictureTaken[id] = now
+            photograph(id)
+        }
+        unphotographed.removeAll()
+        if indicator.isVisible, indicator.state.previews { refreshBarPictures() }
     }
 
     private func updateIndicatorTiles() {

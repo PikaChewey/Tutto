@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationSignal: DispatchSourceSignal?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        PerfLog.startWatchdog()
         guard !isRunningTests else { return }
         // `kill` (SIGTERM) quits properly too: fans back to automatic, every window the strip
         // moved back on screen.

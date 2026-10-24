@@ -154,13 +154,26 @@ enum StripAX {
         return Set(list.compactMap { $0[kCGWindowNumber as String] as? CGWindowID })
     }
 
-    /// Every window id that exists, on screen or not.
+    /// Every window id that exists, on screen or not. Ids only: about ten times quicker than
+    /// asking for every window's details, and it doesn't wait while a busy window server writes
+    /// them all out (that took 60 ms at times, on every strip key).
     static func existingWindowIDs() -> Set<CGWindowID> {
+        if let windowListCreate, let list = windowListCreate([.optionAll, .excludeDesktopElements], kCGNullWindowID)?.takeRetainedValue() {
+            let count = CFArrayGetCount(list)
+            var ids = Set<CGWindowID>(minimumCapacity: count)
+            for index in 0..<count { ids.insert(CGWindowID(UInt(bitPattern: CFArrayGetValueAtIndex(list, index)))) }
+            return ids
+        }
         guard let list = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             return []
         }
         return Set(list.compactMap { $0[kCGWindowNumber as String] as? CGWindowID })
     }
+
+    // CGWindowListCreate (a list of bare window numbers) isn't offered to Swift.
+    private typealias WindowListCreate = @convention(c) (CGWindowListOption, CGWindowID) -> Unmanaged<CFArray>?
+    private static let windowListCreate = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreate")
+        .map { unsafeBitCast($0, to: WindowListCreate.self) }
 
     /// Front-to-back order of on-screen windows.
     static func zOrder() -> [CGWindowID: Int] {
@@ -317,6 +330,16 @@ final class StripMover: @unchecked Sendable {
         queue.async { [weak self] in self?.send(window, pid: pid) }
     }
 
+    /// ⌃⌥ held: the app in front is about to have its windows moved. Its enhanced interface goes
+    /// off now, so the burst of work that is for the app is over before the first frame.
+    func expectMoves(of pid: pid_t) {
+        guard pid != getpid() else { return }
+        lock.lock()
+        let queue = queue(for: pid)
+        lock.unlock()
+        queue.async { [weak self] in self?.holdEnhancedInterfaceOff(pid) }
+    }
+
     /// Runs Accessibility work for an app in order with its moves.
     func run(pid: pid_t, _ work: @escaping @Sendable () -> Void) {
         lock.lock()
@@ -361,7 +384,8 @@ final class StripMover: @unchecked Sendable {
     }
 
     /// Called on the app's queue before each move; switches the app's enhanced interface back
-    /// on once it has been still for a second.
+    /// on once it has been still for a few seconds. (Switching it on makes the app rebuild its
+    /// whole accessibility tree, a burst of work it shouldn't be doing as the next key comes.)
     private func holdEnhancedInterfaceOff(_ pid: pid_t) {
         lock.lock()
         let restore = enhancedOff[pid]
@@ -381,7 +405,7 @@ final class StripMover: @unchecked Sendable {
         enhancedOff[pid] = work
         let queue = queue(for: pid)
         lock.unlock()
-        queue.asyncAfter(deadline: .now() + 1, execute: work)
+        queue.asyncAfter(deadline: .now() + 4, execute: work)
     }
 }
 

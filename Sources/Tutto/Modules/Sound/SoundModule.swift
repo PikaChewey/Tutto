@@ -61,6 +61,7 @@ final class SoundModule: ModuleController {
     private var outputListeners: [(AudioObjectID, AudioObjectPropertyListenerBlock)] = []
     private var rearmWork: DispatchWorkItem?
     private var refreshWork: DispatchWorkItem?
+    private let lookups = DispatchQueue(label: "ca.bryanyao.Tutto.sound.lookups", qos: .userInitiated)
 
     init() {
         muted = Set(UserDefaults.standard.stringArray(forKey: Self.mutedKey) ?? [])
@@ -184,7 +185,12 @@ final class SoundModule: ModuleController {
     /// Points the rig at every sound process that belongs to a muted app.
     private func retarget() {
         guard #available(macOS 14.2, *) else { return }
-        let targets = targetProcesses()
+        lookUpTargets { [weak self] targets in self?.retarget(to: targets) }
+    }
+
+    @available(macOS 14.2, *)
+    private func retarget(to targets: [AudioObjectID]) {
+        let timing = PerfLog.begin("sound retarget"); defer { timing.end() }
         watchOutput(of: targets)
         if targets.isEmpty {
             tearDownRig()
@@ -224,10 +230,12 @@ final class SoundModule: ModuleController {
 
     private func rebuild() {
         guard #available(macOS 14.2, *), !muted.isEmpty else { return }
-        let targets = targetProcesses()
-        watchOutput(of: targets)
-        guard !targets.isEmpty, access != .denied else { return }
-        buildRig(targets)
+        lookUpTargets { [weak self] targets in
+            guard let self else { return }
+            self.watchOutput(of: targets)
+            guard !targets.isEmpty, self.access != .denied else { return }
+            self.buildRig(targets)
+        }
     }
 
     private func tearDownRig() {
@@ -237,9 +245,25 @@ final class SoundModule: ModuleController {
         rigTargets = []
     }
 
-    private func targetProcesses() -> [AudioObjectID] {
+    /// The sound processes of muted apps, looked up off the main thread (a Core Audio read per
+    /// sound process and the kernel asked who owns each: 20-odd ms that landed on whatever was
+    /// animating). `then` runs on the main thread, and only if the muted apps are still the same.
+    private func lookUpTargets(then: @escaping @MainActor ([AudioObjectID]) -> Void) {
+        let muted = self.muted
         let owners = runningOwners()
-        return AudioProcessList.read().filter { process in
+        lookups.async {
+            let targets = Self.targetProcesses(muted: muted, owners: owners)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { [weak self] in
+                    guard let self, self.muted == muted else { return }
+                    then(targets)
+                }
+            }
+        }
+    }
+
+    nonisolated private static func targetProcesses(muted: Set<String>, owners: [AudioOwnership.App]) -> [AudioObjectID] {
+        AudioProcessList.read().filter { process in
             if let id = process.bundleID, muted.contains(id) { return true }
             guard let owner = AudioOwnership.owner(of: process.pid, among: owners) else { return false }
             return muted.contains(owner.bundleID)

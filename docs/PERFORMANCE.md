@@ -53,3 +53,22 @@ The first live measurement with the menu bar panel open showed **15.5 % CPU, 118
 - With the panel open, one `/usr/bin/top` process streams energy impact; after closing the panel there are **0**, and Tutto returns to 0.033 % CPU / 0.12 wake-ups/s within seconds.
 - Turning Trackpad Corner off from its switch removes its event tap (`CGGetEventTapList`: 1 → 0); turning it on restores it.
 - Turning Archives off unregisters the Finder extension (`pluginkit -m` shows `-`), so Finder stops loading it.
+
+## The strip under a heavy load (2026-10-24)
+
+Measured on the real Mac while Firefox (a playing video, ~230 % CPU), Discord and WindowServer (~45 %) kept the GPU at 40–75 %, on battery. Tutto's main thread runs the strip's animation (a 120 Hz display link), so anything else on it costs frames.
+
+| Main-thread work found | Cost | Fix |
+|---|---|---|
+| Move/resize notices: asking the app which window each was about, and whether it was full screen | 143 ms of every 14 s of use; the app is busy redrawing exactly then | Matched against watched windows; the strip's own echoes return first |
+| Asking the app in front which window has focus, on every app switch | 36 ms (68 ms late) | Asked on that app's background queue; a focus notice that names a watched window needs no question |
+| Sound: reading every sound process and who owns it (muted apps) | 23–25 ms per audio-process change | Looked up off the main thread |
+| The bar: font looked up by name and text measured on every key | 27 ms over a hold | Once each |
+| Listing every window's details to see which still exist, on every key | 1.3 ms, 60 ms when WindowServer is busy | Window numbers only (0.15 ms) |
+| Bar pictures and window photos taken while windows move | a capture costs WindowServer/GPU about a frame | Taken once the strip has been still 0.45 s; none while sizing (the bar shows icons) |
+| Switching the bar to icons mid-move | 17 ms + 4–5 ms per frame (SwiftUI morph) | Two bar windows crossfaded (window alpha only), switched before the window moves |
+
+Result on the real strip: no main-thread stall left during ⌃⌥R (watchdog silent), strip frames 8–10 ms at 120 Hz. What remains is the apps' own redraw: a heavy page re-lays itself out ~200 ms behind its window frame while it resizes.
+
+Opt-in timing for this kind of work: `defaults write ca.bryanyao.Tutto debug.perf -bool true`, relaunch, then `log stream --predicate 'subsystem == "ca.bryanyao.Tutto" AND category == "perf"'` logs anything over 8 ms by name and every time the main thread answers more than 30 ms late. Turn it off again (`defaults delete ca.bryanyao.Tutto debug.perf`): its watchdog wakes the main thread 100 times a second.
+
