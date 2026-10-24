@@ -96,7 +96,10 @@ public enum BatteryReader {
               let dict = properties?.takeRetainedValue() as? [String: Any] else { return nil }
         var info = parse(dict)
         addPowerSourceDetails(to: &info)
-        info.reportedHealth = BatteryHealthCache.shared.value(for: info.serial)
+        if let report = BatteryHealthCache.shared.value(for: info.serial) {
+            info.reportedHealth = report.maximumCapacity
+            if let condition = report.condition { info.condition = condition }
+        }
         return info
     }
 
@@ -184,9 +187,20 @@ public enum BatteryReader {
 
 /// The "Maximum Capacity" macOS shows under System Settings › Battery › Battery Health.
 /// Apple publishes no API for it; system_profiler is the supported way to read it.
-public enum BatteryHealthReport {
+public struct BatteryHealthReport: Equatable, Sendable {
+    /// Whole percent, as System Settings shows it.
+    public var maximumCapacity: Int
+    /// "Normal" or macOS's own wording ("Service Recommended"), as System Settings shows it.
+    /// The power-sources API can disagree (it said "Check Battery" while Settings said Normal).
+    public var condition: String?
+
+    public init(maximumCapacity: Int, condition: String?) {
+        self.maximumCapacity = maximumCapacity
+        self.condition = condition
+    }
+
     /// Runs system_profiler (about 70 ms). Blocks, so call it off the main thread.
-    public static func fetch() -> Int? {
+    public static func fetch() -> BatteryHealthReport? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
         process.arguments = ["SPPowerDataType", "-json"]
@@ -200,15 +214,16 @@ public enum BatteryHealthReport {
         return parse(data)
     }
 
-    /// Exposed for tests: pulls "94%" out of `system_profiler SPPowerDataType -json`.
-    public static func parse(_ json: Data) -> Int? {
+    /// Exposed for tests: pulls "94%" and "Good" out of `system_profiler SPPowerDataType -json`.
+    public static func parse(_ json: Data) -> BatteryHealthReport? {
         guard let root = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
               let entries = root["SPPowerDataType"] as? [[String: Any]] else { return nil }
         for entry in entries {
             guard let health = entry["sppower_battery_health_info"] as? [String: Any],
                   let text = health["sppower_battery_health_maximum_capacity"] as? String,
                   let value = Int(text.filter(\.isNumber)), (1...150).contains(value) else { continue }
-            return value
+            let verdict = health["sppower_battery_health"] as? String
+            return BatteryHealthReport(maximumCapacity: value, condition: verdict.map { $0 == "Good" ? "Normal" : $0 })
         }
         return nil
     }
@@ -223,14 +238,16 @@ public final class BatteryHealthCache: @unchecked Sendable {
     private static let maxAge: TimeInterval = 3600
 
     private let lock = NSLock()
-    private var value: Int?
+    private var value: BatteryHealthReport?
     private var serial: String?
     private var fetchedAt: Date?
     private var isFetching = false
 
     private init() {
         if let stored = UserDefaults.standard.dictionary(forKey: Self.defaultsKey) {
-            value = stored["value"] as? Int
+            if let capacity = stored["value"] as? Int {
+                value = BatteryHealthReport(maximumCapacity: capacity, condition: stored["condition"] as? String)
+            }
             serial = stored["serial"] as? String
         }
     }
@@ -238,7 +255,7 @@ public final class BatteryHealthCache: @unchecked Sendable {
     /// The last figure macOS gave for this battery. Starts a background refresh when it's an
     /// hour old. The very first time (nothing remembered yet) it reads synchronously, once,
     /// so the number on screen never switches from an estimate to macOS's figure.
-    public func value(for batterySerial: String?) -> Int? {
+    public func value(for batterySerial: String?) -> BatteryHealthReport? {
         lock.lock()
         if serial != batterySerial { value = nil; fetchedAt = nil }
         let known = value
@@ -261,7 +278,7 @@ public final class BatteryHealthCache: @unchecked Sendable {
         return known
     }
 
-    private func store(_ fetched: Int?, serial batterySerial: String?) {
+    private func store(_ fetched: BatteryHealthReport?, serial batterySerial: String?) {
         lock.lock()
         defer { lock.unlock() }
         isFetching = false
@@ -270,7 +287,8 @@ public final class BatteryHealthCache: @unchecked Sendable {
         guard let fetched else { return }
         value = fetched
         serial = batterySerial
-        var stored: [String: Any] = ["value": fetched]
+        var stored: [String: Any] = ["value": fetched.maximumCapacity]
+        if let condition = fetched.condition { stored["condition"] = condition }
         if let batterySerial { stored["serial"] = batterySerial }
         UserDefaults.standard.set(stored, forKey: Self.defaultsKey)
     }

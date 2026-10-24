@@ -66,7 +66,7 @@ final class SystemReaderTests: XCTestCase {
         {"sppower_battery_cycle_count":135,"sppower_battery_health":"Good",
         "sppower_battery_health_maximum_capacity":"94%"}},{"_name":"sppower_information"}]}
         """
-        XCTAssertEqual(BatteryHealthReport.parse(Data(json.utf8)), 94)
+        XCTAssertEqual(BatteryHealthReport.parse(Data(json.utf8)), BatteryHealthReport(maximumCapacity: 94, condition: "Normal"))
         XCTAssertNil(BatteryHealthReport.parse(Data(#"{"SPPowerDataType":[{"_name":"sppower_information"}]}"#.utf8)))
         XCTAssertNil(BatteryHealthReport.parse(Data("not json".utf8)))
     }
@@ -74,7 +74,8 @@ final class SystemReaderTests: XCTestCase {
     func testLiveHealthMatchesSystemProfiler() throws {
         guard BatteryReader.read() != nil else { throw XCTSkip("No battery") }
         let reported = try XCTUnwrap(BatteryHealthReport.fetch())
-        XCTAssert((50...110).contains(reported))
+        XCTAssert((50...110).contains(reported.maximumCapacity))
+        XCTAssertNotNil(reported.condition)
     }
 
     func testNetworkCountersAre64BitAndOnlyGoUp() {

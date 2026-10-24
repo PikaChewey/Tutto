@@ -138,7 +138,7 @@ struct OnboardingView: View {
                 Text("One app, all of it.")
                     .font(.system(size: 30, weight: .semibold))
                     .tracking(-0.6)
-                Text("Eight quiet tools in your menu bar. Keep what you use — anything you switch off uses nothing.")
+                Text("Nine quiet tools in your menu bar. Keep what you use — anything you switch off uses nothing.")
                     .font(.system(size: 13.5))
                     .foregroundStyle(Color.ink2)
                     .fixedSize(horizontal: false, vertical: true)

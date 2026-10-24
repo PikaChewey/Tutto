@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !isRunningTests else { return }
         #if DEBUG
         if Snapshots.runIfRequested() { return NSApp.terminate(nil) }
+        if AudioProbe.runIfRequested() { return NSApp.terminate(nil) }
         #endif
         let model = AppModel.shared
         let launchedAtLogin = Self.wasLaunchedAsLoginItem()
@@ -102,8 +103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 /// `tutto://open/<page>` shows a page of the app; `tutto://do/<action>` runs an action, for
 /// automation (Shortcuts, scripts, Stream Deck…).
-///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows screenshots archives corner wordCounter shortcuts permissions general
-///   actions: capture-area capture-screen capture-edit clipboard windows word-counter quit
+///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows screenshots archives corner wordCounter sound shortcuts permissions general
+///   actions: capture-area capture-screen capture-edit clipboard windows word-counter mute-front-app quit
 @MainActor
 enum DeepLinks {
     static func handle(_ url: URL, model: AppModel) {
@@ -119,6 +120,7 @@ enum DeepLinks {
         case "clipboard": .clipboardHistory
         case "windows": .windowPalette
         case "word-counter": .wordCounter
+        case "mute-front-app": .muteFrontApp
         default: nil
         }
         if name == "quit" {

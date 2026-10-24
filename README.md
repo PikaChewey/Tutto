@@ -48,11 +48,13 @@ Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press th
 
 **In the screenshot editor:** with no tool, drag to make a selection box (move it, drag its handles; `↩` crops to it). `P` draw, `H` highlight, `A` arrow, `R` rectangle, `[`/`]` thickness, eight colors plus any color. `T` copies all text (in the selection if there is one) and QR codes. `Tab` copies the hovered pixel's hex color. `⌘S` saves to Downloads (configurable), `⌘C` copies, **`Esc` copies and closes**. `⌘Z` undoes.
 
-**Menu bar panel:** battery (charge, health as macOS reports it, cycles, condition, watts, top energy users), CPU, GPU, memory, disk, network speed with a small graph, temperatures, fan Auto/Custom/Max, compact Trackpad Corner controls (size, side, click/tap; the full drawing is in the app), and one-click capture, clipboard history, window palette and word counter buttons. Click any number for the full page in the app.
+**Menu bar panel:** battery (charge, health as macOS reports it, cycles, condition, watts, top energy users), CPU, GPU, memory, disk, network speed with a small graph, temperatures, fan Auto/Custom/Max, a Sound row (click an app's icon to mute it at the speakers), compact Trackpad Corner controls (size, side, click/tap; the full drawing is in the app), and one-click capture, clipboard history, window palette and word counter buttons. Click any number for the full page in the app.
+
+**Sound:** click an app in the panel's Sound row (or flip its switch on the Sound page) to mute it at your speakers and headphones — Discord's pings go quiet while Firefox keeps playing. The app itself keeps playing, so screen recordings and tools listening to it still hear it. Its helper processes are muted with it, it stays muted when it restarts, and "Mute or unmute the front app" can get a shortcut.
 
 **Finder:** right-click an archive for **Extract Here**, **Extract to "Name"**, **Extract to…**; right-click anything for **Compress to ZIP**. Archives can also be opened with Tutto by double-clicking (Archives › Make Default).
 
-**Automation:** `tutto://do/capture-area`, `capture-screen`, `capture-edit`, `clipboard`, `windows`, `word-counter`, `quit` run an action; `tutto://open/<page>` (e.g. `battery`, `shortcuts`) opens a page — handy from Shortcuts, scripts or a Stream Deck.
+**Automation:** `tutto://do/capture-area`, `capture-screen`, `capture-edit`, `clipboard`, `windows`, `word-counter`, `mute-front-app`, `quit` run an action; `tutto://open/<page>` (e.g. `battery`, `shortcuts`) opens a page — handy from Shortcuts, scripts or a Stream Deck.
 
 **Can't see the menu bar icon?** On MacBooks with a camera notch, a full menu bar hides new icons behind the notch. Tutto notices and tells you; quit a menu bar app you no longer need, or hold ⌘ and drag icons to reorder them. Everything in the panel is also in the app (Spotlight › Tutto).
 
@@ -64,6 +66,7 @@ Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press th
 |---|---|---|
 | Accessibility | Trackpad Corner, moving windows, pasting from clipboard history | Welcome window / first use |
 | Screen Recording | Screenshots, color picking, text recognition | Welcome window / first capture |
+| System Audio Recording | Muting apps in Sound (Tutto holds their sound back; nothing is recorded) | The first time you mute an app |
 | Finder extension | The Extract / Compress right-click items | Archives page (System Settings › General › Login Items & Extensions › Extensions) |
 | Fan helper (App Background Activity) | Setting fan speeds — reading never needs it | Only when you first choose Custom or Max |
 | Files & folders | Saving to Downloads, extracting in Desktop/Documents/Downloads | macOS asks once per folder |

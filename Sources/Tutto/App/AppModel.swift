@@ -29,6 +29,7 @@ final class AppModel {
     private(set) var archives: ArchiveModule?
     private(set) var corner: CornerModule?
     private(set) var wordCounter: WordCounterModule?
+    private(set) var sound: SoundModule?
 
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
     /// On notched MacBooks a crowded menu bar puts new icons behind the notch, where they can't be clicked.
@@ -118,6 +119,9 @@ final class AppModel {
         case .wordCounter:
             if wordCounter == nil { wordCounter = WordCounterModule() }
             wordCounter?.start()
+        case .sound:
+            if sound == nil { sound = SoundModule() }
+            sound?.start()
         }
     }
 
@@ -144,6 +148,9 @@ final class AppModel {
         case .wordCounter:
             wordCounter?.stop()
             wordCounter = nil
+        case .sound:
+            sound?.stop()
+            sound = nil
         case .corner:
             corner?.stop()
             corner = nil
@@ -180,6 +187,10 @@ final class AppModel {
         case .captureScreen: screenshots?.capture(.screenToClipboard)
         case .captureAreaEdit: screenshots?.capture(.areaToEditor)
         case .wordCounter: wordCounter?.togglePanel()
+        case .muteFrontApp:
+            if let result = sound?.toggleFrontmost() {
+                Toast.shared.show(result.muted ? "Muted" : "Unmuted", detail: result.name)
+            }
         case .openTutto: MainWindowController.shared.show()
         case .toggleCorner:
             if let corner { corner.isEnabled.toggle() }

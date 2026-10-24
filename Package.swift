@@ -29,6 +29,7 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("AppKit"), .linkedFramework("SwiftUI"), .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("Vision"), .linkedFramework("ServiceManagement"), .linkedFramework("Carbon"),
+                .linkedFramework("CoreAudio"), .linkedFramework("AudioToolbox"),
             ]
         ),
         // Finder Sync extension: the right-click menu for archives.

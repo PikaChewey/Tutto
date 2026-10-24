@@ -43,6 +43,12 @@ struct MenuPanel: View {
                 }
             }
 
+            if let sound = model.sound, SoundModule.isSupported {
+                Hairline().padding(.bottom, 6)
+                SoundPanelRow(sound: sound)
+                    .padding(.bottom, 6)
+            }
+
             if let corner = model.corner {
                 Hairline().padding(.bottom, 8)
                 CornerSection(module: corner, expanded: $cornerExpanded)

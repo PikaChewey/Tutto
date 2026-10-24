@@ -16,6 +16,7 @@ import ServiceManagement
 enum Permission: String, CaseIterable, Identifiable {
     case accessibility
     case screenRecording
+    case systemAudio
     case finderExtension
     case fanHelper
 
@@ -25,6 +26,7 @@ enum Permission: String, CaseIterable, Identifiable {
         switch self {
         case .accessibility: "Accessibility"
         case .screenRecording: "Screen Recording"
+        case .systemAudio: "System Audio Recording"
         case .finderExtension: "Finder extension"
         case .fanHelper: "Fan control helper"
         }
@@ -35,6 +37,7 @@ enum Permission: String, CaseIterable, Identifiable {
         switch self {
         case .accessibility: "Trackpad Corner, moving windows, and pasting from clipboard history."
         case .screenRecording: "Screenshots, color picking and text recognition."
+        case .systemAudio: "Muting apps in Sound. Tutto holds their sound back; nothing is recorded."
         case .finderExtension: "Extract and Compress in Finder's right-click menu."
         case .fanHelper: "Setting fan speeds. Reading temperatures and fans doesn't need it."
         }
@@ -44,6 +47,7 @@ enum Permission: String, CaseIterable, Identifiable {
         switch self {
         case .accessibility: [.corner, .windows, .clipboard]
         case .screenRecording: [.screenshots]
+        case .systemAudio: [.sound]
         case .finderExtension: [.archives]
         case .fanHelper: [.sensors]
         }
@@ -54,6 +58,7 @@ enum Permission: String, CaseIterable, Identifiable {
         switch self {
         case .accessibility: "Privacy & Security › Accessibility"
         case .screenRecording: "Privacy & Security › Screen & System Audio Recording"
+        case .systemAudio: "Privacy & Security › Screen & System Audio Recording › System Audio Recording Only"
         case .finderExtension: "General › Login Items & Extensions › Extensions"
         case .fanHelper: "General › Login Items & Extensions › App Background Activity"
         }
@@ -65,6 +70,7 @@ enum Permission: String, CaseIterable, Identifiable {
 final class Permissions {
     private(set) var accessibility = AXIsProcessTrusted()
     private(set) var screenRecording = CGPreflightScreenCaptureAccess()
+    private(set) var systemAudio = SystemAudioAccess.status()
     private(set) var finderExtension: Bool?
     private(set) var fanHelper: SMAppService.Status = .notRegistered
 
@@ -90,6 +96,7 @@ final class Permissions {
         switch permission {
         case .accessibility: accessibility
         case .screenRecording: screenRecording
+        case .systemAudio: systemAudio == .unknown ? nil : systemAudio == .granted
         case .finderExtension: finderExtension
         case .fanHelper: fanHelper == .enabled
         }
@@ -98,6 +105,7 @@ final class Permissions {
     func refresh() {
         accessibility = AXIsProcessTrusted()
         screenRecording = CGPreflightScreenCaptureAccess()
+        systemAudio = SystemAudioAccess.status()
         fanHelper = SMAppService.daemon(plistName: Self.helperPlist).status
         refreshFinderExtension()
     }
@@ -124,6 +132,14 @@ final class Permissions {
             // The first request shows macOS's own prompt; after that it only opens Settings.
             if !CGRequestScreenCaptureAccess() {
                 open("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+            }
+        case .systemAudio:
+            if systemAudio == .denied {
+                open("x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture")
+            } else {
+                SystemAudioAccess.request { _ in
+                    Task { @MainActor in AppModel.shared.permissions.refresh() }
+                }
             }
         case .finderExtension:
             setFinderExtension(enabled: true)

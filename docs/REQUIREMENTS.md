@@ -109,6 +109,17 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | WC-4 | Fast, light | Counting inline under 20,000 UTF-16 units, off the main thread above (edits coalesced); nothing runs until opened; panel released on close | [x] Live on the installed app: never opened, Tutto settles at 14 MB / 0.0 % CPU (unchanged); a 1 MB paste (180,000 words) counted within 0.32 s of ⌘V; 77 MB while showing that 1 MB of text, 28 MB 15 s after closing, CPU back to 0.0 %; six open/paste/close rounds stayed at 32–38 MB (no growth) |
 | WC-5 | Fits the rest of Tutto | Same palette shell, tokens and components; own page in Tools with shortcut, reading speed and on/off; welcome window, Overview, Shortcuts, menu bar quick action, `tutto://do/word-counter` | [x] All wired; renders reviewed; newly added tools start on even when an earlier on/off choice was saved (`modules.known`) |
 
+## SND — Sound (mute apps at the speakers)
+
+| ID | Requirement | Acceptance criteria | Status |
+|---|---|---|---|
+| SND-1 | Mute a chosen app at the speakers while other apps keep playing | Core Audio process tap (`CATapMuted`) in a private auto-start aggregate device; other apps unaffected | [x] Raw microphone (HAL, no voice processing): 28/28 muted pings silent (median −121 dB = room floor, loudest −99.5 dB) vs 8/8 unmuted at −60 dB; a second app kept playing unchanged (−77 dB) while the first was muted |
+| SND-2 | A muted app's audio stays available to other tools ("Claude can still hear it") | An independent tap on the muted app still receives its audio | [x] Independent tap on the muted test app: −11 dBFS throughout (−27 dBFS in the A/B probe), unchanged by the mute |
+| SND-3 | Pick from the ⌘Tab apps, not Finder; helpers count as their app | Running apps with activation policy `.regular` minus Finder and Tutto; sound processes matched by responsible PID, bundle path, parent chain | [x] Live: Discord's 4 sound processes, Opera GX's 3 (bundle ID `com.operasoftware.Opera.helper`) and Claude's 3 all attributed to their app; 8 unit tests (`AudioOwnershipTests`) |
+| SND-4 | Costs nothing while a muted app is quiet | The device starts only when a muted app plays and is re-armed 0.5 s after it goes quiet | [x] No `PreventUserIdleSystemSleep` assertion and 0.0 % CPU while the muted app is silent; device stops/re-arms each ping (log) |
+| SND-5 | Compact, fits Tutto | One panel row of icons (muted = grey + badge, playing = dot, `+N` menu); Sound page with switches, muted-while-closed list, shortcut | [x] Rendered; panel row adds 26 pt |
+| SND-6 | Persistent | Muted apps stay muted after they relaunch and after Tutto restarts (bundle IDs in defaults) | [~] Stored and re-applied on process-list changes; live relaunch check was cut short |
+
 ## UX — design
 
 | ID | Requirement | Acceptance criteria | Status |

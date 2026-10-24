@@ -123,7 +123,7 @@ struct ShortcutsPage: View {
         VStack(alignment: .leading, spacing: 22) {
             PageHeader(title: "Shortcuts", subtitle: "Click a shortcut, then press the keys you want. Esc cancels, Delete removes it.")
             group("Everyday", [.captureArea, .captureScreen, .captureAreaEdit, .clipboardHistory, .windowPalette, .wordCounter])
-            group("App", [.openTutto, .toggleCorner])
+            group("App", [.openTutto, .toggleCorner, .muteFrontApp])
             group("Window actions", WindowAction.allCases.map { .window($0) })
             HStack(alignment: .top) {
                 Text("If another app uses the same keys, macOS may deliver them to both. Change the shortcut here or in that app.")
