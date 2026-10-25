@@ -63,6 +63,39 @@ enum SwitcherLab {
                 } catch {
                     say("shareable content failed: \(error.localizedDescription)")
                 }
+            case "windows":
+                // windows: every window of every regular app as the switcher sees it (flags, admitted
+                // or not, Space, on screen), a picture attempt for each admitted one, and what the
+                // switcher takes for the window you're in.
+                let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+                let names = Dictionary(apps.map { ($0.processIdentifier, $0.localizedName ?? "?") }, uniquingKeysWith: { a, _ in a })
+                let spaces = WindowServer.spaces()
+                let onScreen = Set((CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? [])
+                    .compactMap { $0[kCGWindowNumber as String] as? CGWindowID })
+                say("front app: \(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"); front window: \(WindowServer.frontWindow().map { "\($0.id) (pid \($0.pid))" } ?? "none")")
+                for window in WindowServer.windows(of: Set(names.keys)).sorted(by: { $0.zIndex < $1.zIndex }) {
+                    let admitted = WindowAdmission.admits(window)
+                    let space = WindowServer.space(of: window.id)
+                    let kind = space.flatMap { spaces[$0] }.map { $0.isFullScreen ? "full-screen" : "desktop \($0.desktopNumber)" } ?? "no space"
+                    var line = "\(admitted ? "CARD" : "    ") id=\(window.id) z=\(window.zIndex) \(names[window.pid] ?? "?") '\(window.title)' "
+                    line += "\(Int(window.frame.width))x\(Int(window.frame.height))@\(Int(window.frame.minX)),\(Int(window.frame.minY)) "
+                    line += "layer=\(window.layer) alpha=\(window.alpha) parent=\(window.parent) tags=0x\(String(window.tags, radix: 16)) "
+                    line += "attrs=0x\(String(window.attributes, radix: 16)) space=\(space.map(String.init) ?? "-") (\(kind)) onscreen=\(onScreen.contains(window.id))"
+                    if admitted {
+                        let t = Date()
+                        let raw = WindowServer.capture(window.id)
+                        let clipped = raw.map { WindowPictures.isClipped($0, window.frame) } ?? true
+                        let whole = clipped ? WholeWindowCapture.image(of: window.id, fitting: CGSize(width: 480, height: 300)) : nil
+                        let rawText = raw.map { "\($0.width)x\($0.height)\(clipped ? " clipped" : "")" } ?? "nil"
+                        line += " | server \(rawText), whole \(whole.map { "\($0.width)x\($0.height)" } ?? (clipped ? "nil" : "-")) in \(Int(Date().timeIntervalSince(t) * 1000)) ms"
+                    }
+                    say(line)
+                }
+                let cards = WindowServer.windows(of: Set(names.keys)).filter { WindowAdmission.admits($0) }
+                let current = SwitcherOrder.current(onScreen: WindowServer.onScreenWindows(),
+                                                    frontApp: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                                                    cards: cards.map { ($0.id, $0.pid) })
+                say("the window you're in: \(current.map(String.init) ?? "none")")
             case "film":
                 // film <seconds> <outdir>: every frame of Tutto's switcher window while it's on screen,
                 // straight from the window server, with timestamps (what the eye would see).

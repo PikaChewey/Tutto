@@ -330,6 +330,7 @@ final class StripModule: ModuleController {
         }
         rebuild()
         configureInput()
+        photographUnseen()
         log.notice("strip started: \(self.windows.count) windows on \(self.currentKeys.count) displays")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             MainActor.assumeIsolated { self?.prepareIndicator() }
@@ -581,6 +582,22 @@ final class StripModule: ModuleController {
         tabBars.removeAll()
         decor.removeAll()
         rebuild()
+        photographUnseen()
+    }
+
+    /// Windows waiting out of view with no picture yet (Tutto just started, or they went out of
+    /// view as you left) are photographed while their Space is the one showing: from any other
+    /// Space they can't be (macOS gives a sliver of one tucked away), and ⌘Tab from a full-screen
+    /// app would show their icon instead.
+    private func photographUnseen() {
+        guard WindowPictures.canCapture else { return }
+        for key in currentKeys.values {
+            guard let state = strips[key] else { continue }
+            for id in state.strip.allWindows where windows[id]?.parked == true && WindowPictures.shared.picture(for: id) == nil {
+                unphotographed.insert(id)
+            }
+        }
+        if !unphotographed.isEmpty { photographSoon() }
     }
 
     /// Finds each display's current Space and builds or refreshes its strip. Windows are laid

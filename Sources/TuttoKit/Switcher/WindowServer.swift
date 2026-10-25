@@ -121,9 +121,11 @@ public enum WindowServer {
 
     // MARK: Listing
 
-    /// Every layer-0 window owned by `pids`, front to back, with the window server's flags.
-    public static func windows(of pids: Set<pid_t>) -> [ServerWindow] {
-        guard let list = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+    /// Every layer-0 window owned by `pids`, front to back, with the window server's flags;
+    /// `onScreenOnly`: just the ones on screen (a far shorter list to ask about).
+    public static func windows(of pids: Set<pid_t>, onScreenOnly: Bool = false) -> [ServerWindow] {
+        let which: CGWindowListOption = onScreenOnly ? .optionOnScreenOnly : .optionAll
+        guard let list = CGWindowListCopyWindowInfo([which, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             return []
         }
         var result: [ServerWindow] = []
@@ -247,6 +249,16 @@ public enum WindowServer {
             return (id, pid)
         }
         return nil
+    }
+
+    /// The normal windows on screen right now, front to back.
+    public static func onScreenWindows() -> [CGWindowID] {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+        return list.compactMap { info in
+            (info[kCGWindowLayer as String] as? Int) == 0 ? info[kCGWindowNumber as String] as? CGWindowID : nil
+        }
     }
 
     /// The topmost on-screen window of one app.

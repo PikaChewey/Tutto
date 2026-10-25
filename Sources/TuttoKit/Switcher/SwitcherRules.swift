@@ -86,6 +86,28 @@ public enum SwitcherOrder {
         .map(\.id)
     }
 
+    /// A card: a window, or an app with no window here.
+    public enum Card: Hashable, Sendable {
+        case window(CGWindowID)
+        case app(pid_t)
+    }
+
+    /// `order`, with the apps whose windows are all on other Spaces ("This Space"; `away`: their
+    /// windows) mixed in, each where the one of its windows you used last would be: the app you
+    /// just came from (a game in full screen) is one press away, not after every window here. An
+    /// app none of whose windows you've used since Tutto started isn't placed; it goes after the
+    /// windows, with the apps that have none.
+    public static func order(_ windows: [(id: CGWindowID, zIndex: Int, demoted: Bool)], away: [pid_t: [CGWindowID]],
+                             recent: [CGWindowID]) -> [Card] {
+        var lead: [CGWindowID: pid_t] = [:]
+        for (pid, ids) in away {
+            let theirs = Set(ids)
+            if let id = recent.first(where: theirs.contains) { lead[id] = pid }
+        }
+        let placed = lead.keys.map { (id: $0, zIndex: Int.max, demoted: false) }
+        return order(windows + placed, recent: recent).map { id in lead[id].map(Card.app) ?? .window(id) }
+    }
+
     /// Which card is selected when the switcher opens. Forward skips the window you're in, so
     /// one press goes back to the previous window; backward starts from the end.
     public static func initialSelection(count: Int, firstIsCurrent: Bool, backward: Bool) -> Int {
@@ -99,6 +121,61 @@ public enum SwitcherOrder {
         guard count > 0 else { return 0 }
         return ((selection + step) % count + count) % count
     }
+
+    /// The card for the window you're in: the front app's frontmost card on screen (`onScreen`:
+    /// the windows on screen, front to back; the window server's full order mixes in other
+    /// Spaces'). Some apps (Roblox Studio, games) keep untitled helper surfaces above their own
+    /// window, and those are never cards. An app in front with no card on screen (Finder at the
+    /// desktop) has none, so the first press goes to the window you used last.
+    public static func current(onScreen: [CGWindowID], frontApp: pid_t?, cards: [(id: CGWindowID, pid: pid_t)]) -> CGWindowID? {
+        let owner = Dictionary(cards.map { ($0.id, $0.pid) }, uniquingKeysWith: { a, _ in a })
+        return onScreen.first { id in owner[id].map { frontApp == nil || $0 == frontApp } ?? false }
+    }
+
+    /// Apps without a card of their own, the most recently in front first (`lastUsed`: when each
+    /// was); apps not in front since Tutto started keep their order, after those.
+    public static func apps(_ pids: [pid_t], lastUsed: [pid_t: TimeInterval]) -> [pid_t] {
+        pids.enumerated().sorted { a, b in
+            switch (lastUsed[a.element], lastUsed[b.element]) {
+            case let (x?, y?): return x > y
+            case (_?, nil): return true
+            case (nil, _?): return false
+            default: return a.offset < b.offset
+            }
+        }
+        .map(\.element)
+    }
+}
+
+/// Which windows "This Space" shows.
+public enum SpaceScope {
+    /// From an app in full screen, every Space's windows: the app has its Space to itself, and
+    /// you're there to leave it. `frontSpace` is the Space of the window you're in; when that
+    /// isn't known, every Space on show being a full-screen one decides.
+    public static func showsEverySpace(current: [SpaceInfo], frontSpace: UInt64?) -> Bool {
+        if let frontSpace, let space = current.first(where: { $0.id == frontSpace }) { return space.isFullScreen }
+        return !current.isEmpty && current.allSatisfy(\.isFullScreen)
+    }
+
+    /// "This Space" from a desktop (`here`: the Spaces showing). `kept`: the windows that stay, on
+    /// a Space showing or one not known, and the ones `tucked` away (minimized, or their app
+    /// hidden) wherever they are. `away`: the apps with no window to see here, with their windows
+    /// elsewhere; one minimized here doesn't count, so a game in full screen keeps its card.
+    public static func split(_ windows: [(id: CGWindowID, pid: pid_t, space: UInt64?, tucked: Bool)],
+                             here: Set<UInt64>) -> (kept: [CGWindowID], away: [pid_t: [CGWindowID]]) {
+        var kept: [CGWindowID] = []
+        var away: [pid_t: [CGWindowID]] = [:]
+        var seen = Set<pid_t>()
+        for window in windows {
+            if let space = window.space, !here.contains(space), !window.tucked {
+                away[window.pid, default: []].append(window.id)
+            } else {
+                kept.append(window.id)
+                if !window.tucked { seen.insert(window.pid) }
+            }
+        }
+        return (kept, away.filter { !seen.contains($0.key) })
+    }
 }
 
 /// Windows used most recently, newest first. Bounded; ids of closed windows age out.
@@ -106,9 +183,14 @@ public enum SwitcherOrder {
 /// the switcher happens to open, or a card sliding under a pointer that's standing still,
 /// leaves the selection alone; moving it is what says "this one".
 public struct PointerIntent: Sendable, Equatable {
-    /// Points it has to travel; a nudge of the desk or a resting finger doesn't count.
+    /// Points it has to travel from where it was when the switcher opened before it picks
+    /// anything: a hand resting on the mouse nudges it a few points without meaning to point (in
+    /// a game the pointer sits mid-screen, right where the switcher opens).
+    public static let wake: CGFloat = 10
+    /// After that, points between picks; a nudge of the desk or a resting finger doesn't count.
     public static let threshold: CGFloat = 2
     private var last: CGPoint
+    private var awake = false
 
     /// `point`: where the pointer is as the switcher opens.
     public init(at point: CGPoint) {
@@ -117,8 +199,10 @@ public struct PointerIntent: Sendable, Equatable {
 
     /// True when the pointer is now somewhere else than it last was (and remembers where).
     public mutating func moved(to point: CGPoint) -> Bool {
-        guard abs(point.x - last.x) > Self.threshold || abs(point.y - last.y) > Self.threshold else { return false }
+        let limit = awake ? Self.threshold : Self.wake
+        guard abs(point.x - last.x) > limit || abs(point.y - last.y) > limit else { return false }
         last = point
+        awake = true
         return true
     }
 }

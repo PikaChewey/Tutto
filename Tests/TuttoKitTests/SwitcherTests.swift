@@ -72,6 +72,77 @@ final class SwitcherRulesTests: XCTestCase {
         XCTAssertEqual(SwitcherOrder.move(0, by: -1, count: 5), 4)
     }
 
+    /// Roblox Studio keeps an untitled helper surface (57193) above its window (56955): the card
+    /// for the window you're in is still Studio's own window, so the first press goes back. Only
+    /// windows on screen count, and an app in front with no card there (Finder at the desktop)
+    /// has none: the first press goes to the window used last.
+    func testTheWindowYoureInIsTheFrontAppsCardUnderItsHelpers() {
+        let firefox: pid_t = 5723, studio: pid_t = 23927, discord: pid_t = 97080, finder: pid_t = 679
+        let cards: [(id: CGWindowID, pid: pid_t)] = [(44094, firefox), (44095, firefox), (56955, studio), (55343, discord)]
+        XCTAssertEqual(SwitcherOrder.current(onScreen: [57193, 56955], frontApp: studio, cards: cards), 56955)
+        // Firefox's window on another Space (44094) isn't the one you're in, wherever it stacks.
+        XCTAssertEqual(SwitcherOrder.current(onScreen: [55343, 44095], frontApp: firefox, cards: cards), 44095)
+        XCTAssertNil(SwitcherOrder.current(onScreen: [55343, 44095], frontApp: finder, cards: cards))
+        XCTAssertEqual(SwitcherOrder.current(onScreen: [57193, 56955], frontApp: nil, cards: cards), 56955)
+    }
+
+    /// "This Space" from a full-screen app (Roblox Studio on its own Space) shows every window;
+    /// from a desktop it keeps to that desktop.
+    func testThisSpaceFromAFullScreenAppShowsEverySpace() {
+        let desktop = SpaceInfo(id: 1, isFullScreen: false, desktopNumber: 1, isCurrent: true)
+        let studio = SpaceInfo(id: 3925, isFullScreen: true, desktopNumber: 0, isCurrent: true)
+        let otherDisplayDesktop = SpaceInfo(id: 7, isFullScreen: false, desktopNumber: 1, isCurrent: true)
+        XCTAssertTrue(SpaceScope.showsEverySpace(current: [studio], frontSpace: 3925))
+        XCTAssertTrue(SpaceScope.showsEverySpace(current: [studio], frontSpace: nil))
+        XCTAssertFalse(SpaceScope.showsEverySpace(current: [desktop], frontSpace: 1))
+        XCTAssertFalse(SpaceScope.showsEverySpace(current: [desktop], frontSpace: nil))
+        // Two displays: the Space of the window you're in decides.
+        XCTAssertTrue(SpaceScope.showsEverySpace(current: [studio, otherDisplayDesktop], frontSpace: 3925))
+        XCTAssertFalse(SpaceScope.showsEverySpace(current: [studio, otherDisplayDesktop], frontSpace: 7))
+        XCTAssertFalse(SpaceScope.showsEverySpace(current: [studio, otherDisplayDesktop], frontSpace: nil))
+    }
+
+    /// "This Space" from Desktop 1: windows elsewhere go, except minimized ones and hidden apps';
+    /// an app with nothing to see here is away, even with a window minimized here.
+    func testThisSpaceKeepsTuckedWindowsAndNamesTheAppsAway() {
+        let firefox: pid_t = 5723, discord: pid_t = 97080, roblox: pid_t = 32635, notes: pid_t = 900
+        let split = SpaceScope.split([
+            (44094, firefox, 3916, false),  // Firefox in full screen on its own Space
+            (44095, firefox, 1, true),      // and one minimized
+            (55343, discord, 1, false),     // here
+            (56684, roblox, 3916, false),   // a game in full screen
+            (70000, notes, 2, true),        // a hidden app's window on Desktop 2
+            (71000, discord, nil, false),   // Space not known: stays
+        ], here: [1])
+        XCTAssertEqual(split.kept, [44095, 55343, 70000, 71000])
+        XCTAssertEqual(split.away, [firefox: [44094], roblox: [56684]])
+    }
+
+    /// Apps without a card come most recently used first, not in the order they were launched.
+    func testAppsWithoutCardsGoMostRecentFirst() {
+        let finder: pid_t = 679, chatGPT: pid_t = 85868, firefox: pid_t = 5723, discord: pid_t = 97080
+        let order = SwitcherOrder.apps([finder, chatGPT, firefox, discord], lastUsed: [discord: 500, firefox: 300])
+        XCTAssertEqual(order, [discord, firefox, finder, chatGPT])
+    }
+
+    func testAFullScreenAppYouJustLeftIsOnePressAwayFromThisSpace() {
+        // Desktop 1: Discord in front, Firefox behind it. Roblox is in full screen on its own
+        // Space (window 56684), and you came to Discord from it.
+        let discord: CGWindowID = 55343, firefox: CGWindowID = 54100, roblox: CGWindowID = 56684, studio: CGWindowID = 56955
+        let robloxApp: pid_t = 32635, studioApp: pid_t = 23927
+        let cards = SwitcherOrder.order([(discord, 0, false), (firefox, 1, false)],
+                                        away: [robloxApp: [roblox], studioApp: [studio]], recent: [discord, roblox, firefox, studio])
+        XCTAssertEqual(cards, [.window(discord), .app(robloxApp), .window(firefox), .app(studioApp)])
+        XCTAssertEqual(SwitcherOrder.initialSelection(count: cards.count, firstIsCurrent: true, backward: false), 1)
+        // An app with windows on several Spaces goes where the one you used last would.
+        XCTAssertEqual(SwitcherOrder.order([(discord, 0, false), (firefox, 1, false)], away: [studioApp: [700, studio]],
+                                           recent: [discord, 700, firefox, studio]),
+                       [.window(discord), .app(studioApp), .window(firefox)])
+        // None of its windows used since Tutto started: not placed (it goes after the windows).
+        XCTAssertEqual(SwitcherOrder.order([(discord, 0, false), (firefox, 1, false)], away: [robloxApp: [roblox]], recent: [discord]),
+                       [.window(discord), .window(firefox)])
+    }
+
     func testRecentWindowsStayBounded() {
         var recent = RecentWindows(limit: 3)
         for id: CGWindowID in [1, 2, 3, 2, 4] { recent.touch(id) }
@@ -235,6 +306,16 @@ final class PointerIntentTests: XCTestCase {
         XCTAssertFalse(pointer.moved(to: CGPoint(x: 500, y: 400)))
         XCTAssertFalse(pointer.moved(to: CGPoint(x: 501, y: 399)))  // a nudge
         XCTAssertFalse(pointer.moved(to: CGPoint(x: 500, y: 400)))
+    }
+
+    /// A hand on the mouse (playing a game, the pointer mid-screen where the switcher opens)
+    /// jiggles it a few points: that's not pointing at a card.
+    func testAJiggleUnderTenPointsPicksNothing() {
+        var pointer = PointerIntent(at: CGPoint(x: 756, y: 491))
+        for jiggle in [CGPoint(x: 760, y: 494), CGPoint(x: 750, y: 488), CGPoint(x: 764, y: 499), CGPoint(x: 757, y: 485)] {
+            XCTAssertFalse(pointer.moved(to: jiggle), "\(jiggle)")
+        }
+        XCTAssertTrue(pointer.moved(to: CGPoint(x: 780, y: 491)))
     }
 
     func testMovingItPicksTheCardUnderIt() {

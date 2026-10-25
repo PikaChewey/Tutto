@@ -43,6 +43,8 @@ struct SwitcherItem: Identifiable, Equatable {
     let place: String?
     let frame: CGRect
     let zIndex: Int
+    /// A card for an app whose windows are all on other Spaces ("This Space").
+    var elsewhere = false
 
     var isWindowless: Bool { windowID == nil }
 
@@ -55,7 +57,7 @@ struct SwitcherItem: Identifiable, Equatable {
     var subtitle: String {
         var parts = [appName]
         if customName?.isEmpty == false, !title.isEmpty { parts.append(title) }
-        if isWindowless { parts.append("No windows open") }
+        if isWindowless { parts.append(elsewhere ? "Windows on other Spaces" : "No windows open") }
         return parts.joined(separator: " · ")
     }
 }
@@ -136,6 +138,8 @@ final class SwitcherModule: ModuleController {
     weak var model: AppModel?
     private var tap: SwitcherKeyTap?
     private var recent = RecentWindows()
+    /// When each app was last in front, for the order of cards without a window here.
+    private var appsUsed: [pid_t: TimeInterval] = [:]
     private var overlay: SwitcherOverlay?
     private var revealWork: DispatchWorkItem?
     private var heartbeat: Timer?
@@ -292,14 +296,21 @@ final class SwitcherModule: ModuleController {
         openedAt = Date()
         let started = ProcessInfo.processInfo.systemUptime
         lastInteraction = Date()
-        let front = WindowServer.frontWindow()
-        if let front { recent.touch(front.id) }
-        let frontBundle = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let frontApp = NSWorkspace.shared.frontmostApplication
+        let frontBundle = frontApp?.bundleIdentifier
         var items = buildItems()
         if appWindows, let frontBundle { items = items.filter { $0.bundleID == frontBundle && !$0.isWindowless } }
         guard !items.isEmpty else {
             tap?.mode = .idle
             return NSSound.beep()
+        }
+        // The card for the window you're in leads, even when what's in front is a helper surface
+        // its app keeps above it (Roblox Studio, games).
+        let current = SwitcherOrder.current(onScreen: WindowServer.onScreenWindows(), frontApp: frontApp?.processIdentifier,
+                                            cards: items.compactMap { item in item.windowID.map { ($0, item.pid) } })
+        if let current {
+            recent.touch(current)
+            if let index = items.firstIndex(where: { $0.windowID == current }), index > 0 { items.insert(items.remove(at: index), at: 0) }
         }
         // The window you're in first, the one before it second and selected: set all at once,
         // with no animation, so the switcher opens already in that state.
@@ -319,8 +330,12 @@ final class SwitcherModule: ModuleController {
             session.showHints = showHints
             session.thumbnails = thumbnails.cachedImages(for: items.compactMap(\.windowID)).merging(stripPictures(for: items)) { _, strip in strip }
             session.refilter(keepSelection: false)
+            // With no window of its own here, the app you're in can still lead with its card
+            // (Finder at the desktop, its windows elsewhere): that one's where you are too.
+            let first = session.visible.first
             session.selection = SwitcherOrder.initialSelection(count: session.visible.count,
-                                                               firstIsCurrent: session.visible.first?.windowID == front?.id,
+                                                               firstIsCurrent: current.map { first?.windowID == $0 }
+                                                                   ?? (first?.isWindowless == true && first?.pid == frontApp?.processIdentifier),
                                                                backward: backward)
         }
         isOpen = true
@@ -343,7 +358,10 @@ final class SwitcherModule: ModuleController {
         log.notice("reveal at +\(Int(Date().timeIntervalSince(self.openedAt) * 1000)) ms")
         if overlay == nil {
             overlay = SwitcherOverlay(session: session, actions: SwitcherActions(
-                select: { [weak self] in self?.session.selection = $0 },
+                select: { [weak self] index in
+                    log.notice("pointer picked card \(index)")
+                    self?.session.selection = index
+                },
                 commit: { [weak self] index in
                     guard let self else { return }
                     self.session.selection = index
@@ -472,10 +490,11 @@ final class SwitcherModule: ModuleController {
     private func appActivated(_ app: NSRunningApplication?) {
         guard let pid = app?.processIdentifier, pid != getpid() else { return }
         observeFocus(of: pid)
+        appsUsed[pid] = ProcessInfo.processInfo.systemUptime
         // The window comes forward a moment after its app is announced.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             MainActor.assumeIsolated {
-                if let id = WindowServer.frontWindow(of: pid) { self?.recent.touch(id) }
+                if let id = Self.frontCard(of: pid) { self?.recent.touch(id) }
             }
             // Remember its window's element while it's on this Space (cheap here, sometimes
             // impossible later from another Space).
@@ -486,12 +505,19 @@ final class SwitcherModule: ModuleController {
     private func spaceChanged() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, let front = WindowServer.frontWindow() else { return }
-                self.recent.touch(front.id)
-                let pid = front.pid
+                guard let self, let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier, pid != getpid(),
+                      let window = Self.frontCard(of: pid) else { return }
+                self.recent.touch(window)
                 DispatchQueue.global(qos: .utility).async { WindowElements.rememberFocusedWindow(of: pid) }
             }
         }
+    }
+
+    /// An app's frontmost window on screen that would be a card: not a helper surface it keeps
+    /// above it. None while its Space is still sliding in (the Space change catches it), or when
+    /// it has no window here (Finder at the desktop): a window elsewhere isn't the one you're in.
+    private static func frontCard(of pid: pid_t) -> CGWindowID? {
+        WindowServer.windows(of: [pid], onScreenOnly: true).first { WindowAdmission.admits($0, haveFlags: WindowServer.canClassify) }?.id
     }
 
     // MARK: Focus inside the front app
@@ -550,7 +576,10 @@ final class SwitcherModule: ModuleController {
     }
 
     private func closeSelected() {
-        guard let item = session.selected, let window = item.windowID else { return quitSelected() }
+        guard let item = session.selected else { return }
+        // An app card: with no window open, closing it quits it. With windows on other Spaces
+        // there's nothing here to close, and quitting would close them all (a game, unsaved work).
+        guard let window = item.windowID else { return item.elsewhere ? NSSound.beep() : quitSelected() }
         session.closing.insert(item.id)
         let pid = item.pid
         if let own = ownWindow(item) {
@@ -717,21 +746,34 @@ final class SwitcherModule: ModuleController {
                 && ($0.processIdentifier != mine || NSApp.activationPolicy() == .regular)
         }
         let byPID = Dictionary(apps.map { ($0.processIdentifier, $0) }, uniquingKeysWith: { a, _ in a })
+        appsUsed = appsUsed.filter { byPID[$0.key] != nil }
         let options = WindowAdmission.Options(includeMinimized: includeMinimized, includeHidden: includeHidden)
         let haveFlags = WindowServer.canClassify
-        var windows = WindowServer.windows(of: Set(byPID.keys)).filter { WindowAdmission.admits($0, options: options, haveFlags: haveFlags) }
+        var listed = WindowServer.windows(of: Set(byPID.keys)).filter { WindowAdmission.admits($0, haveFlags: haveFlags) }
         // Tutto's own floating panels aren't windows to switch to.
-        windows.removeAll { $0.pid == mine && $0.title.isEmpty }
+        listed.removeAll { $0.pid == mine && $0.title.isEmpty }
+        // Every window there is, shown by this ⌘Tab or not: what's remembered about each (when it
+        // was last used, its Accessibility handle) stays while it exists.
+        let existing = Set(listed.map(\.id))
+        var windows = listed.filter { WindowAdmission.admits($0, options: options, haveFlags: haveFlags) }
 
         let spaces = WindowServer.spaces()
-        let currentSpaces = Set(spaces.values.filter(\.isCurrent).map(\.id))
+        let currentSpaces = spaces.values.filter(\.isCurrent)
         var spaceOf: [CGWindowID: UInt64] = [:]
         for window in windows { spaceOf[window.id] = WindowServer.space(of: window.id) }
-        if scope == .currentSpace {
-            windows.removeAll { window in
-                guard let space = spaceOf[window.id] else { return false }
-                return !currentSpaces.contains(space) && !window.isMinimized && !window.isAppHidden
-            }
+        // Apps with no window to see here, with their windows on other Spaces.
+        var away: [pid_t: [CGWindowID]] = [:]
+        // "This Space": the Space of the window you're in decides. An app in full screen has its
+        // Space to itself, so from there every window shows (otherwise every other app was an icon
+        // that said "No windows open", in launch order).
+        let inFront = SwitcherOrder.current(onScreen: WindowServer.onScreenWindows(), frontApp: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                                            cards: windows.map { ($0.id, $0.pid) })
+        if scope == .currentSpace, !SpaceScope.showsEverySpace(current: currentSpaces, frontSpace: inFront.flatMap { spaceOf[$0] }) {
+            let split = SpaceScope.split(windows.map { ($0.id, $0.pid, spaceOf[$0.id], $0.isMinimized || $0.isAppHidden) },
+                                         here: Set(currentSpaces.map(\.id)))
+            let kept = Set(split.kept)
+            windows.removeAll { !kept.contains($0.id) }
+            away = split.away
         }
 
         // Names you gave windows find their windows (and follow them across app restarts).
@@ -762,23 +804,41 @@ final class SwitcherModule: ModuleController {
                                 isMinimized: w.isMinimized, isHidden: w.isAppHidden || app.isHidden, place: place,
                                 frame: w.frame, zIndex: w.zIndex)
         }
-        let order = SwitcherOrder.order(items.map { ($0.windowID ?? 0, $0.zIndex, $0.isMinimized || $0.isHidden) }, recent: recent.ids)
-        let position = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
-        items.sort { (position[$0.windowID ?? 0] ?? .max) < (position[$1.windowID ?? 0] ?? .max) }
-        recent.keep(only: Set(items.compactMap(\.windowID)))
-        WindowElements.prune(keeping: Set(windows.map(\.id)))
-
-        // Apps with no window open stay reachable, after the windows (like Finder with none open).
-        if includeWindowless {
-            let withWindows = Set(items.map(\.pid))
-            for app in apps where !withWindows.contains(app.processIdentifier) && app.processIdentifier != mine {
-                items.append(SwitcherItem(id: "a\(app.processIdentifier)", windowID: nil, pid: app.processIdentifier,
-                                          bundleID: app.bundleIdentifier ?? "", appName: app.localizedName ?? "App",
-                                          icon: icon(for: app), title: "", rawTitle: "", customName: nil, isMinimized: false,
-                                          isHidden: app.isHidden, place: nil, frame: .zero, zIndex: .max))
+        // An app whose windows are all on other Spaces goes where the one you used last would, so
+        // the full-screen app you just came from is one press away.
+        let byWindow = Dictionary(items.map { ($0.windowID ?? 0, $0) }, uniquingKeysWith: { a, _ in a })
+        let cards = SwitcherOrder.order(items.map { ($0.windowID ?? 0, $0.zIndex, $0.isMinimized || $0.isHidden) },
+                                        away: away, recent: recent.ids)
+        items = cards.compactMap { card -> SwitcherItem? in
+            switch card {
+            case .window(let id): return byWindow[id]
+            case .app(let pid): return byPID[pid].map { appCard($0, elsewhere: true) }
             }
         }
+        recent.keep(only: existing)
+        WindowElements.prune(keeping: existing)
+
+        // The rest stay reachable after the windows, the most recently used first: apps whose
+        // windows are all on other Spaces (they have windows, so always), and apps with no window
+        // open, like Finder, when those are on.
+        let appCards = Set(items.filter(\.isWindowless).map(\.pid))
+        let windowCards = Set(items.filter { !$0.isWindowless }.map(\.pid))
+        let rest = apps.map(\.processIdentifier).filter { pid in
+            pid != mine && !appCards.contains(pid) && (away[pid] != nil || (includeWindowless && !windowCards.contains(pid)))
+        }
+        for pid in SwitcherOrder.apps(rest, lastUsed: appsUsed) {
+            guard let app = byPID[pid] else { continue }
+            items.append(appCard(app, elsewhere: away[pid] != nil))
+        }
         return items
+    }
+
+    /// A card for an app with no window here; `elsewhere`: its windows are on other Spaces.
+    private func appCard(_ app: NSRunningApplication, elsewhere: Bool) -> SwitcherItem {
+        SwitcherItem(id: "a\(app.processIdentifier)", windowID: nil, pid: app.processIdentifier,
+                     bundleID: app.bundleIdentifier ?? "", appName: app.localizedName ?? "App",
+                     icon: icon(for: app), title: "", rawTitle: "", customName: nil, isMinimized: false,
+                     isHidden: app.isHidden, place: nil, frame: .zero, zIndex: .max, elsewhere: elsewhere)
     }
 
     private func icon(for app: NSRunningApplication) -> NSImage {
