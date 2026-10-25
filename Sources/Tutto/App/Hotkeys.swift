@@ -74,12 +74,12 @@ enum ShortcutAction: Hashable, Identifiable {
     /// The shortcuts Tutto starts with.
     var defaultShortcut: KeyShortcut? {
         switch self {
-        case .clipboardHistory: .ctrlShift(kVK_ANSI_V)
-        case .windowPalette: .ctrlShift(kVK_ANSI_B)
-        case .captureArea: .cmdShift(kVK_ANSI_2)
-        case .captureScreen: .cmdShift(kVK_ANSI_1)
-        case .captureAreaEdit: .cmdShift(kVK_ANSI_Grave)
-        case .wordCounter: .ctrlShift(kVK_ANSI_C)
+        case .clipboardHistory: DefaultShortcuts.clipboardHistory
+        case .windowPalette: DefaultShortcuts.windowPalette
+        case .captureArea: DefaultShortcuts.captureArea
+        case .captureScreen: DefaultShortcuts.captureScreen
+        case .captureAreaEdit: DefaultShortcuts.captureAreaEdit
+        case .wordCounter: DefaultShortcuts.wordCounter
         case .strip(let command): command.defaultShortcut
         case .openTutto, .toggleCorner, .muteFrontApp, .window: nil
         }

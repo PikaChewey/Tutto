@@ -30,4 +30,17 @@ final class KeyShortcutTests: XCTestCase {
         let data = try JSONEncoder().encode(shortcut)
         XCTAssertEqual(try JSONDecoder().decode(KeyShortcut.self, from: data), shortcut)
     }
+
+    /// A global shortcut catches its keys before macOS does: no default may be one of macOS's own,
+    /// and no two defaults may be the same.
+    func testDefaultsLeaveMacOSItsShortcuts() {
+        let defaults = DefaultShortcuts.all + StripCommand.allCases.map(\.defaultShortcut)
+        for shortcut in defaults {
+            XCTAssertNil(SystemShortcuts.owner(of: shortcut), shortcut.displayString)
+        }
+        XCTAssertEqual(Set(defaults).count, defaults.count)
+        // Area to the editor sits beside macOS's screenshot keys, not on ⇧⌘` (back through an app's windows).
+        XCTAssertEqual(DefaultShortcuts.captureAreaEdit, .cmdShift(kVK_ANSI_6))
+        XCTAssertEqual(SystemShortcuts.owner(of: .cmdShift(kVK_ANSI_Grave)), "cycling windows backwards")
+    }
 }

@@ -5,7 +5,7 @@
 //  Three capture shortcuts:
 //   ⌘⇧2  select an area → straight to the clipboard (no editor to dismiss)
 //   ⌘⇧1  the whole screen under the pointer → clipboard
-//   ⌘⇧`  select an area → the editor (draw, crop, copy text, pick colors, save)
+//   ⌘⇧6  select an area → the editor (draw, crop, copy text, pick colors, save)
 //  Nothing runs between captures; the shortcuts wait in the system.
 //
 
