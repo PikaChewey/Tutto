@@ -72,3 +72,7 @@ Result on the real strip: no main-thread stall left during ⌃⌥R (watchdog sil
 
 Opt-in timing for this kind of work: `defaults write ca.bryanyao.Tutto debug.perf -bool true`, relaunch, then `log stream --predicate 'subsystem == "ca.bryanyao.Tutto" AND category == "perf"'` logs anything over 8 ms by name and every time the main thread answers more than 30 ms late. Turn it off again (`defaults delete ca.bryanyao.Tutto debug.perf`): its watchdog wakes the main thread 100 times a second.
 
+### Tried and not shipped: resizing web apps behind a snapshot
+
+Some window managers hide an app's slow redraw by changing the size of a picture of the window and revealing the real window at the end. Built and measured (branch `experiment/snapshot-resize`): the picture can sit directly above another app's window, a see-through picture keeps macOS from marking the window under it hidden (an opaque one did, and apps stop drawing hidden windows), and a full-resolution picture takes ~14 ms. The motion was perfectly smooth at 120 Hz. Filmed on the real Firefox windows, though, it looked worse: text stretched (up to 4× on Full → 25 %) and held ~300 ms while the window redrew, then a ghosted dissolve, where a typical page re-flows cleanly live. Live resizing stays; only pages as heavy as X.com trail their frame, and they do the same when resized by hand.
+
