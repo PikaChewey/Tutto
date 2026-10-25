@@ -43,7 +43,7 @@ struct SwitcherItem: Identifiable, Equatable {
     let place: String?
     let frame: CGRect
     let zIndex: Int
-    /// A card for an app whose windows are all on other Spaces ("This Space").
+    /// A card for an app whose windows are all on other desktops ("This Space").
     var elsewhere = false
 
     var isWindowless: Bool { windowID == nil }
@@ -578,7 +578,7 @@ final class SwitcherModule: ModuleController {
     private func closeSelected() {
         guard let item = session.selected else { return }
         // An app card: with no window open, closing it quits it. With windows on other Spaces
-        // there's nothing here to close, and quitting would close them all (a game, unsaved work).
+        // there's nothing here to close, and quitting would close them all (unsaved work too).
         guard let window = item.windowID else { return item.elsewhere ? NSSound.beep() : quitSelected() }
         session.closing.insert(item.id)
         let pid = item.pid
@@ -765,12 +765,13 @@ final class SwitcherModule: ModuleController {
         var away: [pid_t: [CGWindowID]] = [:]
         // "This Space": the Space of the window you're in decides. An app in full screen has its
         // Space to itself, so from there every window shows (otherwise every other app was an icon
-        // that said "No windows open", in launch order).
+        // that said "No windows open", in launch order), and from a desktop it shows with its
+        // picture like the desktop's own windows; only other desktops' windows stay out.
         let inFront = SwitcherOrder.current(onScreen: WindowServer.onScreenWindows(), frontApp: NSWorkspace.shared.frontmostApplication?.processIdentifier,
                                             cards: windows.map { ($0.id, $0.pid) })
         if scope == .currentSpace, !SpaceScope.showsEverySpace(current: currentSpaces, frontSpace: inFront.flatMap { spaceOf[$0] }) {
             let split = SpaceScope.split(windows.map { ($0.id, $0.pid, spaceOf[$0.id], $0.isMinimized || $0.isAppHidden) },
-                                         here: Set(currentSpaces.map(\.id)))
+                                         here: Set(currentSpaces.map(\.id)), fullScreen: Set(spaces.values.filter(\.isFullScreen).map(\.id)))
             let kept = Set(split.kept)
             windows.removeAll { !kept.contains($0.id) }
             away = split.away

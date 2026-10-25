@@ -92,11 +92,11 @@ public enum SwitcherOrder {
         case app(pid_t)
     }
 
-    /// `order`, with the apps whose windows are all on other Spaces ("This Space"; `away`: their
+    /// `order`, with the apps whose windows are all on other desktops ("This Space"; `away`: their
     /// windows) mixed in, each where the one of its windows you used last would be: the app you
-    /// just came from (a game in full screen) is one press away, not after every window here. An
-    /// app none of whose windows you've used since Tutto started isn't placed; it goes after the
-    /// windows, with the apps that have none.
+    /// just came from is one press away, not after every window here. An app none of whose
+    /// windows you've used since Tutto started isn't placed; it goes after the windows, with the
+    /// apps that have none.
     public static func order(_ windows: [(id: CGWindowID, zIndex: Int, demoted: Bool)], away: [pid_t: [CGWindowID]],
                              recent: [CGWindowID]) -> [Card] {
         var lead: [CGWindowID: pid_t] = [:]
@@ -157,17 +157,18 @@ public enum SpaceScope {
         return !current.isEmpty && current.allSatisfy(\.isFullScreen)
     }
 
-    /// "This Space" from a desktop (`here`: the Spaces showing). `kept`: the windows that stay, on
-    /// a Space showing or one not known, and the ones `tucked` away (minimized, or their app
-    /// hidden) wherever they are. `away`: the apps with no window to see here, with their windows
-    /// elsewhere; one minimized here doesn't count, so a game in full screen keeps its card.
+    /// "This Space" from a desktop (`here`: the Spaces showing). `kept`: the windows that stay: on
+    /// a Space showing or one not known; in full screen (`fullScreen`: those Spaces), since an app
+    /// in full screen has its Space to itself and shows with its picture wherever you are; and
+    /// the ones `tucked` away (minimized, or their app hidden). `away`: the apps with no window to
+    /// see here, with their windows on other desktops; one minimized here doesn't count.
     public static func split(_ windows: [(id: CGWindowID, pid: pid_t, space: UInt64?, tucked: Bool)],
-                             here: Set<UInt64>) -> (kept: [CGWindowID], away: [pid_t: [CGWindowID]]) {
+                             here: Set<UInt64>, fullScreen: Set<UInt64>) -> (kept: [CGWindowID], away: [pid_t: [CGWindowID]]) {
         var kept: [CGWindowID] = []
         var away: [pid_t: [CGWindowID]] = [:]
         var seen = Set<pid_t>()
         for window in windows {
-            if let space = window.space, !here.contains(space), !window.tucked {
+            if let space = window.space, !here.contains(space), !fullScreen.contains(space), !window.tucked {
                 away[window.pid, default: []].append(window.id)
             } else {
                 kept.append(window.id)

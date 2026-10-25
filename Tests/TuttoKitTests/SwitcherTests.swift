@@ -102,20 +102,22 @@ final class SwitcherRulesTests: XCTestCase {
         XCTAssertFalse(SpaceScope.showsEverySpace(current: [studio, otherDisplayDesktop], frontSpace: nil))
     }
 
-    /// "This Space" from Desktop 1: windows elsewhere go, except minimized ones and hidden apps';
-    /// an app with nothing to see here is away, even with a window minimized here.
+    /// "This Space" from Desktop 1: other desktops' windows go, except minimized ones and hidden
+    /// apps'; an app with nothing to see here is away, even with a window minimized here. A game
+    /// in full screen stays, a window with its picture: it has its Space to itself (reported: from
+    /// Desktop 1, ⌘Tab showed Roblox in full screen as an icon).
     func testThisSpaceKeepsTuckedWindowsAndNamesTheAppsAway() {
-        let firefox: pid_t = 5723, discord: pid_t = 97080, roblox: pid_t = 32635, notes: pid_t = 900
+        let firefox: pid_t = 5723, discord: pid_t = 97080, roblox: pid_t = 40860, notes: pid_t = 900
         let split = SpaceScope.split([
-            (44094, firefox, 3916, false),  // Firefox in full screen on its own Space
+            (44094, firefox, 2, false),     // Firefox on Desktop 2
             (44095, firefox, 1, true),      // and one minimized
             (55343, discord, 1, false),     // here
-            (56684, roblox, 3916, false),   // a game in full screen
+            (58225, roblox, 3979, false),   // a game in full screen
             (70000, notes, 2, true),        // a hidden app's window on Desktop 2
             (71000, discord, nil, false),   // Space not known: stays
-        ], here: [1])
-        XCTAssertEqual(split.kept, [44095, 55343, 70000, 71000])
-        XCTAssertEqual(split.away, [firefox: [44094], roblox: [56684]])
+        ], here: [1], fullScreen: [3979])
+        XCTAssertEqual(split.kept, [44095, 55343, 58225, 70000, 71000])
+        XCTAssertEqual(split.away, [firefox: [44094]])
     }
 
     /// Apps without a card come most recently used first, not in the order they were launched.
@@ -125,9 +127,9 @@ final class SwitcherRulesTests: XCTestCase {
         XCTAssertEqual(order, [discord, firefox, finder, chatGPT])
     }
 
-    func testAFullScreenAppYouJustLeftIsOnePressAwayFromThisSpace() {
-        // Desktop 1: Discord in front, Firefox behind it. Roblox is in full screen on its own
-        // Space (window 56684), and you came to Discord from it.
+    func testAnAppOnAnotherDesktopYouJustLeftIsOnePressAwayFromThisSpace() {
+        // Desktop 1: Discord in front, Firefox behind it. Roblox's only window (56684) is on
+        // Desktop 2, and you came to Discord from it.
         let discord: CGWindowID = 55343, firefox: CGWindowID = 54100, roblox: CGWindowID = 56684, studio: CGWindowID = 56955
         let robloxApp: pid_t = 32635, studioApp: pid_t = 23927
         let cards = SwitcherOrder.order([(discord, 0, false), (firefox, 1, false)],

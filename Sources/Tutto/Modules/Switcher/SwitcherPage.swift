@@ -55,7 +55,7 @@ private struct SwitcherSettings: View {
                     InkSwitch(isOn: $switcher.appWindowsKey, label: "Key above Tab shows the front app's windows")
                 }
                 Hairline().opacity(0.6)
-                LabeledRow("Windows from", detail: "Every Space and full-screen app, or only the Space you're on, with one card for each app whose windows are elsewhere. From an app in full screen, This Space shows every window: the app has its Space to itself.") {
+                LabeledRow("Windows from", detail: "Every Space, or only the Space you're on. Apps in full screen show either way: each has its own Space, and from one of them every window shows. An app whose windows are all on other desktops gets one card.") {
                     InkSegmented(selection: $switcher.scope, options: [(SwitcherModule.Scope.allSpaces, "All Spaces"),
                                                                        (.currentSpace, "This Space")])
                 }
