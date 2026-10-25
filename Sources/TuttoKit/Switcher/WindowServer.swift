@@ -223,11 +223,11 @@ public enum WindowServer {
 
     /// A picture of one window, wherever it is (other Spaces and full screen included;
     /// minimized windows give their last picture). Blocks for 5–60 ms; call off the main thread.
-    public static func capture(_ window: CGWindowID) -> CGImage? {
+    public static func capture(_ window: CGWindowID, inPixels: Bool = false) -> CGImage? {
         guard let capture else { return nil }
         var id = window
         // Ignore the screen's clip shape (1 << 11), nominal resolution (1 << 9): points, not pixels.
-        let images = capture(connection, &id, 1, (1 << 11) | (1 << 9))?.takeRetainedValue() as? [CGImage]
+        let images = capture(connection, &id, 1, inPixels ? 1 << 11 : (1 << 11) | (1 << 9))?.takeRetainedValue() as? [CGImage]
         return images?.first
     }
 

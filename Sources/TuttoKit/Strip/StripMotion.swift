@@ -112,3 +112,23 @@ public struct SwipeTracker: Sendable {
 
     public mutating func reset() { samples.removeAll() }
 }
+
+/// Resizing a window behind a picture of it: the picture moves from `from` to `to` through every
+/// frame between (the spring takes each edge straight there), and the real window waits inside
+/// both, so the picture always covers it. Shrinking, that's already its new frame (it redraws
+/// at its new size while hidden); growing, it's its old one until the picture arrives.
+public enum ResizeCover {
+    /// Where the window waits, on whole points inside both frames; nil when they hardly overlap
+    /// (it would have to be smaller than `minimum`), and the window moves live instead.
+    public static func waitingFrame(from: CGRect, to: CGRect, minimum: CGSize = CGSize(width: 120, height: 120)) -> CGRect? {
+        let minX = max(from.minX, to.minX).rounded(.up), maxX = min(from.maxX, to.maxX).rounded(.down)
+        let minY = max(from.minY, to.minY).rounded(.up), maxY = min(from.maxY, to.maxY).rounded(.down)
+        guard maxX - minX >= minimum.width, maxY - minY >= minimum.height else { return nil }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    /// A size change worth hiding (a point or two is just rounding).
+    public static func resizes(from: CGRect, to: CGRect) -> Bool {
+        abs(from.width - to.width) > 1.5 || abs(from.height - to.height) > 1.5
+    }
+}

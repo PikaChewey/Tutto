@@ -171,6 +171,11 @@ private struct StripSettings: View {
             LabeledRow("Motion", detail: strip.animation == .instant ? "Windows jump straight to their place." : "A spring that starts the moment you press the key.") {
                 InkSegmented(selection: $strip.animation, options: [(StripAnimation.smooth, "Smooth"), (.fast, "Fast"), (.instant, "Instant")])
             }
+            Hairline().opacity(0.6)
+            toggle("Smooth resizing for browsers and web apps", detail: WindowPictures.canCapture
+                       ? "Their pages can't redraw as fast as a window changes size, so a picture of the window changes size instead, and the window appears at its new size when it's ready."
+                       : "Needs Screen Recording (Permissions). Until then these windows resize live.",
+                   isOn: $strip.smoothResize)
         }
     }
 

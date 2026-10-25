@@ -59,6 +59,9 @@ final class StripManagedWindow {
     var resized = false
     /// Being dragged or resized by hand: the strip keeps its hands off until the mouse is up.
     var held = false
+    /// Changing size behind a picture of itself (a slow app): `shown` is where the window itself
+    /// waits meanwhile, under the picture.
+    var behindPicture = false
 
     init(id: CGWindowID, pid: pid_t, element: AXUIElement, bundleID: String?, key: StripKey, frame: CGRect) {
         self.id = id
@@ -116,6 +119,8 @@ final class StripModule: ModuleController {
     var arrangeMode: ArrangeMode { didSet { save(arrangeMode.rawValue, Keys.arrange) } }
     /// Window pictures in the strip bar instead of app icons.
     var barPreviews: Bool { didSet { save(barPreviews, Keys.barPreviews); if barPreviews { refreshBarPictures() } } }
+    /// Browsers and web apps change size behind a picture of themselves (StripProxy).
+    var smoothResize: Bool { didSet { save(smoothResize, Keys.smoothResize); if !smoothResize { uncoverAll() } } }
 
     enum ArrangeMode: String, CaseIterable { case onCommand, always }
     private var arrangesAlways: Bool { arrangeMode == .always }
@@ -183,6 +188,9 @@ final class StripModule: ModuleController {
     /// Windows gone out of view that still need their picture taken (once the strip is still).
     @ObservationIgnored private var unphotographed: Set<CGWindowID> = []
     @ObservationIgnored private var photographWork: DispatchWorkItem?
+    @ObservationIgnored private let proxies = StripProxies()
+    /// Apps built on a web engine, by process (StripProxy).
+    @ObservationIgnored private var webEngine: [pid_t: Bool] = [:]
     @ObservationIgnored private let pictureQueue: OperationQueue = {
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 2
@@ -246,6 +254,7 @@ final class StripModule: ModuleController {
         mouseFollowsFocus = d.bool(forKey: Keys.mouseFollowsFocus)
         arrangeMode = ArrangeMode(rawValue: d.string(forKey: Keys.arrange) ?? "") ?? .onCommand
         barPreviews = d.object(forKey: Keys.barPreviews) as? Bool ?? true
+        smoothResize = d.object(forKey: Keys.smoothResize) as? Bool ?? true
         disabledDisplays = d.stringArray(forKey: Keys.disabledDisplays) ?? []
         floatingApps = d.stringArray(forKey: Keys.floatingApps) ?? []
         if let data = d.data(forKey: Keys.layouts), let saved = try? JSONDecoder().decode([String: [StripColumn]].self, from: data) {
@@ -345,6 +354,7 @@ final class StripModule: ModuleController {
     /// Puts every window back on screen and lets go of everything; the settings stay.
     private func end() {
         guard isRunning else { return }
+        uncoverAll()
         saveLayoutsNow()
         releaseAllWindows()
         isRunning = false
@@ -577,6 +587,7 @@ final class StripModule: ModuleController {
 
     private func spaceChanged() {
         guard isRunning else { return }
+        uncoverAll()
         indicator.hide()
         tabBars.removeAll()
         decor.removeAll()
@@ -749,6 +760,7 @@ final class StripModule: ModuleController {
     }
 
     private func forget(_ id: CGWindowID) {
+        proxies.end(id)
         if let w = windows.removeValue(forKey: id) {
             strips[w.key]?.strip.remove(id)
             observers[w.pid]?.unwatch(id)
@@ -793,6 +805,7 @@ final class StripModule: ModuleController {
         observers.removeValue(forKey: pid)?.invalidate()
         mover.forget(pid: pid)
         icons[pid] = nil
+        webEngine[pid] = nil
         let gone = windows.values.filter { $0.pid == pid }
         let keys = Set(gone.map(\.key))
         gone.forEach { forget($0.id) }
@@ -982,6 +995,7 @@ final class StripModule: ModuleController {
         guard let frame = StripAX.frame(element), !Self.sameFrame(frame, w.shown) else { return }
         if NSEvent.pressedMouseButtons & 1 != 0 {
             w.held = true
+            uncover(w)
             watchMouseUp()
             return
         }
@@ -1380,6 +1394,8 @@ final class StripModule: ModuleController {
             // Position and size follow the same spring, so columns stay exactly a gap apart while
             // widths change (the order each frame is sent in keeps macOS from clamping a size).
             if instant { spring.snap(to: placement.frame) }
+            let covered = cover(w, to: placement.frame, from: spring.roundedRect, state: state, geometry: geometry, instant: instant)
+            if !covered, w.behindPicture || !Self.sameFrame(placement.frame, w.shown) { uncover(w) }
             w.spring = spring
             animating.insert(w.id)
         }
@@ -1454,6 +1470,19 @@ final class StripModule: ModuleController {
     }
 
     private func place(_ w: StripManagedWindow, at rect: CGRect, state: StripState, geometry: StripGeometry, settling: Bool = false) {
+        if w.behindPicture {
+            proxies.move(w.id, to: rect)
+            if settling {
+                settleBehindPicture(w)
+            } else if !Self.sameFrame(w.shown, w.target), Self.within(min(gap, 8), rect, w.target) {
+                // Nearly there: the window takes its new frame now (the picture covers all but its
+                // last few points, no more than the gap its neighbours are moving away across), so
+                // it has the end of the move to redraw in.
+                send(w, w.target, order: .settle)
+                w.resized = true
+            }
+            return
+        }
         let inView = geometry.isInView(rect, column: w.column) && !overhangsAnotherDisplay(rect, state.display)
         if inView {
             guard w.parked || rect != w.shown || (settling && w.resized) else { return }
@@ -1468,6 +1497,70 @@ final class StripModule: ModuleController {
         } else if !w.parked {
             park(w, in: state, side: rect.midX < state.display.visible.midX ? .left : .right)
         }
+    }
+
+    // MARK: Resizing behind a picture
+
+    /// A slow app's window about to change size does it behind a picture of itself, and waits
+    /// under it where both its old and new frames cover it (shrinking, that's its new frame: it
+    /// redraws there while hidden). True when it's covered, now or already.
+    private func cover(_ w: StripManagedWindow, to target: CGRect, from visible: CGRect, state: StripState,
+                       geometry: StripGeometry, instant: Bool) -> Bool {
+        guard smoothResize, !instant, !w.parked, !w.held, !w.isBackgroundTab, WindowPictures.canCapture, isWebEngine(w.pid),
+              w.behindPicture || ResizeCover.resizes(from: visible, to: target),
+              geometry.isInView(visible, column: w.column), geometry.isInView(target, column: w.column),
+              !overhangsAnotherDisplay(visible, state.display), !overhangsAnotherDisplay(target, state.display),
+              let waiting = ResizeCover.waitingFrame(from: visible, to: target) else { return false }
+        if !w.behindPicture {
+            let timing = PerfLog.begin("strip picture"); defer { timing.end() }
+            guard proxies.begin(w.id, frame: visible) else { return false }
+            w.behindPicture = true
+        }
+        if !Self.sameFrame(waiting, w.shown) {
+            send(w, waiting, order: .settle)
+            w.resized = true
+        }
+        return true
+    }
+
+    /// The picture has arrived: the window takes its new frame (it already has it if it shrank,
+    /// and has been redrawing there), and the picture fades once it has had a moment to redraw.
+    private func settleBehindPicture(_ w: StripManagedWindow) {
+        w.behindPicture = false
+        if !Self.sameFrame(w.shown, w.target) {
+            send(w, w.target, order: .settle)
+            w.resized = true
+        }
+        // A page needs about a sixth of a second to lay itself out at a new size; whatever of
+        // that it has had since it got its frame doesn't need waiting for.
+        let since = ProcessInfo.processInfo.systemUptime - w.lastMove
+        proxies.finish(w.id, after: max(0.04, 0.18 - since))
+    }
+
+    /// Every edge of `a` within `points` of `b`'s.
+    private static func within(_ points: CGFloat, _ a: CGRect, _ b: CGRect) -> Bool {
+        abs(a.minX - b.minX) <= points && abs(a.maxX - b.maxX) <= points && abs(a.minY - b.minY) <= points && abs(a.maxY - b.maxY) <= points
+    }
+
+    /// The window moves live from here; its picture goes at once.
+    private func uncover(_ w: StripManagedWindow) {
+        w.behindPicture = false
+        proxies.end(w.id)
+    }
+
+    private func uncoverAll() {
+        windows.values.forEach { $0.behindPicture = false }
+        proxies.endAll()
+    }
+
+    private func isWebEngine(_ pid: pid_t) -> Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["TUTTO_PICTURES_FOR_ALL"] != nil { return true }  // lab: test windows too
+        #endif
+        if let known = webEngine[pid] { return known }
+        let found = NSRunningApplication(processIdentifier: pid)?.bundleURL.map(WebEngineApps.isWebEngine) ?? false
+        webEngine[pid] = found
+        return found
     }
 
     /// A window out of view waits in a corner at its own size: a window resized while out of
@@ -2053,6 +2146,7 @@ final class StripModule: ModuleController {
         static let mouseFollowsFocus = "strip.mouseFollowsFocus"
         static let arrange = "strip.arrange"
         static let barPreviews = "strip.barPreviews"
+        static let smoothResize = "strip.smoothResize"
         static let disabledDisplays = "strip.disabledDisplays"
         static let floatingApps = "strip.floatingApps"
         static let layouts = "strip.layouts"

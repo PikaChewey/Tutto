@@ -145,3 +145,22 @@ public enum MacSetup {
         return checks
     }
 }
+
+/// Apps built on a web engine (browsers, and the many apps that are web pages inside): their
+/// windows redraw well behind a live resize, so the strip resizes them behind a picture.
+public enum WebEngineApps {
+    /// Electron, Chromium Embedded, a Chromium browser (its framework carries helper apps) or
+    /// Firefox's engine, from what's in the app's bundle.
+    public static func isWebEngine(bundleURL: URL) -> Bool {
+        let files = FileManager.default
+        let contents = bundleURL.appendingPathComponent("Contents")
+        if files.fileExists(atPath: contents.appendingPathComponent("MacOS/XUL").path) { return true }
+        let frameworks = contents.appendingPathComponent("Frameworks")
+        guard let names = try? files.contentsOfDirectory(atPath: frameworks.path) else { return false }
+        return names.contains { name in
+            name == "Electron Framework.framework" || name == "Chromium Embedded Framework.framework"
+                || (name.hasSuffix(" Framework.framework")
+                    && files.fileExists(atPath: frameworks.appendingPathComponent(name).appendingPathComponent("Helpers").path))
+        }
+    }
+}

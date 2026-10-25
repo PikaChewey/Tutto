@@ -341,6 +341,68 @@ final class StripMotionTests: XCTestCase {
         for frame in 0..<10 { tracker.record(offset: Double(frame) * 10, at: Double(frame) / 100) }
         XCTAssertEqual(tracker.velocity, 1000, accuracy: 1)
     }
+
+    func testResizeCoverWaitsInsideBothFrames() {
+        let full = CGRect(x: 8, y: 41, width: 1496, height: 843)
+        let quarter = CGRect(x: 8, y: 41, width: 368, height: 843)
+        let third = CGRect(x: 8, y: 41, width: 493, height: 843)
+        // Shrinking: already at its new size (it redraws there, hidden).
+        XCTAssertEqual(ResizeCover.waitingFrame(from: full, to: quarter), quarter)
+        // Growing: stays at its old size until the picture gets there.
+        XCTAssertEqual(ResizeCover.waitingFrame(from: quarter, to: third), quarter)
+        // Moving while growing: the part both share.
+        let moved = CGRect(x: 100, y: 41, width: 600, height: 843)
+        XCTAssertEqual(ResizeCover.waitingFrame(from: third, to: moved), CGRect(x: 100, y: 41, width: 401, height: 843))
+        // Hardly overlapping: no cover, the window moves live.
+        XCTAssertNil(ResizeCover.waitingFrame(from: quarter, to: CGRect(x: 300, y: 41, width: 700, height: 843)))
+        XCTAssertNil(ResizeCover.waitingFrame(from: quarter, to: CGRect(x: 1000, y: 41, width: 368, height: 843)))
+        XCTAssertTrue(ResizeCover.resizes(from: quarter, to: third))
+        XCTAssertFalse(ResizeCover.resizes(from: quarter, to: quarter.offsetBy(dx: 300, dy: 0)))
+    }
+
+    /// The picture passes through every frame between the two on the spring, and the window it
+    /// covers is inside it at every one of them.
+    func testResizeCoverStaysCoveredAllTheWay() {
+        let omega = StripAnimation.smooth.omega!
+        let cases: [(CGRect, CGRect)] = [
+            (CGRect(x: 8, y: 41, width: 1496, height: 843), CGRect(x: 8, y: 41, width: 368, height: 843)),
+            (CGRect(x: 8, y: 41, width: 368, height: 843), CGRect(x: 8, y: 41, width: 1120, height: 843)),
+            (CGRect(x: 380, y: 41, width: 744, height: 843), CGRect(x: 120, y: 41, width: 1120, height: 600)),
+            (CGRect(x: 8, y: 41, width: 995, height: 400), CGRect(x: 260, y: 300, width: 744, height: 584)),
+        ]
+        for (from, to) in cases {
+            guard let waiting = ResizeCover.waitingFrame(from: from, to: to) else { return XCTFail("\(from) -> \(to)") }
+            var spring = SpringFrame(from)
+            var frames = 0
+            while !spring.isSettled(at: to), frames < 240 {
+                spring.step(toward: to, omega: omega, dt: 1.0 / 120)
+                XCTAssertTrue(spring.roundedRect.contains(waiting), "frame \(frames): \(spring.roundedRect) doesn't cover \(waiting)")
+                frames += 1
+            }
+        }
+    }
+}
+
+final class WebEngineAppsTests: XCTestCase {
+    private func bundle(_ paths: [String]) throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("Test.app")
+        for path in paths {
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(path), withIntermediateDirectories: true)
+        }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+        return root
+    }
+
+    func testWebEnginesAreRecognisedFromTheirBundles() throws {
+        XCTAssertTrue(WebEngineApps.isWebEngine(bundleURL: try bundle(["Contents/Frameworks/Electron Framework.framework"])))
+        XCTAssertTrue(WebEngineApps.isWebEngine(bundleURL: try bundle(["Contents/Frameworks/Chromium Embedded Framework.framework"])))
+        XCTAssertTrue(WebEngineApps.isWebEngine(bundleURL: try bundle(["Contents/Frameworks/Some Browser Framework.framework/Helpers"])))
+        XCTAssertTrue(WebEngineApps.isWebEngine(bundleURL: try bundle(["Contents/MacOS/XUL"])))
+        // A native app with frameworks of its own isn't one.
+        XCTAssertFalse(WebEngineApps.isWebEngine(bundleURL: try bundle(["Contents/Frameworks/Sparkle.framework", "Contents/MacOS"])))
+        XCTAssertFalse(WebEngineApps.isWebEngine(bundleURL: try bundle(["Contents/Frameworks/Media Framework.framework/Resources"])))
+        XCTAssertFalse(WebEngineApps.isWebEngine(bundleURL: try bundle(["Contents/MacOS"])))
+    }
 }
 
 final class StripCommandTests: XCTestCase {
