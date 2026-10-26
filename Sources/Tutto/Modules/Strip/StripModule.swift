@@ -184,6 +184,9 @@ final class StripModule: ModuleController {
     @ObservationIgnored private var sizingBar = false
     /// Counts questions to apps about their focused window; only the latest answer counts.
     @ObservationIgnored private var focusQuestion = 0
+    /// Windows out of view whose picture is from before they went: shown until a fresh one is
+    /// taken while a picture is on show (the strip bar, or the ⌘Tab switcher).
+    @ObservationIgnored private var stalePictures: Set<CGWindowID> = []
     @ObservationIgnored private var photographWork: DispatchWorkItem?
     @ObservationIgnored private let pictureQueue: OperationQueue = {
         let queue = OperationQueue()
@@ -369,6 +372,7 @@ final class StripModule: ModuleController {
         strips.removeAll()
         currentKeys.removeAll()
         windows.removeAll()
+        stalePictures.removeAll()
         away.removeAll()
         floating.removeAll()
         animating.removeAll()
@@ -819,6 +823,7 @@ final class StripModule: ModuleController {
             observers[w.pid]?.unwatch(id)
         }
         animating.remove(id)
+        stalePictures.remove(id)
         away[id] = nil
     }
 
@@ -1538,11 +1543,11 @@ final class StripModule: ModuleController {
     /// A window out of view waits in a corner at its own size: a window resized while out of
     /// view never redraws, and the switcher would show it blank. Its picture is taken when one is
     /// on show (the strip bar with pictures, or the ⌘Tab switcher), not as it goes: macOS says
-    /// "capturing your screen" for every picture, and it shouldn't on every switch. An older
-    /// picture of it is dropped, since it may have changed while in view.
+    /// "capturing your screen" for every picture, and it shouldn't on every switch. Until then
+    /// the one from before shows (it may have changed while in view, so it's replaced then).
     private func park(_ w: StripManagedWindow, in state: StripState, side: StripSide) {
         guard !w.parked else { return }
-        WindowPictures.shared.forget(w.id)
+        stalePictures.insert(w.id)
         let others = displayList.filter { $0.uuid != state.display.uuid }.map(\.frame)
         let frame = StripParking.frame(size: w.shown.size, side: side, display: state.display.visible, others: others)
         send(w, frame, order: .positionOnly)
@@ -1552,6 +1557,18 @@ final class StripModule: ModuleController {
 
     /// Whether the strip has a window waiting out of view (the switcher shows its picture).
     func isParked(_ window: CGWindowID) -> Bool { windows[window]?.parked == true }
+
+    /// The picture the strip has of a window out of view is from before it went: show it, and
+    /// take a fresh one.
+    func needsFreshPicture(_ window: CGWindowID) -> Bool { stalePictures.contains(window) }
+
+    /// A fresh picture of a window out of view, taken by the switcher: the strip bar shows it too.
+    func store(_ picture: NSImage, for window: CGWindowID) {
+        guard windows[window]?.parked == true else { return }
+        WindowPictures.shared.store(picture, for: window)
+        stalePictures.remove(window)
+        updateIndicatorTiles()
+    }
 
     private func arrangeIfAlways(_ state: StripState) {
         if arrangesAlways { apply(state, animated: true) }
@@ -1890,7 +1907,7 @@ final class StripModule: ModuleController {
         let now = ProcessInfo.processInfo.systemUptime
         for id in state.strip.allWindows {
             guard let w = windows[id] else { continue }
-            if w.parked, WindowPictures.shared.picture(for: id) != nil { continue }
+            if w.parked, WindowPictures.shared.picture(for: id) != nil, !stalePictures.contains(id) { continue }
             if animating.contains(id) { continue }  // mid-move: photographed when it settles
             if let taken = pictureTaken[id], now - taken < 1.5 { continue }
             pictureTaken[id] = now
@@ -1905,6 +1922,7 @@ final class StripModule: ModuleController {
                 MainActor.assumeIsolated {
                     guard let picture else { return }
                     WindowPictures.shared.store(picture, for: id)
+                    self?.stalePictures.remove(id)
                     self?.updateIndicatorTiles()
                 }
             }

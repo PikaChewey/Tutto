@@ -866,12 +866,15 @@ final class SwitcherModule: ModuleController {
             let side = offset % 2 == 0 ? offset / 2 : -(offset + 1) / 2
             return SwitcherOrder.move(session.selection, by: side, count: items.count)
         }
-        // Windows the scrolling strip keeps out of view don't draw; show the picture it took
-        // before tucking them away instead of capturing a blank one.
+        // Windows the scrolling strip keeps out of view show the picture it has of them; one from
+        // before they went is replaced with a fresh one (the whole window, wherever it waits),
+        // which the strip bar then shows too.
+        let strip = model?.strip
         let fromStrip = stripPictures(for: around.map { items[$0] })
         for (id, picture) in fromStrip { session.thumbnails[id] = picture }
-        let ids = around.compactMap { items[$0].windowID }.filter { fromStrip[$0] == nil }
+        let ids = around.compactMap { items[$0].windowID }.filter { fromStrip[$0] == nil || strip?.needsFreshPicture($0) == true }
         thumbnails.capture(ids) { [weak self] id, image in
+            strip?.store(image, for: id)
             guard let self, self.isOpen else { return }
             self.session.thumbnails[id] = image
         }
