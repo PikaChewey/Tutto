@@ -3,8 +3,10 @@
 //  Tutto
 //
 //  The capture overlay. The screen is frozen first (so menus and hover states stay put),
-//  then drawn back full-screen. The pointer is a plain crosshair with its position in pixels
-//  just below-right of it (the selection's W × H while dragging). Drag to select, click a window to take just that window,
+//  then drawn back full-screen exactly as it was: nothing is dimmed, ever. The pointer is a
+//  plain crosshair with its position in pixels just below-right of it (the selection's W × H
+//  while dragging). Drag to select (the selection is a very light box with a fine edge, the
+//  rest stays as it is), click a window to take just that window (a thin outline shows which),
 //  click the desktop for the whole screen, Tab copies the color under the pointer, Esc
 //  cancels. Everything is Core Animation layers, so following the pointer costs almost
 //  nothing. It appears with no animation: it was opened from the keyboard.
@@ -152,8 +154,12 @@ private final class OverlayView: NSView {
     private let finish: (Selection?) -> Void
 
     private let imageLayer = CALayer()
-    private let dimLayer = CAShapeLayer()
-    private let borderLayer = CAShapeLayer()
+    /// The selection: a very light box over what it covers (the screen around it stays as it is).
+    private let selectionLayer = CAShapeLayer()
+    /// Its edge, and the window outline before a drag: a fine white line on a faint dark one, so
+    /// it shows on white pages and dark ones alike.
+    private let edgeDark = CAShapeLayer()
+    private let edgeLight = CAShapeLayer()
     private lazy var readout = PointerReadout(scale: shot.scale)
 
     private var start: CGPoint?
@@ -181,16 +187,21 @@ private final class OverlayView: NSView {
         imageLayer.frame = bounds
         layer?.addSublayer(imageLayer)
 
-        dimLayer.fillRule = .evenOdd
-        dimLayer.fillColor = NSColor.black.withAlphaComponent(0.4).cgColor
-        dimLayer.frame = bounds
-        layer?.addSublayer(dimLayer)
+        selectionLayer.fillColor = NSColor.white.withAlphaComponent(0.18).cgColor
+        selectionLayer.frame = bounds
+        layer?.addSublayer(selectionLayer)
 
-        borderLayer.fillColor = nil
-        borderLayer.strokeColor = NSColor.white.withAlphaComponent(0.95).cgColor
-        borderLayer.lineWidth = 1
-        borderLayer.frame = bounds
-        layer?.addSublayer(borderLayer)
+        edgeDark.fillColor = nil
+        edgeDark.strokeColor = NSColor.black.withAlphaComponent(0.35).cgColor
+        edgeDark.lineWidth = 1
+        edgeDark.frame = bounds
+        layer?.addSublayer(edgeDark)
+
+        edgeLight.fillColor = nil
+        edgeLight.strokeColor = NSColor.white.withAlphaComponent(0.9).cgColor
+        edgeLight.lineWidth = 1
+        edgeLight.frame = bounds
+        layer?.addSublayer(edgeLight)
 
         layer?.addSublayer(readout)
         CATransaction.commit()
@@ -346,14 +357,12 @@ private final class OverlayView: NSView {
     private func render() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let highlight = selection ?? hoveredWindow
-        let path = CGMutablePath()
-        path.addRect(bounds)
-        if let highlight { path.addRect(highlight) }
-        dimLayer.path = path
-        dimLayer.fillColor = NSColor.black.withAlphaComponent(highlight == nil ? 0.18 : 0.4).cgColor
-        // A hovered window is shown by the cutout in the dimming alone; only a dragged selection gets an edge.
-        borderLayer.path = selection.map { CGPath(rect: $0.insetBy(dx: -0.5, dy: -0.5), transform: nil) }
+        // The selection gets the light box and its edge; before a drag, the window a click would
+        // take gets the edge alone. The screen itself is never tinted.
+        selectionLayer.path = selection.map { CGPath(rect: $0, transform: nil) }
+        let edge = selection ?? hoveredWindow
+        edgeLight.path = edge.map { CGPath(rect: $0.insetBy(dx: -0.5, dy: -0.5), transform: nil) }
+        edgeDark.path = edge.map { CGPath(rect: $0.insetBy(dx: -1.5, dy: -1.5), transform: nil) }
 
         if let selection, dragging {
             let w = Int((selection.width * shot.scale).rounded()), h = Int((selection.height * shot.scale).rounded())
