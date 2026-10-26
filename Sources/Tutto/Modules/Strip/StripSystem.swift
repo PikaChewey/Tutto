@@ -38,6 +38,23 @@ struct StripDisplay: Equatable {
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         return NSRect(x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height)
     }
+
+    /// The same display with another usable area (the room the Dock takes, as it comes back).
+    func with(visible: CGRect) -> StripDisplay {
+        StripDisplay(id: id, uuid: uuid, name: name, frame: frame, visible: visible)
+    }
+}
+
+/// The Dock's "Automatically hide and show the Dock" (Desktop & Dock settings), through the calls
+/// the Dock itself listens to: the change shows at once, without restarting the Dock.
+enum DockAutoHide {
+    private static let services = dlopen("/System/Library/Frameworks/ApplicationServices.framework/Frameworks/HIServices.framework/HIServices", RTLD_LAZY)
+    private static let read = dlsym(services, "CoreDockGetAutoHideEnabled").map { unsafeBitCast($0, to: (@convention(c) () -> Bool).self) }
+    private static let write = dlsym(services, "CoreDockSetAutoHideEnabled").map { unsafeBitCast($0, to: (@convention(c) (Bool) -> Void).self) }
+
+    /// The setting now; nil when this macOS doesn't have the calls.
+    static var isOn: Bool? { read?() }
+    static func turn(_ on: Bool) { write?(on) }
 }
 
 /// Synchronous Accessibility calls. Each is one round trip to the app (usually well under a

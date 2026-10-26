@@ -65,6 +65,24 @@ public enum StripRules {
     }
 }
 
+// MARK: - The Dock
+
+/// "Hide the Dock": while the strip runs, the Dock hides the way it does for an app in full
+/// screen, and windows use the room it leaves.
+public enum StripDock {
+    public enum Step: Equatable, Sendable { case hide, restore, none }
+
+    /// `wanted`: the strip is running with the option on. `hidByTutto`: Tutto turned the Dock's
+    /// auto-hide on and hasn't put it back. `autoHides`: the Dock's setting now (nil when this
+    /// macOS doesn't say). A Dock you hide yourself is left alone, and one you bring back while
+    /// the strip runs isn't hidden again behind your back.
+    public static func step(wanted: Bool, hidByTutto: Bool, autoHides: Bool?) -> Step {
+        guard let autoHides else { return .none }
+        if wanted { return hidByTutto || autoHides ? .none : .hide }
+        return hidByTutto ? .restore : .none
+    }
+}
+
 // MARK: - Mac Setup
 
 /// The macOS settings that decide whether the strip behaves, read from their preference domains.

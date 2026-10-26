@@ -116,6 +116,10 @@ final class StripModule: ModuleController {
     var arrangeMode: ArrangeMode { didSet { save(arrangeMode.rawValue, Keys.arrange) } }
     /// Window pictures in the strip bar instead of app icons.
     var barPreviews: Bool { didSet { save(barPreviews, Keys.barPreviews); if barPreviews { refreshBarPictures() } } }
+    /// While the strip runs, the Dock hides the way it does for an app in full screen: windows
+    /// reach the bottom of the screen and the Dock slides up when the pointer touches it. Off by
+    /// default: it changes a macOS setting (put back when this or the strip goes off).
+    var hidesDock: Bool { didSet { save(hidesDock, Keys.hidesDock); syncDock() } }
 
     enum ArrangeMode: String, CaseIterable { case onCommand, always }
     private var arrangesAlways: Bool { arrangeMode == .always }
@@ -180,8 +184,6 @@ final class StripModule: ModuleController {
     @ObservationIgnored private var sizingBar = false
     /// Counts questions to apps about their focused window; only the latest answer counts.
     @ObservationIgnored private var focusQuestion = 0
-    /// Windows gone out of view that still need their picture taken (once the strip is still).
-    @ObservationIgnored private var unphotographed: Set<CGWindowID> = []
     @ObservationIgnored private var photographWork: DispatchWorkItem?
     @ObservationIgnored private let pictureQueue: OperationQueue = {
         let queue = OperationQueue()
@@ -246,6 +248,7 @@ final class StripModule: ModuleController {
         mouseFollowsFocus = d.bool(forKey: Keys.mouseFollowsFocus)
         arrangeMode = ArrangeMode(rawValue: d.string(forKey: Keys.arrange) ?? "") ?? .onCommand
         barPreviews = d.object(forKey: Keys.barPreviews) as? Bool ?? true
+        hidesDock = d.bool(forKey: Keys.hidesDock)
         disabledDisplays = d.stringArray(forKey: Keys.disabledDisplays) ?? []
         floatingApps = d.stringArray(forKey: Keys.floatingApps) ?? []
         if let data = d.data(forKey: Keys.layouts), let saved = try? JSONDecoder().decode([String: [StripColumn]].self, from: data) {
@@ -303,6 +306,7 @@ final class StripModule: ModuleController {
         refreshSetupChecks()
         startKeyTap()
         begin()
+        syncDock()
     }
 
     func stop() {
@@ -330,7 +334,7 @@ final class StripModule: ModuleController {
         }
         rebuild()
         configureInput()
-        photographUnseen()
+        syncDock()
         log.notice("strip started: \(self.windows.count) windows on \(self.currentKeys.count) displays")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             MainActor.assumeIsolated { self?.prepareIndicator() }
@@ -347,6 +351,13 @@ final class StripModule: ModuleController {
     private func end() {
         guard isRunning else { return }
         saveLayoutsNow()
+        // The Dock is coming back: windows that reached the bottom are let go above it.
+        if defaults.bool(forKey: Keys.dockHidden) {
+            let areas = defaults.dictionary(forKey: Keys.dockAreas) as? [String: String] ?? [:]
+            for state in strips.values {
+                if let area = areas[state.display.uuid].map(NSRectFromString) { state.display = state.display.with(visible: area) }
+            }
+        }
         releaseAllWindows()
         isRunning = false
         input?.stop()
@@ -368,6 +379,59 @@ final class StripModule: ModuleController {
         indicator.hide()
         windowCount = 0
         defaults.removeObject(forKey: Keys.parked)
+        syncDock()
+    }
+
+    // MARK: The Dock
+
+    /// Hides the Dock while the strip runs with "Hide the Dock" on, and puts it back otherwise
+    /// (only if Tutto hid it: a Dock you hide yourself stays as you set it).
+    private func syncDock() {
+        #if DEBUG
+        if onlyApps != nil { return }  // test runs leave the Dock alone
+        #endif
+        let before = StripDisplay.all()
+        switch StripDock.step(wanted: isRunning && hidesDock, hidByTutto: defaults.bool(forKey: Keys.dockHidden), autoHides: DockAutoHide.isOn) {
+        case .hide:
+            defaults.set(Dictionary(before.map { ($0.uuid, NSStringFromRect($0.visible)) }, uniquingKeysWith: { a, _ in a }), forKey: Keys.dockAreas)
+            defaults.set(true, forKey: Keys.dockHidden)
+            DockAutoHide.turn(true)
+            log.notice("Dock hidden for the strip")
+            arrangeWhenRoomChanges(from: before)
+        case .restore:
+            DockAutoHide.turn(false)
+            defaults.removeObject(forKey: Keys.dockHidden)
+            defaults.removeObject(forKey: Keys.dockAreas)
+            log.notice("Dock back")
+            if isRunning { arrangeWhenRoomChanges(from: before) }
+        case .none:
+            break
+        }
+    }
+
+    /// Once the Dock has gone (or come back) and macOS reports the new room, the strip's windows
+    /// take it, sliding into place. Checked every 0.15 s for up to 2 s (the Dock slides first).
+    private func arrangeWhenRoomChanges(from before: [StripDisplay], tries: Int = 14) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.isRunning else { return }
+                if StripDisplay.all().map(\.visible) != before.map(\.visible) || tries <= 1 {
+                    self.rebuild(arrange: true)
+                } else {
+                    self.arrangeWhenRoomChanges(from: before, tries: tries - 1)
+                }
+            }
+        }
+    }
+
+    /// A Dock the strip hid comes back if the strip didn't get to put it back (a crash, or Tutto
+    /// quit some other way). Run at launch when the strip is off.
+    static func restoreDock() {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: Keys.dockHidden) else { return }
+        DockAutoHide.turn(false)
+        defaults.removeObject(forKey: Keys.dockHidden)
+        defaults.removeObject(forKey: Keys.dockAreas)
     }
 
     // MARK: Keys
@@ -582,22 +646,6 @@ final class StripModule: ModuleController {
         tabBars.removeAll()
         decor.removeAll()
         rebuild()
-        photographUnseen()
-    }
-
-    /// Windows waiting out of view with no picture yet (Tutto just started, or they went out of
-    /// view as you left) are photographed while their Space is the one showing: from any other
-    /// Space they can't be (macOS gives a sliver of one tucked away), and ⌘Tab from a full-screen
-    /// app would show their icon instead.
-    private func photographUnseen() {
-        guard WindowPictures.canCapture else { return }
-        for key in currentKeys.values {
-            guard let state = strips[key] else { continue }
-            for id in state.strip.allWindows where windows[id]?.parked == true && WindowPictures.shared.picture(for: id) == nil {
-                unphotographed.insert(id)
-            }
-        }
-        if !unphotographed.isEmpty { photographSoon() }
     }
 
     /// Finds each display's current Space and builds or refreshes its strip. Windows are laid
@@ -1488,15 +1536,13 @@ final class StripModule: ModuleController {
     }
 
     /// A window out of view waits in a corner at its own size: a window resized while out of
-    /// view never redraws, and the switcher would show it blank. It's photographed once the
-    /// strip is still, so the switcher and the strip bar can show what's in it (the picture is
-    /// of the whole window wherever it is).
+    /// view never redraws, and the switcher would show it blank. Its picture is taken when one is
+    /// on show (the strip bar with pictures, or the ⌘Tab switcher), not as it goes: macOS says
+    /// "capturing your screen" for every picture, and it shouldn't on every switch. An older
+    /// picture of it is dropped, since it may have changed while in view.
     private func park(_ w: StripManagedWindow, in state: StripState, side: StripSide) {
         guard !w.parked else { return }
-        if WindowPictures.canCapture {
-            unphotographed.insert(w.id)
-            photographSoon()
-        }
+        WindowPictures.shared.forget(w.id)
         let others = displayList.filter { $0.uuid != state.display.uuid }.map(\.frame)
         let frame = StripParking.frame(size: w.shown.size, side: side, display: state.display.visible, others: others)
         send(w, frame, order: .positionOnly)
@@ -1540,7 +1586,7 @@ final class StripModule: ModuleController {
         #endif
         updateDecor()
         // Pictures are taken of windows at rest: the bar's are refreshed once the strip is still.
-        if !unphotographed.isEmpty || (indicator.isVisible && indicator.state.previews) { photographSoon() }
+        if indicator.isVisible && indicator.state.previews { photographSoon() }
         for w in settled where w.resized && !w.parked {
             w.resized = false
             let id = w.id
@@ -1834,11 +1880,13 @@ final class StripModule: ModuleController {
         if previews { animating.isEmpty ? refreshBarPictures() : photographSoon() }
     }
 
-    /// Fresh pictures for the strip bar: windows in view now, and ones out of view the strip
-    /// hasn't photographed yet. Two at a time, at most every 1.5 s per window.
+    /// Fresh pictures for the strip bar while it's on screen with pictures (only then: macOS
+    /// shows "capturing your screen" for each): windows in view now, and ones out of view with no
+    /// picture since they went. Two at a time, at most every 1.5 s per window.
     private func refreshBarPictures() {
         let timing = PerfLog.begin("strip bar pictures"); defer { timing.end() }
-        guard barPreviews, !sizingBar, WindowPictures.canCapture, let key = indicatorKey, let state = strips[key] else { return }
+        guard barPreviews, !sizingBar, WindowPictures.canCapture, indicator.isVisible, let key = indicatorKey,
+              let state = strips[key] else { return }
         let now = ProcessInfo.processInfo.systemUptime
         for id in state.strip.allWindows {
             guard let w = windows[id] else { continue }
@@ -1878,13 +1926,6 @@ final class StripModule: ModuleController {
         let timing = PerfLog.begin("strip photographs"); defer { timing.end() }
         photographWork = nil
         guard animating.isEmpty else { return photographSoon() }
-        let now = ProcessInfo.processInfo.systemUptime
-        // Windows back in view since are taken with the bar's pictures, or live by the switcher.
-        for id in unphotographed where windows[id]?.parked == true {
-            pictureTaken[id] = now
-            photograph(id)
-        }
-        unphotographed.removeAll()
         if indicator.isVisible, indicator.state.previews { refreshBarPictures() }
     }
 
@@ -2070,6 +2111,11 @@ final class StripModule: ModuleController {
         static let mouseFollowsFocus = "strip.mouseFollowsFocus"
         static let arrange = "strip.arrange"
         static let barPreviews = "strip.barPreviews"
+        static let hidesDock = "strip.hidesDock"
+        /// Tutto hid the Dock and hasn't put it back yet (kept, so a crash can't leave it hidden).
+        static let dockHidden = "strip.dockHidden"
+        /// Each display's usable area with the Dock showing, from before Tutto hid it.
+        static let dockAreas = "strip.dockAreas"
         static let disabledDisplays = "strip.disabledDisplays"
         static let floatingApps = "strip.floatingApps"
         static let layouts = "strip.layouts"

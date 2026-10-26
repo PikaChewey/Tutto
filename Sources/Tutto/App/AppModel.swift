@@ -61,8 +61,12 @@ final class AppModel {
     /// `quietly` (offscreen snapshots) starts modules without taking any global shortcuts.
     func launch(quietly: Bool = false) {
         hotkeys.onSuspendChange = { [weak self] suspended in self?.strip?.setShortcutsSuspended(suspended) }
-        // A window left out of view by a strip that didn't get to stop (a crash) comes back.
-        if !enabled.contains(.strip) && !quietly { StripModule.rescueParkedWindows() }
+        // A window left out of view by a strip that didn't get to stop (a crash) comes back, and so
+        // does a Dock it hid.
+        if !enabled.contains(.strip) && !quietly {
+            StripModule.rescueParkedWindows()
+            StripModule.restoreDock()
+        }
         for id in ModuleID.allCases where enabled.contains(id) { start(id) }
         // Things that live outside Tutto's process must match the switch even if it was
         // turned off in an earlier session: Finder only loads the menu extension when Archives is on.

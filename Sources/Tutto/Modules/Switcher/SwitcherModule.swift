@@ -142,6 +142,8 @@ final class SwitcherModule: ModuleController {
     private var appsUsed: [pid_t: TimeInterval] = [:]
     private var overlay: SwitcherOverlay?
     private var revealWork: DispatchWorkItem?
+    /// The switcher is on screen (it shows 0.1 s after ⌘Tab, so a quick switch never flashes it).
+    private var revealed = false
     private var heartbeat: Timer?
     private var observers: [NSObjectProtocol] = []
     private var distributedObservers: [NSObjectProtocol] = []
@@ -345,7 +347,6 @@ final class SwitcherModule: ModuleController {
         // A quick tap (⌘ already up): switch straight away, no flash of UI.
         if !modifierHeld() { return commit() }
 
-        if session.showPreviews { requestThumbnails() }
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated { self?.reveal() }
         }
@@ -376,12 +377,17 @@ final class SwitcherModule: ModuleController {
             ))
         }
         overlay?.show(near: frontWindowScreen())
+        // Pictures are taken only now the cards are on screen (until then the ones kept from
+        // the last opening show): macOS says "capturing your screen" for every one, and a quick
+        // ⌘Tab that never shows the switcher shouldn't make it.
+        revealed = true
+        if session.showPreviews { requestThumbnails() }
     }
 
     private func step(_ delta: Int) {
         lastInteraction = Date()
         session.selection = SwitcherOrder.move(session.selection, by: delta, count: session.visible.count)
-        if session.showPreviews { requestThumbnails() }
+        if session.showPreviews, revealed { requestThumbnails() }
     }
 
     private func commit() {
@@ -409,6 +415,7 @@ final class SwitcherModule: ModuleController {
 
     private func close() {
         isOpen = false
+        revealed = false
         revealWork?.cancel()
         revealWork = nil
         heartbeat?.invalidate()

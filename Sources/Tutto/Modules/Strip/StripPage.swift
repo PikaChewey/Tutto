@@ -44,7 +44,7 @@ private struct StripSettings: View {
                        isOn: $strip.showsIndicator)
                 Hairline().opacity(0.6)
                 toggle("Window pictures in the strip bar", detail: WindowPictures.canCapture
-                       ? "A picture of each window instead of its app's icon. Windows out of view show how they looked before they slid away. While you size a window (⌃⌥R, F, −, =) the bar turns to icons, so it doesn't cover what you're sizing."
+                       ? "A picture of each window instead of its app's icon, taken while the bar is up (macOS shows its screen recording mark then, and only then). While you size a window (⌃⌥R, F, −, =) the bar turns to icons, so it doesn't cover what you're sizing."
                        : "Needs Screen Recording (Permissions). Until then the bar shows app icons.",
                        isOn: $strip.barPreviews)
                 Hairline().opacity(0.6)
@@ -161,8 +161,14 @@ private struct StripSettings: View {
                              options: (strip.presets.sorted() + [1]).map { ($0, $0 >= 0.999 ? "Full" : Strip.percent($0)) })
             }
             Hairline().opacity(0.6)
-            toggle("Fill the height", detail: strip.fullHeight ? "Every window runs from the menu bar to the Dock."
+            toggle("Fill the height", detail: strip.fullHeight
+                       ? (strip.hidesDock ? "Every window runs from the menu bar to the bottom of the screen." : "Every window runs from the menu bar to the Dock.")
                        : "Windows keep the height they opened with, along the top.", isOn: $strip.fullHeight)
+            Hairline().opacity(0.6)
+            toggle("Hide the Dock", detail: DockAutoHide.isOn == nil
+                   ? "This macOS doesn't let Tutto hide it: turn on Automatically hide and show the Dock in Desktop & Dock settings, and windows take the room."
+                   : "While the strip is on, the Dock hides as it does for an app in full screen: windows reach the bottom of the screen, and the Dock slides up when the pointer touches the bottom edge. Turning this or the strip off brings it back.",
+                   isOn: $strip.hidesDock)
             Hairline().opacity(0.6)
             LabeledRow("Keep the focused window centred", detail: centringDetail) {
                 InkSegmented(selection: $strip.centring, options: [(StripCentring.never, "Never"), (.whenOverflowing, "When it overflows"), (.always, "Always")])

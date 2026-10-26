@@ -442,3 +442,24 @@ final class ShortcutTapTests: XCTestCase {
         XCTAssertTrue(box.ids.isEmpty)
     }
 }
+
+/// "Hide the Dock": Tutto hides the Dock while the strip runs and puts back only what it changed.
+final class StripDockTests: XCTestCase {
+    func testTheStripHidesAShowingDockAndPutsItBack() {
+        XCTAssertEqual(StripDock.step(wanted: true, hidByTutto: false, autoHides: false), .hide)
+        XCTAssertEqual(StripDock.step(wanted: true, hidByTutto: true, autoHides: true), .none)
+        XCTAssertEqual(StripDock.step(wanted: false, hidByTutto: true, autoHides: true), .restore)
+        XCTAssertEqual(StripDock.step(wanted: false, hidByTutto: false, autoHides: false), .none)
+    }
+
+    func testADockYouSetYourselfIsLeftAlone() {
+        // Already hidden by you: nothing to do, and nothing to put back later.
+        XCTAssertEqual(StripDock.step(wanted: true, hidByTutto: false, autoHides: true), .none)
+        XCTAssertEqual(StripDock.step(wanted: false, hidByTutto: false, autoHides: true), .none)
+        // Brought back by you while the strip runs: not hidden again behind your back.
+        XCTAssertEqual(StripDock.step(wanted: true, hidByTutto: true, autoHides: false), .none)
+        // A macOS without the calls: never touched.
+        XCTAssertEqual(StripDock.step(wanted: true, hidByTutto: false, autoHides: nil), .none)
+        XCTAssertEqual(StripDock.step(wanted: false, hidByTutto: true, autoHides: nil), .none)
+    }
+}
