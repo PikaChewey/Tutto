@@ -341,30 +341,30 @@ struct CornerMark: View {
 
 /// Template images for the menu bar (tinted by macOS for light and dark menu bars).
 enum MenuBarGlyph {
-    /// Tutto's mark: a rounded tile split into four, its bottom-right quarter filled —
-    /// four tools in one, and the corner that Trackpad Corner made a right-click.
+    /// Tutto's mark: the double t of its name, two stems hanging from one bar, the way
+    /// everything in Tutto hangs from the menu bar. 18 × 16 pt. On Retina, 1.5 pt strokes with
+    /// every edge on a pixel (3 px wide, no soft edge); on a 1x display, 1 px strokes centred on
+    /// pixels. The stems rise above the bar so it reads "tt", never π.
     static func image() -> NSImage {
-        let size = NSSize(width: 18, height: 16)
-        let image = NSImage(size: size, flipped: false) { _ in
-            let tile = NSRect(x: 1.5, y: 1, width: 15, height: 14)
-            let outline = NSBezierPath(roundedRect: tile.insetBy(dx: 0.7, dy: 0.7), xRadius: 3.6, yRadius: 3.6)
-            outline.lineWidth = 1.4
+        let image = NSImage(size: NSSize(width: 18, height: 16), flipped: false) { _ in
+            let scale = NSGraphicsContext.current?.cgContext.userSpaceToDeviceSpaceTransform.a ?? 2
+            let sharp1x = scale < 1.5
+            let path = NSBezierPath()
+            path.lineWidth = sharp1x ? 1 : 1.5
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            let stems: [CGFloat] = sharp1x ? [5.5, 12.5] : [5.75, 12.25]
+            let top: CGFloat = sharp1x ? 14.5 : 14.25, bottom: CGFloat = sharp1x ? 1.5 : 1.75
+            for x in stems {
+                path.move(to: NSPoint(x: x, y: top))
+                path.line(to: NSPoint(x: x, y: bottom + 2.6))
+                path.curve(to: NSPoint(x: x + 3, y: bottom), controlPoint1: NSPoint(x: x, y: bottom + 0.9), controlPoint2: NSPoint(x: x + 1.05, y: bottom))
+            }
+            let bar: CGFloat = sharp1x ? 10.5 : 10.25
+            path.move(to: NSPoint(x: sharp1x ? 2.5 : 2.25, y: bar))
+            path.line(to: NSPoint(x: sharp1x ? 15.5 : 15.75, y: bar))
             NSColor.black.setStroke()
-            outline.stroke()
-            NSGraphicsContext.saveGraphicsState()
-            outline.addClip()
-            // Hairline cross dividing the tile into quarters.
-            let cross = NSBezierPath()
-            cross.move(to: NSPoint(x: tile.midX, y: tile.minY))
-            cross.line(to: NSPoint(x: tile.midX, y: tile.maxY))
-            cross.move(to: NSPoint(x: tile.minX, y: tile.midY))
-            cross.line(to: NSPoint(x: tile.maxX, y: tile.midY))
-            cross.lineWidth = 1
-            NSColor.black.withAlphaComponent(0.55).setStroke()
-            cross.stroke()
-            NSColor.black.setFill()
-            NSRect(x: tile.midX, y: tile.minY, width: tile.width / 2, height: tile.height / 2).fill()
-            NSGraphicsContext.restoreGraphicsState()
+            path.stroke()
             return true
         }
         image.isTemplate = true

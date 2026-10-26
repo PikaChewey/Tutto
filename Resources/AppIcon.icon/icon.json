@@ -1,32 +1,14 @@
 {
   "fill" : {
-    "solid" : "srgb:0.04314,0.04314,0.04706,1.00000"
+    "automatic-gradient" : "srgb:0.15000,0.15000,0.16500,1.00000"
   },
   "groups" : [
     {
       "layers" : [
         {
           "glass" : true,
-          "image-name" : "corner.png",
-          "name" : "corner"
-        }
-      ],
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
-      },
-      "translucency" : {
-        "enabled" : false,
-        "value" : 0.5
-      }
-    },
-    {
-      "layers" : [
-        {
-          "glass" : true,
-          "image-name" : "tiles.png",
-          "name" : "tiles",
-          "opacity" : 0.24
+          "image-name" : "stems.png",
+          "name" : "stems"
         }
       ],
       "shadow" : {
@@ -35,6 +17,23 @@
       },
       "translucency" : {
         "enabled" : true,
+        "value" : 0.15
+      }
+    },
+    {
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "bar.png",
+          "name" : "bar"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : false,
         "value" : 0.5
       }
     }
