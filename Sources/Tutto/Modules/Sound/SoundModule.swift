@@ -153,6 +153,16 @@ final class SoundModule: ModuleController {
         applyMutes()
     }
 
+    /// Unmutes the apps that are open and leaves the ones muted while closed as they are: the menu
+    /// bar panel shows only open apps, so its "Unmute All" means those.
+    func unmuteOpen() {
+        let stillMuted = muted.subtracting(apps.map(\.bundleID))
+        guard stillMuted != muted else { return }
+        muted = stillMuted
+        defaults.set(muted.sorted(), forKey: Self.mutedKey)
+        applyMutes()
+    }
+
     /// Mutes or unmutes the frontmost app (shortcut). Returns the app and its new state.
     func toggleFrontmost() -> (name: String, muted: Bool)? {
         guard let front = NSWorkspace.shared.frontmostApplication, front.activationPolicy == .regular,

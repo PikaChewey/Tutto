@@ -35,7 +35,7 @@ Kept from the house style: posts on one object and one number, a quiet bar, glas
 
 1. **A verdict, then the numbers** (3, 4, 15). The stats card's title says how the Mac is doing in plain words, from measurements only. A problem comes first, otherwise the battery's state. Four large numbers follow (battery, CPU, memory, temperature); GPU, disk and network sit small on the same four columns beneath. Every number opens its page.
 2. **Only what you click the menu bar for** (1, 2, 15). Settings, health details, process lists, the fan modes and Trackpad Corner's editor live in the app. The rare toggles (pause clipboard history, pause Trackpad Corner) sit in the ⋯ menu.
-3. **Sound is a strip of apps, not a mixer** (5, 8, 9). Click an icon to mute it. A muted icon is greyed with a slash badge; one that's playing wears a speaker badge in the accent. "Unmute All" appears only when something is muted.
+3. **Sound is a strip of apps, not a mixer** (5, 8, 9). Click an icon to mute it. A muted icon is greyed with a slash badge; one that's playing wears a speaker badge in the accent. "Unmute All" appears only when an app shown there is muted, and unmutes just those: an app muted while it's closed stays muted (the Sound page lists those).
 4. **Shortcuts are menu rows** (12, 2). Each row has a symbol and a Title Case name on the left and the keys on the right, set the way a native menu sets them: modifiers right-aligned against a fixed column for the key. Clicking a row lights its keys one after another, as if pressed, then does what they do. The list is built from the live bindings, so it can't drift; ⋯ › Shortcuts… opens the rest.
 5. **Structure instead of captions; native; still** (4, 13, 14, 15). Soft cards, sentence-case titles, no uppercase labels, the system material. Nothing moves at rest; motion is hover and press only.
 
@@ -56,7 +56,7 @@ Kept from the house style: posts on one object and one number, a quiet bar, glas
   - numbers: 28 light with tabular digits, units 11.5 medium ink3, labels 11 ink3;
   - the line beneath: 11.5, label ink3 and value ink2;
   - rows: 12.5, with keys in 12 ink3, 4 pt apart so each can light as its own keycap.
-- **Grid:** 320 pt wide. Cards sit 10 pt in from the panel's edge and their content 12 pt inside them, so text runs from x 22 to 298; 8 pt between blocks. The stats card is four 69 pt columns shared by both of its lines. Rows are 26 pt. App icons are 30 pt and pulled 3 pt left, so their artwork (not their square) lines up with the text.
+- **Grid:** 320 pt wide. Cards sit 10 pt in from the panel's edge and their content 12 pt inside them, so text runs from x 22 to 298; 8 pt between blocks. The stats card is four 69 pt columns shared by both of its lines. Shortcut rows are 24 pt, a native menu row; the footer row is 26. App icons are 30 pt and pulled 3 pt left, so their artwork (not their square) lines up with the text.
 - **Motion:**
   - pressing a row scales it to 0.97 over 0.12 s and lights its keys 30 ms apart; the tool runs 80 ms after the last key (with Reduce Motion the keys light at once);
   - hover changes no layout;

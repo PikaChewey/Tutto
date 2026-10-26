@@ -107,13 +107,41 @@ private struct QuietLink: View {
 }
 
 /// Runs an action after the panel has closed, so it isn't in the picture or in the way, and
-/// the app you were in is the front app again.
+/// the app you were in is the front app again. The panel is closed through the menu bar icon's
+/// own button, as a click on the icon closes it: closing its window directly left SwiftUI
+/// thinking it was still open, so the next click on the icon did nothing.
 @MainActor
 private func afterPanelCloses(_ action: @escaping @MainActor () -> Void) {
-    NSApp.keyWindow?.close()
+    closePanel()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
         MainActor.assumeIsolated { action() }
     }
+}
+
+/// Closes the panel the way a click on the icon does. Opening Tutto's window doesn't close it by
+/// itself (Tutto stays the active app), so anything that opens a page closes the panel first.
+@MainActor
+private func closePanel() {
+    if let button = menuBarButton() { button.performClick(nil) } else { NSApp.keyWindow?.close() }
+}
+
+/// Opens a page of the app (or the app where you left it) and closes the panel.
+@MainActor
+private func showInApp(_ page: MainPage? = nil) {
+    closePanel()
+    if let page { MainWindowController.shared.show(page: page) } else { MainWindowController.shared.show() }
+}
+
+/// The button SwiftUI makes for the menu bar icon.
+@MainActor
+private func menuBarButton() -> NSStatusBarButton? {
+    func find(_ view: NSView) -> NSStatusBarButton? {
+        (view as? NSStatusBarButton) ?? view.subviews.lazy.compactMap(find).first
+    }
+    return NSApp.windows.lazy
+        .filter { $0.className.contains("StatusBarWindow") }
+        .compactMap { $0.contentView.flatMap(find) }
+        .first
 }
 
 // MARK: - Vitals
@@ -251,7 +279,7 @@ private struct VitalColumn: View {
 
     var body: some View {
         Button {
-            MainWindowController.shared.show(page: page)
+            showInApp(page)
         } label: {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 3) {
@@ -285,7 +313,7 @@ private struct VitalColumn: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(help)
-        .accessibilityElement(children: .ignore)
+        // On the button itself, so it stays a button (a new element with `.ignore` wasn't one).
         .accessibilityLabel(label)
         .accessibilityValue("\(value)\(unit == "%" ? " percent" : (unit == "°C" ? " degrees" : unit))")
         .accessibilityHint("Shows details")
@@ -302,7 +330,7 @@ private struct SmallReadout: View {
 
     var body: some View {
         Button {
-            MainWindowController.shared.show(page: page)
+            showInApp(page)
         } label: {
             HStack(spacing: 4) {
                 Text(label).foregroundStyle(Color.ink3)
@@ -334,8 +362,9 @@ private struct SoundCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             CardTitle(title: "Sound") {
-                if !sound.muted.isEmpty {
-                    QuietLink(title: "Unmute All") { withAnimation(Motion.micro) { sound.unmuteAll() } }
+                // Only for an app you can see muted here; apps muted while closed stay muted.
+                if sound.apps.contains(where: { sound.isMuted($0.bundleID) }) {
+                    QuietLink(title: "Unmute All") { withAnimation(Motion.micro) { sound.unmuteOpen() } }
                 }
             }
             if sound.apps.isEmpty {
@@ -501,7 +530,7 @@ private struct ShortcutRow: View {
                 Spacer(minLength: 8)
                 if let shortcut { keys(shortcut.symbols) }
             }
-            .frame(height: 26)
+            .frame(height: 24)   // a native menu row
             .hoverBackground(hovering)
             .contentShape(Rectangle())
         }
@@ -553,7 +582,7 @@ private struct PanelFooter: View {
     var body: some View {
         HStack(spacing: 6) {
             Button {
-                MainWindowController.shared.show()
+                showInApp()
             } label: {
                 Text("Open Tutto")
                     .font(.system(size: 12.5, weight: .medium))
@@ -574,8 +603,8 @@ private struct PanelFooter: View {
                 }
                 if model.clipboard != nil || model.corner != nil { Divider() }
                 Toggle("Open at Login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
-                Button("Shortcuts…") { MainWindowController.shared.show(page: .shortcuts) }
-                Button("Permissions…") { MainWindowController.shared.show(page: .permissions) }
+                Button("Shortcuts…") { showInApp(.shortcuts) }
+                Button("Permissions…") { showInApp(.permissions) }
                 Divider()
                 Button("Quit Tutto") { NSApp.terminate(nil) }
                     .keyboardShortcut("q")

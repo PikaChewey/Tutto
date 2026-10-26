@@ -13,9 +13,9 @@ import Foundation
 public struct Glance: Equatable, Sendable {
     public enum Level: Equatable, Sendable {
         case calm
-        /// Worth a look (amber).
+        /// Worth a look (a ⚠︎ ahead of the title).
         case notice
-        /// Act soon (red).
+        /// Act soon (the ⚠︎ and the detail in red).
         case alert
     }
 
