@@ -112,7 +112,32 @@ final class AppModel {
         bindShortcuts()
     }
 
+    #if DEBUG
+    /// Offscreen renders (`--snapshot`) run beside the real app and share its bundle id, files and
+    /// system registrations. Only the readings start; every other module is made (so its views
+    /// render) but never started or stopped: starting or stopping them would take over ⌘Tab, other
+    /// apps' windows or trackpad clicks, write the clipboard history, or switch the installed
+    /// Finder extension off.
+    static var rendersOffscreen = false
+    private static let readingsOnly: Set<ModuleID> = [.system, .sensors]
+    #endif
+
     private func start(_ id: ModuleID) {
+        #if DEBUG
+        if Self.rendersOffscreen, !Self.readingsOnly.contains(id) {
+            switch id {
+            case .clipboard: if clipboard == nil { clipboard = ClipboardModule(model: self) }
+            case .windows: if windows == nil { windows = WindowModule(model: self) }
+            case .screenshots: if screenshots == nil { screenshots = ScreenshotModule(model: self) }
+            case .archives: if archives == nil { archives = ArchiveModule(model: self) }
+            case .corner: if corner == nil { corner = CornerModule() }
+            case .wordCounter: if wordCounter == nil { wordCounter = WordCounterModule() }
+            case .sound: if sound == nil { sound = SoundModule() }
+            case .switcher, .strip, .system, .sensors: break
+            }
+            return
+        }
+        #endif
         switch id {
         case .system:
             if system == nil { system = SystemMonitor() }
@@ -149,6 +174,9 @@ final class AppModel {
     }
 
     private func stop(_ id: ModuleID) {
+        #if DEBUG
+        if Self.rendersOffscreen, !Self.readingsOnly.contains(id) { return }
+        #endif
         switch id {
         case .system:
             system?.stopAll()

@@ -22,10 +22,11 @@ enum Snapshots {
         let only = Set(args.dropFirst(flag + 2))
 
         let model = AppModel.shared
+        AppModel.rendersOffscreen = true
         model.launch(quietly: true)
         model.system?.begin([.load, .volumes, .energyProcesses, .cpuProcesses, .memoryProcesses])
-        model.corner?.beginWatching()
         model.sensors?.begin()
+        model.sound?.begin()   // lists apps and reads which play; mutes nothing
         // Let readings and the first `top` samples arrive.
         RunLoop.main.run(until: Date().addingTimeInterval(only.contains("fast") ? 1.5 : 5.5))
         model.corner?.applyPreview(contacts: [Contact(id: 1, x: 0.86, y: 0.14)])
@@ -150,6 +151,33 @@ struct SnapshotExtras {
             editor.document.add(Annotation(shape: .stroke([CGPoint(x: 700, y: 120), CGPoint(x: 760, y: 150), CGPoint(x: 840, y: 130),
                                                            CGPoint(x: 900, y: 170)]), color: EditorPalette.colors[4], width: 6))
             return AnyView(editor.snapshotView().frame(width: 1100, height: 760))
+        })
+        // States live readings rarely show: the stats card's title calm, worth a look and alarmed,
+        // and an app icon as it is, playing and muted.
+        extras.append(SnapshotExtras(name: "panel-states", inDefaultSet: false) { _ in
+            let glances = [Glance("On battery", "4 h 9 min left"), Glance("Working hard", "CPU 91%", level: .notice),
+                           Glance("Battery low", "18 min left", level: .alert)]
+            let icon = NSWorkspace.shared.icon(for: .applicationBundle)
+            let app = SoundApp(bundleID: "sample", name: "Sample", pid: 0, icon: icon)
+            return AnyView(VStack(spacing: 8) {
+                ForEach(glances, id: \.title) { glance in
+                    VerdictLine(glance: glance)
+                        .padding(12)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.055)))
+                }
+                HStack(spacing: 0) {
+                    ForEach(Array([(false, false), (false, true), (true, false)].enumerated()), id: \.offset) { _, state in
+                        SoundAppButton(app: app, muted: state.0, usingAudio: state.1, size: 30) {}
+                            .frame(width: 34.5, alignment: .leading)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.055)))
+            }
+            .padding(10)
+            .frame(width: 320)
+            .background(PanelMaterialStandIn()))
         })
         return extras
     }

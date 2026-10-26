@@ -100,6 +100,9 @@ public struct TemperatureSummary: Sendable, Equatable {
     /// Hottest storage sensor.
     public let ssd: Double?
 
+    /// The hottest processor or graphics sensor: what "running hot" means.
+    public var hottest: Double? { [cpuHottest, gpuHottest, socHottest].compactMap { $0 }.max() }
+
     public init(_ readings: [TemperatureReading]) {
         func values(_ group: TemperatureGroup) -> [TemperatureReading] { readings.filter { $0.group == group } }
         func average(_ list: [TemperatureReading]) -> Double? {

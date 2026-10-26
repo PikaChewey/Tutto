@@ -2,113 +2,17 @@
 //  SoundPage.swift
 //  Tutto
 //
-//  Sound in the menu bar panel (one row of app icons, click to mute) and its page in
-//  the app (every app with a switch, apps muted while closed, how it works).
+//  The app icon you click to mute (the menu bar panel's Sound card uses it) and Sound's
+//  page in the app (every app with a switch, apps muted while closed, how it works).
 //
 
 import AppKit
 import SwiftUI
 
-// MARK: - Panel row
+// MARK: - App icon
 
-/// `SOUND  [icons…]  +N`: the ⌘Tab apps, click one to mute it at the speakers.
-/// The order is fixed while the panel is open (muted, then using audio, then the rest),
-/// so icons never jump under the pointer; only their states change.
-struct SoundPanelRow: View {
-    @Bindable var sound: SoundModule
-    @State private var order: [String] = []
-
-    /// Icons that fit beside the caption in the 292 pt panel row.
-    private static let capacity = 9
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Caption("Sound")
-                    .frame(width: 44, alignment: .leading)
-                ForEach(visible) { app in
-                    SoundAppButton(app: app, muted: sound.isMuted(app.bundleID),
-                                   usingAudio: sound.usingAudio.contains(app.bundleID)) {
-                        withAnimation(Motion.micro) { sound.toggle(app) }
-                    }
-                }
-                if !overflow.isEmpty { overflowMenu }
-                Spacer(minLength: 0)
-            }
-            .frame(height: 26)
-            if let problem = sound.problem {
-                HStack(spacing: 8) {
-                    Text(problem)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.ink2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 6)
-                    if sound.access == .denied {
-                        Button("Allow") { AppModel.shared.permissions.request(.systemAudio) }
-                            .buttonStyle(OutlineButtonStyle(compact: true))
-                    }
-                }
-            }
-        }
-        .background(VisibilityReader { visible in
-            if visible { sound.begin(); fixOrder(reset: true) } else { sound.end() }
-        })
-        .onAppear { fixOrder(reset: true) }
-        .onChange(of: sound.apps.map(\.bundleID)) { fixOrder(reset: false) }
-    }
-
-    private var ordered: [SoundApp] {
-        let byID = Dictionary(sound.apps.map { ($0.bundleID, $0) }, uniquingKeysWith: { a, _ in a })
-        return order.compactMap { byID[$0] }
-    }
-
-    private var visible: [SoundApp] {
-        let all = ordered
-        return all.count <= Self.capacity ? all : Array(all.prefix(Self.capacity - 1))
-    }
-
-    private var overflow: [SoundApp] {
-        let all = ordered
-        return all.count <= Self.capacity ? [] : Array(all.dropFirst(Self.capacity - 1))
-    }
-
-    /// On open: muted first, then apps using audio, then launch order. Later launches go last.
-    private func fixOrder(reset: Bool) {
-        let ids = sound.apps.map(\.bundleID)
-        if reset || order.isEmpty {
-            func rank(_ id: String) -> Int { sound.isMuted(id) ? 0 : (sound.usingAudio.contains(id) ? 1 : 2) }
-            order = ids.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
-        } else {
-            order = order.filter(ids.contains) + ids.filter { !order.contains($0) }
-        }
-    }
-
-    private var overflowMenu: some View {
-        Menu {
-            Section("Click to mute or unmute") {
-                ForEach(overflow) { app in
-                    Toggle(isOn: Binding(get: { sound.isMuted(app.bundleID) }, set: { sound.setMuted(app.bundleID, $0) })) {
-                        Label { Text(app.name) } icon: { Image(nsImage: app.icon) }
-                    }
-                }
-            }
-        } label: {
-            Text("+\(overflow.count)")
-                .font(.geist(11, weight: .semibold))
-                .foregroundStyle(overflow.contains { sound.isMuted($0.bundleID) } ? Color.ink : Color.ink2)
-                .frame(width: 26, height: 22)
-                .contentShape(Rectangle())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("\(overflow.count) more apps")
-        .accessibilityLabel("\(overflow.count) more apps")
-    }
-}
-
-/// One app icon. Muted: dimmed and grey with a speaker-slash badge. Using audio: a dot under it.
+/// One app icon. Muted: dimmed and grey with an ink speaker-slash badge. Playing: a speaker
+/// badge in the accent colour. (Not a dot under it: that's the Dock's sign for a running app.)
 struct SoundAppButton: View {
     var app: SoundApp
     var muted: Bool
@@ -119,32 +23,22 @@ struct SoundAppButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 2) {
-                Image(nsImage: app.icon)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: size, height: size)
-                    .saturation(muted ? 0 : 1)
-                    .opacity(muted ? 0.4 : 1)
-                    .overlay(alignment: .bottomTrailing) {
-                        if muted {
-                            Image(systemName: "speaker.slash.fill")
-                                .font(.system(size: size * 0.34, weight: .bold))
-                                .foregroundStyle(Color.paper)
-                                .frame(width: size * 0.58, height: size * 0.58)
-                                .background(Circle().fill(Color.ink))
-                                .offset(x: 3, y: 3)
-                                .transition(.scale.combined(with: .opacity))
-                        }
+            Image(nsImage: app.icon)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: size, height: size)
+                .saturation(muted ? 0 : 1)
+                .opacity(muted ? 0.4 : 1)
+                .overlay(alignment: .bottomTrailing) {
+                    if muted {
+                        badge("speaker.slash.fill", fill: .ink)
+                    } else if usingAudio {
+                        badge("speaker.wave.2.fill", fill: .accentColor)
                     }
-                    .scaleEffect(hovering ? 1.08 : 1)
-                Circle()
-                    .fill(Color.ink2)
-                    .frame(width: 3, height: 3)
-                    .opacity(usingAudio && !muted ? 1 : 0)
-            }
-            .frame(width: size + 6)
-            .contentShape(Rectangle())
+                }
+                .scaleEffect(hovering ? 1.06 : 1)
+                .frame(width: size + 4, height: size + 4)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -154,6 +48,17 @@ struct SoundAppButton: View {
         .accessibilityLabel(app.name)
         .accessibilityValue(muted ? "Muted" : (usingAudio ? "Playing" : "Not muted"))
         .accessibilityHint(muted ? "Unmute" : "Mute at the speakers")
+    }
+
+    private func badge(_ symbol: String, fill: Color) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.3, weight: .bold))
+            .foregroundStyle(fill == .ink ? Color.paper : .white)
+            .frame(width: size * 0.52, height: size * 0.52)
+            .background(Circle().fill(fill))
+            .overlay(Circle().strokeBorder(Color.paper.opacity(0.9), lineWidth: 1))
+            .offset(x: 3, y: 3)
+            .transition(.scale.combined(with: .opacity))
     }
 }
 

@@ -8,7 +8,7 @@ Battery &amp; system load · temperatures &amp; fans · clipboard history · win
 Tutto is eleven everyday tools in one native Swift app that uses **13 MB of memory and no measurable CPU while idle**. Every tool can be switched off, and a tool that's off uses nothing at all.
 
 <p align="center">
-  <img src="docs/assets/panel.png" width="300" alt="Tutto's menu bar panel: battery health, cycles and power, top energy users, CPU/GPU/memory/disk, temperatures, the Trackpad Corner editor, and quick actions">
+  <img src="docs/assets/panel.png" width="300" alt="Tutto's menu bar panel: a one-line verdict on the Mac, battery, CPU, memory and temperature as large numbers with GPU, disk and network below, a strip of apps to mute, and the tools' shortcuts as clickable rows">
   &nbsp;&nbsp;
   <img src="docs/assets/clipboard.png" width="520" alt="Clipboard history palette with search, type filters, preview and keyboard hints">
 </p>
@@ -50,7 +50,7 @@ Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press th
 
 **In the screenshot editor:** with no tool, drag to make a selection box (move it, drag its handles; `↩` crops to it). `P` draw, `H` highlight, `A` arrow, `R` rectangle, `[`/`]` thickness, eight colors plus any color. `T` copies all text (in the selection if there is one) and QR codes. `Tab` copies the hovered pixel's hex color. `⌘S` saves to Downloads (configurable), `⌘C` copies, **`Esc` copies and closes**. `⌘Z` undoes.
 
-**Menu bar panel:** battery (charge, health as macOS reports it, cycles, condition, watts, top energy users), CPU, GPU, memory, disk, network speed with a small graph, temperatures, fan Auto/Custom/Max, a Sound row (click an app's icon to mute it at the speakers), compact Trackpad Corner controls (size, side, click/tap; the full drawing is in the app), and one-click capture, clipboard history, window palette and word counter buttons. Click any number for the full page in the app.
+**Menu bar panel:** only what you open the menu bar for. Its first line says how the Mac is doing (a problem if there is one, else the battery: "On battery · 4 h 9 min left"). Battery, CPU, memory and temperature are large numbers with GPU, free disk space and network speed beneath, and any of them opens its page in the app. A Sound strip shows your apps: click one to mute it at the speakers. The tools' shortcuts are rows you can click instead of pressing the keys (Capture Area, Capture and Edit, Capture Screen, Clipboard History, Snap Window, Count Words); the keys light up as if pressed and the tool opens. Settings, battery health, the fan modes and Trackpad Corner's controls live in the app; ⋯ holds pause clipboard history, pause Trackpad Corner, open at login, the Shortcuts and Permissions pages, and quit.
 
 **Sound:** click an app in the panel's Sound row (or flip its switch on the Sound page) to mute it at your speakers and headphones — Discord's pings go quiet while Firefox keeps playing. The app itself keeps playing, so screen recordings and tools listening to it still hear it. Its helper processes are muted with it, it stays muted when it restarts, and "Mute or unmute the front app" can get a shortcut.
 

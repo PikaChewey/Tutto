@@ -74,8 +74,9 @@ final class SystemMonitor {
         rootVolume = DiskReader.rootVolume()
     }
 
-    /// What the menu bar panel needs while it's open.
-    var panelFeeds: Set<SystemFeed> { hasBattery ? [.load, .energyProcesses] : [.load] }
+    /// What the menu bar panel needs while it's open: the 1 Hz numbers, no process list (that
+    /// runs `top`, and lives on the Battery, CPU and Memory pages).
+    var panelFeeds: Set<SystemFeed> { [.load] }
 
     // MARK: Watching
 

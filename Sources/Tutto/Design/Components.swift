@@ -18,13 +18,16 @@ struct Meter: View {
     var height: CGFloat = 3
     /// Turns the fill to the alert color (only for real threshold events).
     var alert = false
+    /// The fill when there's no alert (the menu bar panel uses the accent, like a native progress bar).
+    var fill: Color = .ink
+    var track: Color = .wash
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.wash)
+                Capsule().fill(track)
                 Capsule()
-                    .fill(alert ? Color.alert : Color.ink)
+                    .fill(alert ? Color.alert : fill)
                     .frame(width: max(height, geo.size.width * min(max(value, 0), 1)))
                     .opacity(value <= 0.001 ? 0 : 1)
             }

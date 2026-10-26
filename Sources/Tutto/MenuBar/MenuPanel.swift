@@ -2,102 +2,577 @@
 //  MenuPanel.swift
 //  Tutto
 //
-//  The menu bar panel: a glance at the battery, the machine, the network and the fan
-//  (with its Auto / Custom / Max control), Trackpad Corner's settings, and one-click
-//  access to every tool. Each part appears only if its module is on.
-//  Readings run only while this panel is open.
+//  The menu bar panel: what you click the menu bar for, and nothing else. How the Mac is doing
+//  (a verdict line, the four numbers people check large, GPU, disk and network small, every
+//  number a click away from its page), per-app sound, and the tools' shortcuts as rows you can
+//  click. Settings live in the app. Each part appears only if its module is on, and readings
+//  run only while the panel is open.
+//
+//  One grid: cards inset 10 pt from the panel, content 12 pt inside them (text starts at
+//  x = 22 and ends at 298), 8 pt between blocks. Hover backgrounds reach outward, so nothing
+//  moves. One accent (the system's), on meters and the playing badge; red only for alarms.
 //
 
 import AppKit
 import SwiftUI
 import TuttoKit
 
+private enum Grid {
+    static let width: CGFloat = 320
+    static let outer: CGFloat = 10
+    static let inset: CGFloat = 12
+    static let gap: CGFloat = 8
+    /// Columns in the stats card: the content width split in four.
+    static let column: CGFloat = (width - 2 * outer - 2 * inset) / 4
+}
+
 struct MenuPanel: View {
     @Bindable var model: AppModel
-    @AppStorage("panel.cornerExpanded") private var cornerExpanded = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-                .padding(.bottom, 10)
-
+        VStack(alignment: .leading, spacing: Grid.gap) {
             if let system = model.system {
-                if let battery = system.battery {
-                    BatterySummary(battery: battery, monitor: system)
-                        .padding(.bottom, 12)
-                    Hairline().padding(.bottom, 10)
-                }
-                StatsStrip(monitor: system)
-                    .padding(.bottom, 6)
-                    .watching(system, system.panelFeeds)
-                NetworkLine(monitor: system)
-                    .padding(.bottom, model.sensors == nil ? 10 : 4)
+                VitalsCard(system: system, sensors: model.sensors)
             }
-            if let sensors = model.sensors {
-                if model.system == nil { Hairline().padding(.bottom, 6) }
-                SensorsLine(sensors: sensors)
-                    .padding(.bottom, 2)
-                if let fan = sensors.fans.first {
-                    PanelFanControl(sensors: sensors, fan: fan)
-                        .padding(.bottom, 8)
-                }
-            }
-
             if let sound = model.sound, SoundModule.isSupported {
-                Hairline().padding(.bottom, 6)
-                SoundPanelRow(sound: sound)
-                    .padding(.bottom, 6)
+                SoundCard(sound: sound)
             }
-
-            if let corner = model.corner {
-                Hairline().padding(.bottom, 8)
-                CornerSection(module: corner, expanded: $cornerExpanded)
-                    .padding(.bottom, 10)
+            if !ShortcutRows.rows(model).isEmpty {
+                ShortcutsCard(model: model)
             }
-
-            if hasQuickActions {
-                Hairline().padding(.bottom, 8)
-                QuickActions(model: model)
-                    .padding(.bottom, 8)
-            }
-
             Notices(model: model)
-
-            Hairline().padding(.bottom, 6)
-            footer
+            PanelFooter(model: model)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
-        .frame(width: 320)
+        .padding(.horizontal, Grid.outer)
+        .padding(.top, Grid.outer)
+        .padding(.bottom, 6)
+        .frame(width: Grid.width)
         .fixedSize(horizontal: false, vertical: true)
-        .animation(Motion.smooth, value: cornerExpanded)
+    }
+}
+
+// MARK: - Pieces
+
+private extension View {
+    /// A group on the panel: a soft rounded surface instead of rules and captions.
+    func panelCard() -> some View {
+        padding(Grid.inset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.055)))
     }
 
-    private var hasQuickActions: Bool {
-        model.screenshots != nil || model.clipboard != nil || model.windows != nil || model.wordCounter != nil
+    /// A hover background that reaches `x` and `y` past the content, so the content stays on the grid.
+    func hoverBackground(_ on: Bool, x: CGFloat = 8, y: CGFloat = 0) -> some View {
+        padding(.horizontal, x)
+            .padding(.vertical, y)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(on ? Color.primary.opacity(0.08) : .clear))
+            .padding(.horizontal, -x)
+            .padding(.vertical, -y)
     }
+}
 
-    private var header: some View {
-        HStack(spacing: 7) {
-            Image(nsImage: MenuBarGlyph.image())
-                .renderingMode(.template)
+/// A card's title row: the title, and something quiet on the right.
+private struct CardTitle<Trailing: View>: View {
+    var title: String
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(title)
+                .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(Color.ink)
-                .accessibilityHidden(true)
-            Text("Tutto")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.ink)
-            Spacer()
+            Spacer(minLength: 8)
+            trailing
         }
-        .frame(height: 22)
+        .lineLimit(1)
+    }
+}
+
+/// Text button that brightens on hover, for the few quiet actions on the panel.
+private struct QuietLink: View {
+    var title: String
+    var action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(hovering ? Color.ink : Color.ink3)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+/// Runs an action after the panel has closed, so it isn't in the picture or in the way, and
+/// the app you were in is the front app again.
+@MainActor
+private func afterPanelCloses(_ action: @escaping @MainActor () -> Void) {
+    NSApp.keyWindow?.close()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+        MainActor.assumeIsolated { action() }
+    }
+}
+
+// MARK: - Vitals
+
+/// How the Mac is doing: the verdict as the card's title, the four numbers people check, and
+/// GPU, disk and network on the same columns underneath. Every number opens its page.
+private struct VitalsCard: View {
+    var system: SystemMonitor
+    var sensors: SensorsModule?
+
+    private enum Vital: Hashable { case battery, cpu, memory, temperature, gpu }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VerdictLine(glance: glance)
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(heroes, id: \.self) { vital in column(vital) }
+            }
+            HStack(spacing: 0) {
+                if !heroes.contains(.gpu) {
+                    SmallReadout(label: "GPU", value: "\(Format.percent(system.gpu?.utilization ?? 0))%", page: .gpu, help: "Graphics load")
+                }
+                if let volume = system.rootVolume {
+                    SmallReadout(label: "Disk", value: diskFree(volume.available), page: .disk, help: "Free space on \(volume.name)")
+                }
+                SmallReadout(label: "↓", value: Format.rate(system.networkIn), page: .network, help: "Downloading")
+                SmallReadout(label: "↑", value: Format.rate(system.networkOut), page: .network, help: "Uploading")
+            }
+        }
+        .panelCard()
+        .watching(system, system.panelFeeds)
+        .background(VisibilityReader { visible in
+            guard let sensors else { return }
+            visible ? sensors.begin() : sensors.end()
+        })
     }
 
-    private var footer: some View {
-        HStack {
-            Button("Open Tutto") { MainWindowController.shared.show() }
-                .buttonStyle(FooterButtonStyle())
+    private var glance: Glance {
+        Glance.make(battery: system.battery, cpu: system.cpu.total, memoryPressure: system.memory?.pressure,
+                    hottest: sensors?.summary?.hottest, diskFree: system.rootVolume?.available,
+                    diskUsed: system.rootVolume?.usedFraction)
+    }
+
+    private var temperature: Double? { sensors?.summary.flatMap { $0.cpuAverage ?? $0.socAverage } }
+
+    private var heroes: [Vital] {
+        var list: [Vital] = system.battery == nil ? [] : [.battery]
+        list += [.cpu, .memory]
+        if temperature != nil { list.append(.temperature) }
+        if list.count < 4 { list.insert(.gpu, at: min(2, list.count)) }
+        return Array(list.prefix(4))
+    }
+
+    /// Whole gigabytes above 10 ("96 GB"), one decimal below ("9.6 GB").
+    private func diskFree(_ bytes: Int64) -> String {
+        let gb = Double(bytes) / 1_000_000_000
+        if gb >= 1000 { return String(format: "%.1f TB", gb / 1000) }
+        return gb >= 10 ? "\(Int(gb.rounded())) GB" : String(format: "%.1f GB", gb)
+    }
+
+    @ViewBuilder
+    private func column(_ vital: Vital) -> some View {
+        switch vital {
+        case .battery:
+            let battery = system.battery
+            let percent = battery?.percent ?? 0
+            VitalColumn(label: "Battery", value: "\(percent)", unit: "%", fraction: Double(percent) / 100,
+                        alert: percent <= 10 && battery?.isPluggedIn == false, page: .battery,
+                        help: battery.map { "\($0.stateText), \($0.percent)%" } ?? "Battery",
+                        badge: battery?.isCharging == true ? "bolt.fill" : nil)
+        case .cpu:
+            VitalColumn(label: "CPU", value: Format.percent(system.cpu.total), unit: "%", fraction: system.cpu.total,
+                        page: .cpu, help: "Processor load")
+        case .memory:
+            let used = system.memory?.usedFraction ?? 0
+            VitalColumn(label: "Memory", value: Format.percent(used), unit: "%", fraction: used,
+                        alert: system.memory?.pressure == .critical, page: .memory,
+                        help: "Memory used · pressure \(system.memory?.pressure.label.lowercased() ?? "unknown")")
+        case .temperature:
+            let celsius = temperature ?? 0
+            VitalColumn(label: "Temp", value: temperature.map { "\(Int($0.rounded()))" } ?? "—", unit: "°C",
+                        fraction: (celsius - 30) / 70, alert: celsius >= 95, page: .sensors, help: fanHelp)
+        case .gpu:
+            let load = system.gpu?.utilization ?? 0
+            VitalColumn(label: "GPU", value: Format.percent(load), unit: "%", fraction: load, page: .gpu, help: "Graphics load")
+        }
+    }
+
+    private var fanHelp: String {
+        guard let fan = sensors?.fans.first else { return "Temperatures" }
+        return fan.isStopped ? "Temperatures · fan off" : "Temperatures · fan \(Format.number(Int(fan.currentRPM))) rpm"
+    }
+}
+
+/// The stats card's title: the verdict on the left, its detail on the right. A problem gets a ⚠︎
+/// ahead of it (red when it's an alarm); a calm Mac gets nothing.
+struct VerdictLine: View {
+    var glance: Glance
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            if glance.level != .calm {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(glance.level == .alert ? Color.alert : Color.ink2)
+            }
+            Text(glance.title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(Color.ink)
+            Spacer(minLength: 8)
+            if let detail = glance.detail {
+                Text(detail)
+                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .foregroundStyle(glance.level == .alert ? Color.alert : Color.ink3)
+            }
+        }
+        .lineLimit(1)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Small label, a large light number with a small unit, and a meter in the accent colour.
+/// One quarter of the card; opens its page.
+private struct VitalColumn: View {
+    var label: String
+    var value: String
+    var unit: String
+    var fraction: Double
+    var alert = false
+    var page: MainPage
+    var help: String
+    /// An SF Symbol beside the label (a bolt while the battery charges).
+    var badge: String?
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            MainWindowController.shared.show(page: page)
+        } label: {
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 3) {
+                    Text(label)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.ink3)
+                    if let badge {
+                        Image(systemName: badge)
+                            .font(.system(size: 8.5, weight: .semibold))
+                            .foregroundStyle(Color.ink3)
+                    }
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 1) {
+                    Text(value)
+                        .font(.system(size: 28, weight: .light).monospacedDigit())
+                        .foregroundStyle(alert ? Color.alert : Color.ink)
+                    Text(unit)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Color.ink3)
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                Meter(value: fraction, height: 3, alert: alert, fill: .accentColor, track: Color.primary.opacity(0.1))
+                    .padding(.top, 4)
+                    .padding(.trailing, 10)
+            }
+            .frame(width: Grid.column, alignment: .leading)
+            .hoverBackground(hovering, x: 6, y: 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue("\(value)\(unit == "%" ? " percent" : (unit == "°C" ? " degrees" : unit))")
+        .accessibilityHint("Shows details")
+    }
+}
+
+/// A label and a value in one quarter of the card, for the second line.
+private struct SmallReadout: View {
+    var label: String
+    var value: String
+    var page: MainPage
+    var help: String
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            MainWindowController.shared.show(page: page)
+        } label: {
+            HStack(spacing: 4) {
+                Text(label).foregroundStyle(Color.ink3)
+                Text(value).foregroundStyle(hovering ? Color.ink : Color.ink2)
+            }
+            .font(.system(size: 11.5).monospacedDigit())
+            .lineLimit(1)
+            .frame(width: Grid.column, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Sound
+
+/// The apps on the Mac as icons: click one to mute it at the speakers. Muted apps first, then
+/// the ones playing, then the rest in the order they opened.
+private struct SoundCard: View {
+    @Bindable var sound: SoundModule
+    @State private var order: [String] = []
+
+    /// Icons that fit across the card before the rest go into a menu.
+    private static let capacity = 8
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            CardTitle(title: "Sound") {
+                if !sound.muted.isEmpty {
+                    QuietLink(title: "Unmute All") { withAnimation(Motion.micro) { sound.unmuteAll() } }
+                }
+            }
+            if sound.apps.isEmpty {
+                Text("No apps open")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.ink3)
+                    .frame(height: 34)
+            } else {
+                HStack(spacing: 0) {
+                    ForEach(visible) { app in
+                        SoundAppButton(app: app, muted: sound.isMuted(app.bundleID), usingAudio: sound.usingAudio.contains(app.bundleID),
+                                       size: 30) {
+                            withAnimation(Motion.micro) { sound.toggle(app) }
+                        }
+                        .frame(width: 34.5, alignment: .leading)
+                    }
+                    if !overflow.isEmpty { overflowMenu }
+                    Spacer(minLength: 0)
+                }
+                // Each button is 2 pt wider than its icon, and an app icon's artwork sits about 3 pt
+                // inside its square at this size: pull the row left so the artwork lines up with the text.
+                .padding(.leading, -5)
+            }
+            if let problem = sound.problem {
+                HStack(spacing: 8) {
+                    Text(problem)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 6)
+                    if sound.access == .denied {
+                        Button("Allow") { AppModel.shared.permissions.request(.systemAudio) }
+                            .buttonStyle(OutlineButtonStyle(compact: true))
+                    }
+                }
+            }
+        }
+        .panelCard()
+        .background(VisibilityReader { visible in
+            if visible { sound.begin(); fixOrder(reset: true) } else { sound.end() }
+        })
+        .onAppear { fixOrder(reset: true) }
+        .onChange(of: sound.apps.map(\.bundleID)) { fixOrder(reset: false) }
+    }
+
+    private var ordered: [SoundApp] {
+        let byID = Dictionary(sound.apps.map { ($0.bundleID, $0) }, uniquingKeysWith: { a, _ in a })
+        return order.compactMap { byID[$0] }
+    }
+
+    private var visible: [SoundApp] {
+        let all = ordered
+        return all.count <= Self.capacity ? all : Array(all.prefix(Self.capacity - 1))
+    }
+
+    private var overflow: [SoundApp] {
+        let all = ordered
+        return all.count <= Self.capacity ? [] : Array(all.dropFirst(Self.capacity - 1))
+    }
+
+    /// On open: muted first, then apps using audio, then launch order. Later launches go last.
+    private func fixOrder(reset: Bool) {
+        let ids = sound.apps.map(\.bundleID)
+        if reset || order.isEmpty {
+            func rank(_ id: String) -> Int { sound.isMuted(id) ? 0 : (sound.usingAudio.contains(id) ? 1 : 2) }
+            order = ids.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
+        } else {
+            order = order.filter(ids.contains) + ids.filter { !order.contains($0) }
+        }
+    }
+
+    private var overflowMenu: some View {
+        Menu {
+            Section("Click to mute or unmute") {
+                ForEach(overflow) { app in
+                    Toggle(isOn: Binding(get: { sound.isMuted(app.bundleID) }, set: { sound.setMuted(app.bundleID, $0) })) {
+                        Label { Text(app.name) } icon: { Image(nsImage: app.icon) }
+                    }
+                }
+            }
+        } label: {
+            Text("+\(overflow.count)")
+                .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
+                .foregroundStyle(overflow.contains { sound.isMuted($0.bundleID) } ? Color.ink : Color.ink2)
+                .frame(width: 25, height: 25)   // the size of an icon's artwork, not its square
+                .background(Circle().fill(Color.primary.opacity(0.08)))
+                .frame(width: 34, height: 34)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("\(overflow.count) more apps")
+        .accessibilityLabel("\(overflow.count) more apps")
+    }
+}
+
+// MARK: - Shortcuts
+
+/// The tools' shortcuts, as rows: click one to do the same as pressing its keys.
+@MainActor
+enum ShortcutRows {
+    struct Row: Identifiable {
+        var action: ShortcutAction
+        var title: String
+        var symbol: String
+        var id: String { action.id }
+    }
+
+    static func rows(_ model: AppModel) -> [Row] {
+        var rows: [Row] = []
+        if model.screenshots != nil {
+            rows.append(Row(action: .captureArea, title: "Capture Area", symbol: "rectangle.dashed"))
+            rows.append(Row(action: .captureAreaEdit, title: "Capture and Edit", symbol: "pencil.and.scribble"))
+            rows.append(Row(action: .captureScreen, title: "Capture Screen", symbol: "laptopcomputer"))
+        }
+        if model.clipboard != nil { rows.append(Row(action: .clipboardHistory, title: "Clipboard History", symbol: "list.clipboard")) }
+        if model.windows != nil { rows.append(Row(action: .windowPalette, title: "Snap Window", symbol: "rectangle.split.2x1")) }
+        if model.wordCounter != nil { rows.append(Row(action: .wordCounter, title: "Count Words", symbol: ModuleID.wordCounter.symbol)) }
+        return rows
+    }
+}
+
+private struct ShortcutsCard: View {
+    var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            CardTitle(title: "Shortcuts") { EmptyView() }
+                .padding(.bottom, 4)
+            ForEach(ShortcutRows.rows(model)) { row in
+                ShortcutRow(row: row, shortcut: model.shortcuts.shortcut(for: row.action)) {
+                    afterPanelCloses { model.perform(row.action) }
+                }
+            }
+        }
+        .panelCard()
+    }
+}
+
+/// A row like a menu item: symbol and name on the left, the keys on the right the way a menu
+/// sets them (modifiers, then the key in its own column). Clicking it presses the keys you'd
+/// press: they light up one after another, then the panel closes and the tool runs.
+private struct ShortcutRow: View {
+    var row: ShortcutRows.Row
+    var shortcut: KeyShortcut?
+    var action: () -> Void
+    @State private var hovering = false
+    @State private var lit = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: press) {
+            HStack(spacing: 10) {
+                Image(systemName: row.symbol)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(hovering ? Color.ink : Color.ink2)
+                    .frame(width: 18)
+                Text(row.title)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Color.ink)
+                Spacer(minLength: 8)
+                if let shortcut { keys(shortcut.symbols) }
+            }
+            .frame(height: 26)
+            .hoverBackground(hovering)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .onHover { hovering = $0 }
+        .help(shortcut.map { "\(row.action.title) (\($0.displayString))" } ?? row.action.title)
+        .accessibilityLabel(row.title)
+        .accessibilityValue(shortcut?.spokenDescription ?? "")
+    }
+
+    /// ⇧⌘ right-aligned, then the key in a fixed column, as in a native menu. While pressed, each
+    /// key fills in turn with the accent.
+    private func keys(_ symbols: [String]) -> some View {
+        HStack(spacing: 1) {
+            ForEach(Array(symbols.enumerated()), id: \.offset) { index, symbol in
+                Text(symbol)
+                    .font(.system(size: 12))
+                    .foregroundStyle(lit > index ? Color.white : Color.ink3)
+                    .frame(minWidth: index == symbols.count - 1 ? 12 : nil)
+                    .padding(.horizontal, 1.5)
+                    .background(RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(Color.accentColor).opacity(lit > index ? 1 : 0))
+            }
+        }
+    }
+
+    /// Keys light 30 ms apart (all at once under Reduce Motion), the tool runs 80 ms after the last,
+    /// and the keys go dark once the panel has faded.
+    private func press() {
+        let count = shortcut?.symbols.count ?? 0
+        let step = reduceMotion ? 0 : 0.03
+        for index in 0..<count {
+            DispatchQueue.main.asyncAfter(deadline: .now() + step * Double(index)) {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.05)) { lit = index + 1 }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + step * Double(count) + 0.08) {
+            action()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { lit = 0 }
+        }
+    }
+}
+
+// MARK: - Footer
+
+private struct PanelFooter: View {
+    @Bindable var model: AppModel
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button {
+                MainWindowController.shared.show()
+            } label: {
+                Text("Open Tutto")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Color.ink)
+                    .frame(height: 26)
+                    .hoverBackground(hovering)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressStyle())
+            .onHover { hovering = $0 }
             Spacer()
             Menu {
+                if let clipboard = model.clipboard {
+                    Toggle("Pause Clipboard History", isOn: Binding(get: { clipboard.isPaused }, set: { clipboard.isPaused = $0 }))
+                }
+                if let corner = model.corner {
+                    Toggle("Pause Trackpad Corner", isOn: Binding(get: { !corner.isEnabled }, set: { corner.isEnabled = !$0 }))
+                }
+                if model.clipboard != nil || model.corner != nil { Divider() }
                 Toggle("Open at Login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
                 Button("Shortcuts…") { MainWindowController.shared.show(page: .shortcuts) }
                 Button("Permissions…") { MainWindowController.shared.show(page: .permissions) }
@@ -108,7 +583,7 @@ struct MenuPanel: View {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color.ink2)
-                    .frame(width: 28, height: 22)
+                    .frame(width: 26, height: 26)
                     .contentShape(Rectangle())
             }
             .menuStyle(.button)
@@ -118,113 +593,64 @@ struct MenuPanel: View {
             .help("More")
             .accessibilityLabel("More")
         }
+        .padding(.leading, Grid.inset)
+        .padding(.trailing, Grid.inset - 6)
     }
 }
 
-private struct FooterButtonStyle: ButtonStyle {
-    @State private var hovering = false
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12))
-            .foregroundStyle(hovering ? Color.ink : Color.ink2)
-            .padding(.vertical, 3)
-            .padding(.horizontal, 2)
-            .contentShape(Rectangle())
-            .onHover { hovering = $0 }
-            .opacity(configuration.isPressed ? 0.7 : 1)
-    }
-}
+// MARK: - Notices
 
-// MARK: - Battery
-
-private struct BatterySummary: View {
-    var battery: BatteryInfo
-    var monitor: SystemMonitor
+/// Only what needs the user: a permission missing for a module that's on. One line each.
+private struct Notices: View {
+    var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button {
-                MainWindowController.shared.show(page: .battery)
-            } label: {
-                HStack(alignment: .center, spacing: 12) {
-                    BatteryGlyph(level: Double(battery.percent) / 100, charging: battery.isCharging,
-                                 alert: battery.percent <= 10 && !battery.isPluggedIn)
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(alignment: .firstTextBaseline, spacing: 1) {
-                            Text("\(battery.percent)")
-                                .font(.system(size: 24, weight: .semibold).monospacedDigit())
-                                .contentTransition(.numericText(value: Double(battery.percent)))
-                            Text("%")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Color.ink3)
-                        }
-                        Text(stateLine)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.ink3)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 8)
-                    VStack(alignment: .trailing, spacing: 1) {
-                        HStack(alignment: .firstTextBaseline, spacing: 2) {
-                            Text(Format.watts(battery.powerDraw))
-                                .font(.system(size: 17, weight: .medium).monospacedDigit())
-                            Text("W")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(Color.ink3)
-                        }
-                        Caption(battery.isPluggedIn ? "system power" : "drain")
-                    }
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Battery \(battery.percent) percent, \(stateLine)")
-            .help("Battery details")
-
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 0) {
-                GridRow {
-                    Readout(caption: "Health", value: "\(battery.healthPercent)", unit: "%")
-                    Readout(caption: "Cycles", value: Format.number(battery.cycleCount))
-                    Readout(caption: "Condition", value: battery.condition ?? "—")
-                }
-            }
-
-            EnergyList(processes: monitor.energyProcesses)
+        let missing = Permission.allCases.filter { permission in
+            guard permission == .accessibility || permission == .screenRecording else { return false }
+            guard permission.modules.contains(where: { model.isEnabled($0) }) else { return false }
+            return model.permissions.isGranted(permission) == false
         }
-    }
-
-    private var stateLine: String {
-        var parts = [battery.stateText]
-        if let minutes = Format.minutes(battery.minutesToEmpty) { parts.append("\(minutes) left") }
-        if let minutes = Format.minutes(battery.minutesToFull) { parts.append("full in \(minutes)") }
-        return parts.joined(separator: " · ")
-    }
-}
-
-/// Apps using the most energy right now (Activity Monitor's Energy Impact).
-private struct EnergyList: View {
-    var processes: [ProcessSample]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Caption("Using energy")
-                Spacer()
-                Caption("impact")
-            }
-            if processes.isEmpty {
-                Text("Measuring…")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Color.ink4)
-                    .frame(height: 18 * 4, alignment: .topLeading)
-            } else {
-                ForEach(processes.prefix(4)) { process in
-                    ProcessRow(process: process, value: String(format: "%.1f", process.energyImpact))
+        if !missing.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(missing) { permission in
+                    NoticeRow(symbol: "lock", text: "\(permission.title) needed", help: permission.powers, button: "Allow") {
+                        model.permissions.request(permission)
+                    }
                 }
             }
         }
     }
 }
+
+private struct NoticeRow: View {
+    var symbol: String
+    var text: String
+    var help: String
+    var button: String
+    var action: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.ink2)
+                .frame(width: 14)
+            Text(text)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Color.ink)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Button(button, action: action)
+                .buttonStyle(InkButtonStyle(compact: true))
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, Grid.inset)
+        .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .help(help)
+    }
+}
+
+// MARK: - Shared with the app's pages
 
 struct ProcessRow: View {
     var process: ProcessSample
@@ -317,410 +743,5 @@ struct BatteryGlyph: View {
                 .frame(width: 2, height: 6)
         }
         .accessibilityHidden(true)
-    }
-}
-
-// MARK: - CPU / GPU / Memory / Disk
-
-private struct StatsStrip: View {
-    var monitor: SystemMonitor
-
-    var body: some View {
-        HStack(spacing: 0) {
-            tile("CPU", value: monitor.cpu.total, history: monitor.cpuHistory, page: .cpu)
-            divider
-            tile("GPU", value: monitor.gpu?.utilization ?? 0, history: monitor.gpuHistory, page: .gpu)
-            divider
-            tile("Memory", value: monitor.memory?.usedFraction ?? 0, history: monitor.memoryHistory, page: .memory,
-                 alert: monitor.memory?.pressure == .critical)
-            divider
-            diskTile
-        }
-        .frame(height: 50)
-    }
-
-    private var divider: some View {
-        Hairline(vertical: true).padding(.vertical, 6)
-    }
-
-    private func tile(_ caption: String, value: Double, history: [Double], page: MainPage, alert: Bool = false) -> some View {
-        Button {
-            MainWindowController.shared.show(page: page)
-        } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Caption(caption)
-                HStack(alignment: .firstTextBaseline, spacing: 1) {
-                    Text(Format.percent(value))
-                        .font(.system(size: 15, weight: .medium).monospacedDigit())
-                        .foregroundStyle(alert ? Color.alert : Color.ink)
-                    Text("%")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(Color.ink3)
-                }
-                Meter(value: value, height: 2, alert: alert)
-                    .padding(.top, 4)
-                    .frame(height: 10, alignment: .top)
-            }
-            .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("\(caption) details")
-        .accessibilityLabel("\(caption) \(Format.percent(value)) percent")
-    }
-
-    private var diskTile: some View {
-        Button {
-            MainWindowController.shared.show(page: .disk)
-        } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Caption("Disk")
-                if let volume = monitor.rootVolume {
-                    let parts = Format.diskParts(volume.available)
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text(parts.0)
-                            .font(.system(size: 15, weight: .medium).monospacedDigit())
-                        Text(parts.1)
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(Color.ink3)
-                    }
-                    Meter(value: volume.usedFraction, height: 2, alert: volume.usedFraction > 0.95)
-                        .padding(.top, 4)
-                        .frame(height: 10, alignment: .top)
-                } else {
-                    Text("—").font(.system(size: 15, weight: .medium))
-                }
-            }
-            .padding(.leading, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("Free space on \(monitor.rootVolume?.name ?? "the startup disk")")
-        .accessibilityLabel("Disk, \(monitor.rootVolume.map { Format.bytes($0.available, style: .file) } ?? "unknown") free")
-    }
-}
-
-// MARK: - Network
-
-/// Download and upload rates with the last minute of traffic. Read once a second with the
-/// other panel numbers, only while the panel is open.
-private struct NetworkLine: View {
-    var monitor: SystemMonitor
-
-    var body: some View {
-        Button {
-            MainWindowController.shared.show(page: .network)
-        } label: {
-            HStack(spacing: 10) {
-                Caption("Net")
-                rate("arrow.down", monitor.networkIn)
-                rate("arrow.up", monitor.networkOut)
-                Spacer(minLength: 4)
-                Sparkline(values: monitor.networkHistory)
-                    .frame(width: 84, height: 14)
-            }
-            .frame(height: 22)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("Network details")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Network, download \(Format.rate(monitor.networkIn)), upload \(Format.rate(monitor.networkOut))")
-    }
-
-    private func rate(_ symbol: String, _ value: Double?) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: symbol)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Color.ink3)
-            Text(Format.rate(value))
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
-                .foregroundStyle(Color.ink)
-                .lineLimit(1)
-        }
-        .frame(width: 70, alignment: .leading)
-    }
-}
-
-// MARK: - Fan
-
-/// Auto / Custom / Max for the fan, right in the panel. The helper set-up and the full fan
-/// page stay in the app.
-private struct PanelFanControl: View {
-    @Bindable var sensors: SensorsModule
-    var fan: FanReading
-    @State private var customRPM: Double = 0
-
-    private enum Choice: Hashable { case auto, custom, maximum }
-
-    private var choice: Choice {
-        switch sensors.commands[fan.index] {
-        case .none, .auto?: .auto
-        case .rpm?: .custom
-        case .maximum?: .maximum
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Caption("Fan")
-                Spacer(minLength: 6)
-                InkSegmented(selection: Binding(get: { choice }, set: { select($0) }),
-                             options: [(Choice.auto, "Auto"), (.custom, "Custom"), (.maximum, "Max")],
-                             help: { option in
-                                 switch option {
-                                 case .auto: "macOS controls the fan"
-                                 case .custom: "Hold a speed you choose"
-                                 case .maximum: "Full speed, for heavy work"
-                                 }
-                             })
-                    .fixedSize()
-            }
-            if choice == .custom {
-                HStack(spacing: 8) {
-                    Slider(value: $customRPM, in: fan.minRPM...fan.maxRPM, step: 100) { editing in
-                        if !editing { sensors.set(.rpm(customRPM), for: fan) }
-                    }
-                    .controlSize(.mini)
-                    .accessibilityLabel("Fan speed")
-                    Text("\(Format.number(Int(customRPM))) rpm")
-                        .font(.system(size: 11.5, weight: .medium).monospacedDigit())
-                        .frame(width: 70, alignment: .trailing)
-                }
-                .transition(.opacity)
-            }
-            if sensors.helperStatus != .enabled, let message = sensors.helperMessage {
-                HStack(spacing: 8) {
-                    Text(message)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.ink2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 6)
-                    Button("Set Up") { MainWindowController.shared.show(page: .sensors) }
-                        .buttonStyle(OutlineButtonStyle(compact: true))
-                }
-            }
-        }
-        .animation(Motion.snappy, value: choice)
-        .onAppear {
-            if case .rpm(let rpm)? = sensors.commands[fan.index] { customRPM = rpm }
-            else { customRPM = fan.minRPM + (fan.maxRPM - fan.minRPM) / 2 }
-        }
-    }
-
-    private func select(_ choice: Choice) {
-        switch choice {
-        case .auto: sensors.set(.auto, for: fan)
-        case .custom: sensors.set(.rpm(customRPM), for: fan)
-        case .maximum: sensors.set(.maximum, for: fan)
-        }
-    }
-}
-
-// MARK: - Trackpad Corner
-
-private struct CornerSection: View {
-    @Bindable var module: CornerModule
-    @Binding var expanded: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Button {
-                    expanded.toggle()
-                } label: {
-                    HStack(spacing: 6) {
-                        Caption("Trackpad Corner")
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(Color.ink3)
-                            .rotationEffect(.degrees(expanded ? 90 : 0))
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(expanded ? "Hide Trackpad Corner settings" : "Show Trackpad Corner settings")
-                if !module.status.isRunning || !expanded {
-                    Text(summary)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.ink3)
-                        .lineLimit(1)
-                        .transition(.opacity)
-                }
-                Spacer()
-                InkSwitch(isOn: $module.isEnabled, label: "Trackpad Corner",
-                          active: module.status.isRunning || !module.isEnabled)
-            }
-            if module.status == .needsPermission {
-                AccessibilityCard(purpose: "Trackpad Corner needs Accessibility access to turn a corner press into a right-click. It never reads what you type, and nothing leaves your Mac.")
-            } else if expanded {
-                CornerEditor(module: module, compact: true)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .animation(Motion.snappy, value: module.status)
-    }
-
-    private var summary: String {
-        if !module.status.isRunning { return module.statusText }
-        let size = module.zoneIsCustom ? "Custom" : (ZonePreset.matching(module.zone, on: module.trackpadSize)?.rawValue ?? "Custom")
-        let triggers = [module.clickEnabled ? "click" : nil, module.tapEnabled ? "tap" : nil].compactMap { $0 }.joined(separator: " + ")
-        return "\(module.zone.corner == .bottomRight ? "Right" : "Left") · \(size) · \(triggers)"
-    }
-}
-
-// MARK: - Quick actions
-
-private struct QuickActions: View {
-    var model: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
-                if model.screenshots != nil {
-                    action("Area", symbol: "rectangle.dashed", .captureArea)
-                    action("Screen", symbol: "macbook", .captureScreen)
-                    action("Edit", symbol: "pencil.and.scribble", .captureAreaEdit)
-                }
-                if model.clipboard != nil {
-                    action("History", symbol: "list.clipboard", .clipboardHistory, fullTitle: "Clipboard history")
-                }
-                if model.windows != nil {
-                    action("Snap", symbol: "rectangle.split.2x1", .windowPalette, fullTitle: "Window palette")
-                }
-                if model.wordCounter != nil {
-                    action("Words", symbol: ModuleID.wordCounter.symbol, .wordCounter, fullTitle: "Word counter")
-                }
-            }
-            if let clipboard = model.clipboard {
-                ClipboardLine(clipboard: clipboard)
-            }
-        }
-    }
-
-    private func action(_ title: String, symbol: String, _ shortcut: ShortcutAction, fullTitle: String? = nil) -> some View {
-        QuickActionButton(title: title, fullTitle: fullTitle ?? title, symbol: symbol, shortcut: model.shortcuts.shortcut(for: shortcut)) {
-            // Let the panel close first so it isn't in the screenshot or in the way.
-            NSApp.keyWindow?.close()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                MainActor.assumeIsolated { model.perform(shortcut) }
-            }
-        }
-    }
-}
-
-private struct QuickActionButton: View {
-    var title: String
-    /// For the tooltip and VoiceOver when the label is shortened to fit.
-    var fullTitle: String
-    var symbol: String
-    var shortcut: KeyShortcut?
-    var action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 5) {
-                Image(systemName: symbol)
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(Color.ink)
-                    .frame(height: 18)
-                Text(title)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Color.ink2)
-                    .lineLimit(1)
-                KeyCaps(shortcut: shortcut, compact: true)
-                    .scaleEffect(0.86)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(hovering ? Color.wash : .clear))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(PressStyle())
-        .onHover { hovering = $0 }
-        .help(shortcut.map { "\(fullTitle) (\($0.displayString))" } ?? fullTitle)
-        .accessibilityLabel(fullTitle)
-    }
-}
-
-private struct ClipboardLine: View {
-    @Bindable var clipboard: ClipboardModule
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Caption("Clipboard")
-            Text(clipboard.isPaused ? "Paused" : "\(clipboard.itemCount.formatted()) item\(clipboard.itemCount == 1 ? "" : "s")")
-                .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(Color.ink3)
-            Spacer()
-            InkSwitch(isOn: Binding(get: { !clipboard.isPaused }, set: { clipboard.isPaused = !$0 }),
-                      label: "Record clipboard history")
-                .help(clipboard.isPaused ? "Resume recording" : "Pause recording (for sensitive work)")
-        }
-        .padding(.top, 2)
-    }
-}
-
-// MARK: - Notices
-
-/// Only what needs the user: a permission missing for a module that's on. One line each.
-private struct Notices: View {
-    var model: AppModel
-
-    var body: some View {
-        let missing = Permission.allCases.filter { permission in
-            guard permission == .accessibility || permission == .screenRecording else { return false }
-            guard permission.modules.contains(where: { model.isEnabled($0) }) else { return false }
-            return model.permissions.isGranted(permission) == false
-        }
-        if !missing.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(missing) { permission in
-                    NoticeRow(symbol: "lock", text: "\(permission.title) needed", help: permission.powers, button: "Allow") {
-                        model.permissions.request(permission)
-                    }
-                }
-            }
-            .padding(.bottom, 8)
-        }
-    }
-}
-
-private struct NoticeRow: View {
-    var symbol: String
-    var text: String
-    var help: String
-    var button: String
-    var action: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Color.ink2)
-                .frame(width: 14)
-            Text(text)
-                .font(.system(size: 11.5))
-                .foregroundStyle(Color.ink)
-                .lineLimit(1)
-            Spacer(minLength: 4)
-            Button(button, action: action)
-                .buttonStyle(InkButtonStyle(compact: true))
-        }
-        .padding(.vertical, 5)
-        .padding(.horizontal, 8)
-        .background(Color.wash, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .help(help)
-    }
-}
-
-extension String {
-    var lowercasedFirst: String {
-        guard let first else { return self }
-        return first.lowercased() + dropFirst()
     }
 }
