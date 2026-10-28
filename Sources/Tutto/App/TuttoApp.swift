@@ -122,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 /// `tutto://open/<page>` shows a page of the app; `tutto://do/<action>` runs an action, for
 /// automation (Shortcuts, scripts, Stream Deck…).
-///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows screenshots archives corner wordCounter sound shortcuts permissions general
+///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows switcher strip screenshots archives corner wordCounter sound shortcuts permissions general
 ///   actions: capture-area capture-screen capture-edit clipboard windows word-counter mute-front-app quit
 @MainActor
 enum DeepLinks {
