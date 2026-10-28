@@ -92,6 +92,8 @@ final class StripIndicator {
 
     private var panel: NSPanel? { surfaces[front].panel }
     private var hideWork: DispatchWorkItem?
+    /// Lets go of the tiles' pictures a minute after the bar was last up.
+    private var releaseWork: DispatchWorkItem?
     private var watchdog: Timer?
     private var shownOn: CGDirectDisplayID?
     private var shown = false
@@ -107,6 +109,8 @@ final class StripIndicator {
     /// bar into the other one.
     func show(tiles: [StripIndicatorState.Tile], message: String?, refused: Bool, display: StripDisplay, previews: Bool, lifetime: Lifetime) {
         let timing = PerfLog.begin("bar show"); defer { timing.end() }
+        releaseWork?.cancel()
+        releaseWork = nil
         let onScreen = shown && shownOn == display.id && panel?.isVisible == true
         if onScreen, previews != state.previews, !Self.reduceMotion {
             crossfade(to: previews, tiles: tiles, message: message, refused: refused, display: display)
@@ -218,8 +222,36 @@ final class StripIndicator {
         shown = false
         onHidden?()
         fade(panel, to: 0, duration: Self.reduceMotion ? 0.04 : 0.12, curve: .easeIn) { [weak self] in
-            if self?.shown == false { panel.orderOut(nil) }
+            guard let self, !self.shown else { return }
+            panel.orderOut(nil)
+            self.releaseSoon()
         }
+    }
+
+    /// A minute after the bar was last up, both bars let go of their tiles and redraw empty, so
+    /// the pictures (and the copies their layers drew) go; the next ⌃⌥ brings fresh tiles. Used
+    /// often, the bar keeps them and stays as quick as ever.
+    private func releaseSoon() {
+        releaseWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.releasePictures() }
+        }
+        releaseWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: work)
+    }
+
+    /// Lets go of every tile now (a minute after the bar was last up, when the strip stops, or
+    /// when macOS runs short of memory). Nothing changes while the bar is up.
+    func releasePictures() {
+        releaseWork?.cancel()
+        releaseWork = nil
+        guard !shown else { return }
+        for surface in surfaces where !surface.state.tiles.isEmpty {
+            surface.state.tiles = []
+            surface.panel?.contentView?.layoutSubtreeIfNeeded()
+            surface.panel?.displayIfNeeded()
+        }
+        MemoryRelief.returnFreedPages()
     }
 
     func close() {

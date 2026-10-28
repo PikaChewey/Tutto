@@ -222,6 +222,10 @@ final class ClipboardModule: ModuleController {
 
     func paletteDidClose() {
         palette = nil  // release thumbnails and views
+        // Once they're gone, hand the freed pages back so the footprint drops too.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            MainActor.assumeIsolated { MemoryRelief.returnFreedPages() }
+        }
     }
 
     /// Puts an item back on the clipboard. Returns false if its files or image are gone.

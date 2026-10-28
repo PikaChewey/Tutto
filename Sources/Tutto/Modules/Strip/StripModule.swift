@@ -373,6 +373,11 @@ final class StripModule: ModuleController {
         currentKeys.removeAll()
         windows.removeAll()
         stalePictures.removeAll()
+        pictureTaken.removeAll()
+        arrivals.removeAll()
+        icons.removeAll()
+        WindowPictures.shared.removeAll()
+        indicator.releasePictures()
         away.removeAll()
         floating.removeAll()
         animating.removeAll()
@@ -667,6 +672,12 @@ final class StripModule: ModuleController {
         }
         currentKeys = keys
         let existing = StripAX.existingWindowIDs()
+        // Windows that floated, or were floated by hand, and have since closed (an empty list
+        // means the window server didn't answer, not that every window closed).
+        if !existing.isEmpty {
+            floating.formIntersection(existing)
+            userFloated.formIntersection(existing)
+        }
         var fresh: [StripState] = []
         for key in keys.values {
             guard let display = displays.first(where: { $0.uuid == key.display }) else { continue }
@@ -825,6 +836,9 @@ final class StripModule: ModuleController {
         animating.remove(id)
         stalePictures.remove(id)
         away[id] = nil
+        pictureTaken[id] = nil
+        arrivals[id] = nil
+        WindowPictures.shared.forget(id)
     }
 
     // MARK: Apps
@@ -1555,6 +1569,9 @@ final class StripModule: ModuleController {
         parkedChanged()
     }
 
+    /// The strip bar lets go of its tiles' pictures now (macOS is short of memory).
+    func releasePictures() { indicator.releasePictures() }
+
     /// Whether the strip has a window waiting out of view (the switcher shows its picture).
     func isParked(_ window: CGWindowID) -> Bool { windows[window]?.parked == true }
 
@@ -1920,10 +1937,11 @@ final class StripModule: ModuleController {
             let picture = WindowPictures.capture(id)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let picture else { return }
+                    // A window that closed or left the strip while it was being photographed isn't kept.
+                    guard let picture, let self, self.windows[id] != nil else { return }
                     WindowPictures.shared.store(picture, for: id)
-                    self?.stalePictures.remove(id)
-                    self?.updateIndicatorTiles()
+                    self.stalePictures.remove(id)
+                    self.updateIndicatorTiles()
                 }
             }
         }

@@ -105,7 +105,7 @@ final class ScreenshotModule: ModuleController {
                     }
                     guard let self else { return }
                     self.overlay = nil
-                    guard let selection, let image = selection.shot.image.cropping(to: selection.rect) else {
+                    guard let selection, let image = Self.detachedCrop(of: selection.shot.image, to: selection.rect) else {
                         overlay.restoreFocus()
                         return
                     }
@@ -114,6 +114,22 @@ final class ScreenshotModule: ModuleController {
                 }
             }
         }
+    }
+
+    /// The selected part as an image of its own. A crop made with `cropping(to:)` shares the whole
+    /// frozen screen's pixels (about 23 MB on a Retina display) and would keep all of them alive
+    /// while the editor or the toast holds it; a copy costs a millisecond or two. A crop of most of
+    /// the screen keeps sharing (copying it would only add a second full screen of pixels).
+    nonisolated static func detachedCrop(of image: CGImage, to rect: CGRect) -> CGImage? {
+        guard let crop = image.cropping(to: rect) else { return nil }
+        guard crop.width * crop.height * 2 < image.width * image.height,
+              let space = crop.colorSpace, space.supportsOutput,
+              let context = CGContext(data: nil, width: crop.width, height: crop.height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else {
+            return crop
+        }
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+        return context.makeImage() ?? crop
     }
 
     private func deliver(_ image: CGImage, toEditor: Bool) {

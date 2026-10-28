@@ -73,6 +73,15 @@ final class AppModel {
         if !enabled.contains(.archives) && !quietly { permissions.setFinderExtension(enabled: false) }
         if !quietly { bindShortcuts() }
         permissions.refresh()
+        MemoryRelief.start { [weak self] in self?.letGoOfPictures() }
+    }
+
+    /// Every picture kept only for speed goes (macOS is short of memory); each comes back the
+    /// next time it's shown.
+    func letGoOfPictures() {
+        switcher?.releaseCards()
+        strip?.releasePictures()
+        WindowPictures.shared.removeAll()
     }
 
     /// Checks whether the menu bar icon landed under the camera notch (macOS hides it there).
@@ -89,6 +98,7 @@ final class AppModel {
     }
 
     func shutdown() {
+        MemoryRelief.stop()
         for id in ModuleID.allCases { stop(id) }
     }
 

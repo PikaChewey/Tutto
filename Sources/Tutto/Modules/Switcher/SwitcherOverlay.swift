@@ -114,6 +114,12 @@ final class SwitcherOverlay {
         panel.setFrame(frame, display: true)
     }
 
+    /// Redraws the hidden panel once its cards are gone, so the pictures its layers drew go too.
+    func flush() {
+        panel.contentView?.layoutSubtreeIfNeeded()
+        panel.displayIfNeeded()
+    }
+
     func hide() {
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil

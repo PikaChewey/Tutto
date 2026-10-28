@@ -11,8 +11,9 @@
 //    code and modifiers and lets everything except the trigger through.
 //  - The window list is built when you press ⌘Tab (a few milliseconds) and dropped after.
 //  - Recent-window order comes from macOS's app-activation notifications, not polling.
-//  - Pictures are taken only while the switcher is open, only for cards in view, and the
-//    cache is emptied 30 seconds after it closes.
+//  - Pictures are taken only while the switcher is open, only for cards in view, at most 16
+//    are kept, and 30 seconds after it closes they go, with its cards and what the hidden
+//    overlay drew of them.
 //
 
 import AppKit
@@ -62,7 +63,7 @@ struct SwitcherItem: Identifiable, Equatable {
     }
 }
 
-/// What the switcher overlay shows. Lives only while it's open.
+/// What the switcher overlay shows: filled when it opens, emptied 30 s after it closes.
 @MainActor
 @Observable
 final class SwitcherSession {
@@ -142,6 +143,8 @@ final class SwitcherModule: ModuleController {
     private var appsUsed: [pid_t: TimeInterval] = [:]
     private var overlay: SwitcherOverlay?
     private var revealWork: DispatchWorkItem?
+    /// Empties the cards and their pictures 30 s after the switcher closes.
+    private var releaseWork: DispatchWorkItem?
     /// The switcher is on screen (it shows 0.1 s after ⌘Tab, so a quick switch never flashes it).
     private var revealed = false
     private var heartbeat: Timer?
@@ -227,9 +230,9 @@ final class SwitcherModule: ModuleController {
         observers.removeAll()
         distributedObservers.forEach { DistributedNotificationCenter.default().removeObserver($0) }
         distributedObservers.removeAll()
+        releaseCards()
         overlay?.close()
         overlay = nil
-        thumbnails.removeAll()
         icons.removeAll()
     }
 
@@ -306,6 +309,9 @@ final class SwitcherModule: ModuleController {
             tap?.mode = .idle
             return NSSound.beep()
         }
+        // Opening for real: the cards from last time are about to be replaced, not released.
+        releaseWork?.cancel()
+        releaseWork = nil
         // The card for the window you're in leads, even when what's in front is a helper surface
         // its app keeps above it (Roblox Studio, games).
         let current = SwitcherOrder.current(onScreen: WindowServer.onScreenWindows(), frontApp: frontApp?.processIdentifier,
@@ -425,6 +431,40 @@ final class SwitcherModule: ModuleController {
         session.renaming = nil
         session.query = nil
         thumbnails.forgetSoon()
+        releaseSoon()
+    }
+
+    /// 30 s after it closes the switcher lets go of its cards and their pictures, and the hidden
+    /// overlay redraws empty so the copies it drew go too (its store forgets its own then). A
+    /// ⌘Tab within the 30 s finds them all still there.
+    private func releaseSoon() {
+        releaseWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.releaseCards() }
+        }
+        releaseWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: work)
+    }
+
+    /// Lets go of every card and picture now (30 s after closing, or when macOS runs short of
+    /// memory). Nothing changes while the switcher is open.
+    func releaseCards() {
+        guard !isOpen else { return }
+        releaseWork?.cancel()
+        releaseWork = nil
+        thumbnails.removeAll()
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            session.thumbnails = [:]
+            session.all = []
+            session.visible = []
+            session.selection = 0
+            session.cardFrames = [:]
+            session.generation += 1
+        }
+        overlay?.flush()
+        MemoryRelief.returnFreedPages()
     }
 
     private func startHeartbeat() {
@@ -825,6 +865,7 @@ final class SwitcherModule: ModuleController {
         }
         recent.keep(only: existing)
         WindowElements.prune(keeping: existing)
+        thumbnails.keep(only: existing)
 
         // The rest stay reachable after the windows, the most recently used first: apps whose
         // windows are all on other Spaces (they have windows, so always), and apps with no window
@@ -925,12 +966,16 @@ final class SwitcherModule: ModuleController {
 // MARK: - Pictures of windows
 
 /// Card-sized pictures, taken on a background queue (two at a time) only while the switcher
-/// is open, and forgotten 30 s after it closes so nothing stays in memory between uses.
+/// is open, at most 16 of them (the oldest go first, and a closed window's at the next opening),
+/// and forgotten 30 s after it closes so nothing stays in memory between uses.
 @MainActor
 final class ThumbnailStore {
-    private var images: [CGWindowID: (image: NSImage, taken: Date)] = [:]
+    /// About 7 MB: the cards around the selection (14 are asked for at a time), newest kept.
+    private var images = RecentlyUsed<CGWindowID, (image: NSImage, taken: Date)>(limit: 16)
     private var inFlight = Set<CGWindowID>()
     private var forgetWork: DispatchWorkItem?
+    /// Changes whenever the pictures are dropped, so one still being taken isn't kept after.
+    private var generation = 0
     private let queue: OperationQueue = {
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 2
@@ -938,9 +983,10 @@ final class ThumbnailStore {
         queue.name = "Window switcher pictures"
         return queue
     }()
-    /// Card picture size in pixels (2x of 208 × 130 points).
-    static let pixelSize = CGSize(width: 416, height: 260)
+    /// Card picture size in pixels (2x of 208 × 130 points), the size every window picture is kept at.
+    static let pixelSize = WindowPictures.pixelSize
 
+    /// The pictures kept of `ids` (the cards of this opening).
     func cachedImages(for ids: [CGWindowID]) -> [CGWindowID: NSImage] {
         forgetWork?.cancel()
         var result: [CGWindowID: NSImage] = [:]
@@ -950,6 +996,7 @@ final class ThumbnailStore {
 
     func capture(_ ids: [CGWindowID], completion: @escaping @MainActor (CGWindowID, NSImage) -> Void) {
         forgetWork?.cancel()
+        let generation = self.generation
         for id in ids {
             if inFlight.contains(id) { continue }
             if let entry = images[id], Date().timeIntervalSince(entry.taken) < 2 { continue }
@@ -960,8 +1007,8 @@ final class ThumbnailStore {
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         self.inFlight.remove(id)
-                        guard let picture else { return }
-                        self.images[id] = (picture, Date())
+                        guard let picture, generation == self.generation else { return }
+                        self.images.set((picture, Date()), for: id)
                         completion(id, picture)
                     }
                 }
@@ -978,7 +1025,12 @@ final class ThumbnailStore {
         DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: work)
     }
 
+    /// Lets go of the pictures of windows that have closed. `existing` is every window there is
+    /// (any Space, shown by this ⌘Tab or not), not just this opening's cards.
+    func keep(only existing: Set<CGWindowID>) { images.keep(only: existing) }
+
     func removeAll() {
+        generation += 1
         queue.cancelAllOperations()
         images.removeAll()
         inFlight.removeAll()

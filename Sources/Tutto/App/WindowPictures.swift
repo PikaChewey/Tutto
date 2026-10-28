@@ -12,7 +12,9 @@
 //  neither gives the whole window. A clipped picture is never kept or shown.
 //
 //  The strip also keeps the picture it took of each window just before tucking it away,
-//  for the switcher and the strip bar. In memory only, for the most recent few dozen windows.
+//  for the switcher and the strip bar. In memory only: at most 24, a window's goes when it
+//  closes or leaves the strip, and all of them go when the strip stops or macOS runs short of
+//  memory.
 //
 
 import AppKit
@@ -28,30 +30,27 @@ private let pictureLog = Logger(subsystem: "ca.bryanyao.Tutto", category: "pictu
 final class WindowPictures {
     static let shared = WindowPictures()
 
-    private var pictures: [CGWindowID: NSImage] = [:]
-    private var order: [CGWindowID] = []
-    private let limit = 48
+    /// About 10 MB at most (416 × 260 px each): a strip seldom holds more than a dozen windows.
+    private var pictures = RecentlyUsed<CGWindowID, NSImage>(limit: 24)
 
-    func store(_ picture: NSImage, for window: CGWindowID) {
-        pictures[window] = picture
-        order.removeAll { $0 == window }
-        order.append(window)
-        if order.count > limit { pictures[order.removeFirst()] = nil }
-    }
+    func store(_ picture: NSImage, for window: CGWindowID) { pictures.set(picture, for: window) }
 
     func picture(for window: CGWindowID) -> NSImage? { pictures[window] }
 
-    func forget(_ window: CGWindowID) {
-        pictures[window] = nil
-        order.removeAll { $0 == window }
-    }
+    func forget(_ window: CGWindowID) { pictures.remove(window) }
+
+    func removeAll() { pictures.removeAll() }
+
+    /// Pictures are kept at the switcher's card size: big enough for its cards and the strip
+    /// bar's tiles (200 × 125 pt) alike, and a quarter smaller than they used to be.
+    nonisolated static let pixelSize = CGSize(width: 416, height: 260)
 
     /// Whether macOS lets Tutto take pictures of other apps' windows (Screen Recording).
     static var canCapture: Bool { CGPreflightScreenCaptureAccess() }
 
     /// The whole window now, scaled to fit `pixels` (shown at half that size in points), or nil
     /// when only part of it could be captured. Blocks for 5–80 ms; call off the main thread.
-    nonisolated static func capture(_ window: CGWindowID, fitting pixels: CGSize = CGSize(width: 480, height: 300)) -> NSImage? {
+    nonisolated static func capture(_ window: CGWindowID, fitting pixels: CGSize = pixelSize) -> NSImage? {
         let bounds = Self.bounds(of: window)
         if let image = WindowServer.capture(window), !isClipped(image, bounds) {
             note(window, "window server", image, bounds)

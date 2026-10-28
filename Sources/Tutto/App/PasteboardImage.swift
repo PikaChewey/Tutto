@@ -23,6 +23,12 @@ enum PasteboardImage {
         pasteboard.writeObjects([item])
         current = provider
     }
+
+    /// The clipboard moved on: the promise is void, so the PNG it held can go.
+    @MainActor
+    fileprivate static func finished(_ provider: LazyTIFFProvider) {
+        if current === provider { current = nil }
+    }
 }
 
 private final class LazyTIFFProvider: NSObject, NSPasteboardItemDataProvider {
@@ -35,5 +41,11 @@ private final class LazyTIFFProvider: NSObject, NSPasteboardItemDataProvider {
     func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
         guard type == .tiff, let tiff = NSBitmapImageRep(data: png)?.tiffRepresentation else { return }
         item.setData(tiff, forType: .tiff)
+    }
+
+    func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {
+        DispatchQueue.main.async { [self] in
+            MainActor.assumeIsolated { PasteboardImage.finished(self) }
+        }
     }
 }
