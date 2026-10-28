@@ -5,7 +5,7 @@ Binding for the menu bar panel, the menu bar glyph and the app icon. Sources:
 - Apple's HIG on app icons and menu bar extras, plus the Icon Composer documentation.
 - Bryan's house style: Download More RAM's and Grab's `DESIGN.md`. The house style wins where X and the house disagree.
 - Bryan on the panel. Version 1 (716 pt): "very cluttered". Version 3 (475 pt): "a bit too minimalistic … create a new mix of the old GUI and what it is currently". Version 4 is that mix.
-- Bryan on the mark: the "tt" of v3 "genuinely just looks really bad".
+- Bryan on the mark: the "tt" of v3 "genuinely just looks really bad"; of ∀, "i dont even get what it is".
 
 Other apps go unnamed here, as everywhere in Tutto.
 
@@ -84,69 +84,60 @@ Kept from the house style: posts on one object and one number, a quiet bar, glas
 
 ## 4. Identity
 
-**Mark.** ∀, the logic symbol for "for all": tutto, everything. One monoline with round caps and joins, an upside-down A. Its crossbar sits a little over a third down, so the triangle under it stays open at small sizes. No Mac app uses it. "The gold ∀" is a two-word description people can repeat, and the maths reading lands with the people who'd post it.
+**Mark.** Three sliders: the controls the panel holds. Graphite tracks filled to white knobs, the top one in the system blue, on white glass. These are the GUI's own colours: ink, grey cards and one blue for what's live, as in the panel's meters and lines. It takes two words to name ("the sliders"), and it says what Tutto is: one place for the Mac's controls. Bryan on ∀, the mark before it: "i dont even get what it is", and "why does it have a maximalist colour theme?? … doesnt match with any of the GUI".
 
 **Chosen by:**
-- **Six concepts drawn and rendered** in every macOS look, at 16/32/64 px and in the owner's real menu bar: ∀, overlapping circle and square, a pocket multi-tool, a slit of light, a lit seven-segment 8, and a prism.
-- **Three judges, each with one lens:**
-
-  | Lens | ∀'s score | ∀'s rank |
-  |---|---|---|
-  | Small sizes and the bar | 8.5 | 1st |
-  | Meaning and look-alikes | 8 | 1st |
-  | Craft | 6.4 | 4th, for strokes that were too heavy, since thinned |
-
-  ∀ had the highest total.
-- **Rejected:**
-  - the circle and square (it is Apple's own square-on-circle symbol);
-  - the slit (in the bar it reads as Ø, "nothing", and at 16 px as a red browser's O);
-  - the prism (an album cover);
-  - the multi-tool (clip-art);
-  - the 8 (a digit in the menu bar reads as a count).
+- **Three concepts in the GUI's palette only** (white glass, graphite, at most one system blue), each rendered in every macOS look, at 16/32/64 px and in the owner's real menu bar:
+  - **Levels** (chosen): three sliders. The only glyph that reads as a system symbol beside volume and Wi-Fi, and the icon shows a control everyone knows.
+  - **Panel:** the panel in miniature, a blue line over two tiles. It reads as a stats app, which Tutto is only in part, and its glyph is busy at 1x.
+  - **Tiles:** four tiles, one blue. It reads as an app launcher, close to the old four-quarter tile, and its glyph turns into four dots at menu bar size.
+- **The blue on the top row:** on the middle row the fill was a stub under the knob, and the one accent should be visible at 16 px.
 
 **Menu bar glyph:**
-- An 18 × 16 pt template image, 1.5 pt strokes with round caps and joins. The legs run on a 2:1 slope so their pixel steps are even, and the crossbar is exactly three pixels on whole pixels at 2×.
-- Measured in the real bar, its stroke matches the play and Bluetooth items (3.35 px against 3.1–3.3 px).
-- A separate 1× drawing: legs 1.4 pt, the crossbar one crisp pixel row.
+- An 18 × 16 pt template image drawn like the system's slider symbol: each line stops at its knob, a ring.
+- On Retina: 1.5 pt lines centred at y 12.75, 8.25 and 3.75, so each is three full pixel rows, with rings of 2.1 pt radius at x 11.5, 6 and 10 (the icon's levels).
+- A separate 1x drawing: 1 pt lines and 2 pt rings on pixel centres.
 
 **App icon** (`Resources/AppIcon.icon`, Icon Composer):
-- One glass group: the ∀ in amber (sRGB 1.0 / 0.68 / 0.14) with a layer-colour shadow, on an automatic ink-navy gradient (sRGB 0.02 / 0.06 / 0.20).
-- **Geometry on 1024:**
-  - centre lines 510 × 510;
-  - legs 80 px, crossbar 76 px at 36 % of the height;
-  - soft fillets in the inner corners;
-  - 10 px low for optical balance.
-
-  `scripts/make-icon-layers.swift` draws it.
-- Checked with `ictool` in the default, dark, tinted and clear looks, and at 16, 32 and 64 px. At 16 px it reads as a V with a dot of counter, which is all 9 px of ink allows.
+- **Fill:** an automatic gradient from near-white (sRGB 0.965 / 0.965 / 0.975), so the glass is white.
+- **Three groups, front to back:**
+  - knobs (glass, neutral shadow): white discs of radius 92 px with a 22 px graphite edge;
+  - fills (glass, no shadow): the top one in the system blue (sRGB 0 / 0.48 / 1.0), the others graphite (0.17 / 0.17 / 0.19);
+  - tracks (flat, no shadow): light grey (0.78 / 0.78 / 0.80).
+- **Geometry on 1024:** rows at y 328, 512 and 696; tracks from x 188 to 836, 60 px high; levels at 70, 32 and 56 %.
+- `scripts/make-icon-layers.swift` writes the whole document. Checked with `ictool` in the default, dark, tinted and clear looks, and at 16, 32 and 64 px.
 
 **Tried and rejected earlier:**
 - the four-quarter tile (the old mark, from Trackpad Corner);
 - "tt" (lettering);
+- ∀, "for all" (not understood; amber on navy matched nothing in the GUI), and the five concepts that lost to it: overlapping circle and square, a pocket multi-tool, a slit of light, a lit seven-segment 8 and a prism;
 - a coloured crossbar;
 - three stacked glass stones;
 - an ampersand.
 
 **Avoid:**
 - lettering;
+- symbols that need explaining;
+- colours the GUI doesn't use;
 - grids and tiles;
 - notch pills;
 - asterisks and starbursts;
 - dot grids;
 - capsules with a dot;
 - stacked arcs;
+- vertical bars (the owner's dictation app wears a waveform);
 - radial marks (they read as AI logos, I14).
 
 ## 5. Hero clip (15 s, 4:5, a real recording)
 
 | Time | Shot |
 |---|---|
-| 0.0 | The real menu bar with the ∀ glyph, the pointer already on it |
+| 0.0 | The real menu bar with the sliders glyph, the pointer already on it |
 | 0.3 | Click. The panel is there in one frame: "On battery · 4 h left", the battery at 64 % drawing 6.8 W, the three busiest apps, six tiles with their lines moving |
 | 3.0 | The pointer runs down the Sound strip; click a browser and it greys out with a slash |
 | 5.5 | Click "Area" in the tools: ⇧ ⌘ 2 light one after another, the panel goes, the crosshair comes up over an undimmed screen |
 | 9.0 | Cut to the footer: "31 MB · 0.1 % CPU" |
-| 11.0 | The Dock icon in light and dark; end card: "Tutto. For all of it." |
+| 11.0 | The Dock icon in light and dark; end card: "Tutto. Everything in one place." |
 
 Captions are no longer than 5 words.
 
@@ -157,6 +148,7 @@ Captions are no longer than 5 words.
   - too minimal (version 3);
   - settings in the panel;
   - lettering as a mark ("tt");
+  - a mark that needs explaining, in colours the GUI doesn't use (∀ in amber on navy);
   - grey hairline lists;
   - a wall of uppercase captions (captions live inside tiles);
   - unreadable icons;

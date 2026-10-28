@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/assets/icon.png" width="112" alt="Tutto icon"></p>
+<p align="center"><img src="docs/assets/icon.png" width="112" alt="Tutto icon: three sliders on white glass, the top one blue"></p>
 
 <h1 align="center">Tutto</h1>
 
@@ -8,7 +8,7 @@ Battery &amp; system load · temperatures &amp; fans · clipboard history · win
 Tutto is eleven everyday tools in one native Swift app that uses **13 MB of memory and no measurable CPU while idle**. Every tool can be switched off, and a tool that's off uses nothing at all.
 
 <p align="center">
-  <img src="docs/assets/panel.png" width="300" alt="Tutto's menu bar panel: its ∀ mark with a one-line verdict on the Mac, the battery with watts, health and the three busiest apps, six tiles for CPU, memory, GPU, disk, network and temperature with small line charts, a strip of apps to mute, the tools in a row with their keys, and Tutto's own memory use in the footer">
+  <img src="docs/assets/panel.png" width="300" alt="Tutto's menu bar panel: its sliders mark with a one-line verdict on the Mac, the battery with watts, health and the three busiest apps, six tiles for CPU, memory, GPU, disk, network and temperature with small line charts, a strip of apps to mute, the tools in a row with their keys, and Tutto's own memory use in the footer">
   &nbsp;&nbsp;
   <img src="docs/assets/clipboard.png" width="520" alt="Clipboard history palette with search, type filters, preview and keyboard hints">
 </p>
@@ -50,7 +50,7 @@ Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press th
 
 **In the screenshot editor:** with no tool, drag to make a selection box (move it, drag its handles; `↩` crops to it). `P` draw, `H` highlight, `A` arrow, `R` rectangle, `[`/`]` thickness, eight colors plus any color. `T` copies all text (in the selection if there is one) and QR codes. `Tab` copies the hovered pixel's hex color. `⌘S` saves to Downloads (configurable), `⌘C` copies, **`Esc` copies and closes**. `⌘Z` undoes.
 
-**Menu bar panel:** what you open the menu bar for. Tutto's mark (∀, "for all") beside how the Mac is doing in plain words: a problem if there is one, else the battery ("On battery · 4 h 9 min left"). The battery card shows the charge, the watts the Mac is drawing, the battery's health and cycles, and the three apps using the processor most (helpers counted as their app). Six tiles follow: CPU, memory, GPU, free disk space, network and temperature, each with the last minute as a line, and any of them opens its page in the app. A Sound strip shows your apps: click one to mute it at the speakers. The tools sit in one row with their keys (Area, Edit, Screen, History, Snap, Words). Click one instead of pressing the keys: they light up as if pressed and the tool opens. The footer shows what Tutto itself is using right now. Settings, battery history, the fan modes and Trackpad Corner's controls live in the app; ⋯ holds pause clipboard history, pause Trackpad Corner, open at login, the Shortcuts and Permissions pages, and quit. Readings run only while the panel is open, and no process is started for them.
+**Menu bar panel:** what you open the menu bar for. Tutto's mark (three sliders) beside how the Mac is doing in plain words: a problem if there is one, else the battery ("On battery · 4 h 9 min left"). The battery card shows the charge, the watts the Mac is drawing, the battery's health and cycles, and the three apps using the processor most (helpers counted as their app). Six tiles follow: CPU, memory, GPU, free disk space, network and temperature, each with the last minute as a line, and any of them opens its page in the app. A Sound strip shows your apps: click one to mute it at the speakers. The tools sit in one row with their keys (Area, Edit, Screen, History, Snap, Words). Click one instead of pressing the keys: they light up as if pressed and the tool opens. The footer shows what Tutto itself is using right now. Settings, battery history, the fan modes and Trackpad Corner's controls live in the app; ⋯ holds pause clipboard history, pause Trackpad Corner, open at login, the Shortcuts and Permissions pages, and quit. Readings run only while the panel is open, and no process is started for them.
 
 **Sound:** click an app in the panel's Sound row (or flip its switch on the Sound page) to mute it at your speakers and headphones — Discord's pings go quiet while Firefox keeps playing. The app itself keeps playing, so screen recordings and tools listening to it still hear it. Its helper processes are muted with it, it stays muted when it restarts, and "Mute or unmute the front app" can get a shortcut.
 
