@@ -252,14 +252,16 @@ public struct StripGeometry: Sendable {
 
 /// Where out-of-view windows wait.
 public enum StripParking {
-    /// One point of the window stays on its display, in a bottom corner: the left one for
-    /// windows off the left of the strip, the right one for the rest, unless that corner
-    /// touches another display.
+    /// One point of the window stays on its display, at its left edge for windows off the left of
+    /// the strip and its right edge for the rest (unless that side touches another display), level
+    /// with the screen. Parked in a bottom corner instead, off the screen both ways, Mission
+    /// Control shrank every window on the desktop to a thumbnail in a corner (measured: off to
+    /// the side alone, or below alone, it lays them out as usual).
     /// `display` is the display's usable area; `others` are the other displays' frames.
     public static func frame(size: CGSize, side: StripSide, display: CGRect, others: [CGRect]) -> CGRect {
         func corner(_ side: StripSide) -> CGRect {
             let x = side == .right ? display.maxX - 1 : display.minX - size.width + 1
-            return CGRect(x: x.rounded(), y: (display.maxY - 1).rounded(), width: size.width, height: size.height)
+            return CGRect(x: x.rounded(), y: display.minY.rounded(), width: size.width, height: size.height)
         }
         let preferred = corner(side)
         let other = corner(side == .left ? .right : .left)
@@ -272,11 +274,11 @@ public enum StripParking {
         return overlap(other) < overlap(preferred) ? other : preferred
     }
 
-    /// Whether `frame` is parked on `display` (as `frame(size:side:display:others:)` puts it).
+    /// Whether `frame` is parked on `display`: one point showing at its left or right edge (as
+    /// `frame(size:side:display:others:)` puts it, or in a bottom corner as earlier versions did).
     public static func isParked(_ frame: CGRect, display: CGRect, tolerance: CGFloat = 3) -> Bool {
-        let bottom = abs(frame.minY - (display.maxY - 1)) <= tolerance
         let right = abs(frame.minX - (display.maxX - 1)) <= tolerance
         let left = abs(frame.maxX - (display.minX + 1)) <= tolerance
-        return bottom && (right || left)
+        return right || left
     }
 }

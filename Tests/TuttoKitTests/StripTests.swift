@@ -348,12 +348,19 @@ final class StripGeometryTests: XCTestCase {
         let display = CGRect(x: 0, y: 25, width: 1512, height: 900)
         let size = CGSize(width: 800, height: 600)
         let right = StripParking.frame(size: size, side: .right, display: display, others: [])
-        XCTAssertEqual(right.origin, CGPoint(x: 1511, y: 924))
+        XCTAssertEqual(right.origin, CGPoint(x: 1511, y: 25))
         XCTAssertEqual(display.intersection(right).width, 1)
         let left = StripParking.frame(size: size, side: .left, display: display, others: [])
         XCTAssertEqual(left.maxX, 1)
+        XCTAssertEqual(left.minY, 25)
+        // Off to the side but level with the screen: parked in a bottom corner instead, off both
+        // ways, Mission Control shrank every window on the desktop to a thumbnail (measured).
+        XCTAssertTrue((display.minY...display.maxY).contains(right.midY))
+        XCTAssertTrue((display.minY...display.maxY).contains(left.midY))
         XCTAssertTrue(StripParking.isParked(right, display: display))
         XCTAssertTrue(StripParking.isParked(left, display: display))
+        // Windows an older version parked in a corner still count (to bring back after a crash).
+        XCTAssertTrue(StripParking.isParked(CGRect(x: 1511, y: 924, width: 800, height: 600), display: display))
         XCTAssertFalse(StripParking.isParked(CGRect(x: 10, y: 35, width: 800, height: 600), display: display))
         // An external display to the right: park in the left corner instead of spilling onto it.
         let external = CGRect(x: 1512, y: -100, width: 1920, height: 1080)
