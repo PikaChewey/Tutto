@@ -251,7 +251,6 @@ final class StripIndicator {
             surface.panel?.contentView?.layoutSubtreeIfNeeded()
             surface.panel?.displayIfNeeded()
         }
-        MemoryRelief.returnFreedPages()
     }
 
     func close() {

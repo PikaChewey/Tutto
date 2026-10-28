@@ -464,7 +464,6 @@ final class SwitcherModule: ModuleController {
             session.generation += 1
         }
         overlay?.flush()
-        MemoryRelief.returnFreedPages()
     }
 
     private func startHeartbeat() {
@@ -1036,17 +1035,14 @@ final class ThumbnailStore {
         inFlight.removeAll()
     }
 
-    /// Shrinks a full-size window picture to fit `size`, keeping its shape.
+    /// Shrinks a full-size window picture to fit `size`, keeping its shape. Its pixels live in
+    /// memory of their own (MappedImage), given back to macOS the moment the picture goes.
     nonisolated static func scaled(_ image: CGImage, to size: CGSize) -> CGImage? {
         let scale = min(size.width / CGFloat(image.width), size.height / CGFloat(image.height), 1)
         let width = max(Int(CGFloat(image.width) * scale), 1), height = max(Int(CGFloat(image.height) * scale), 1)
-        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else {
-            return nil
+        return MappedImage.make(width: width, height: height) { context in
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         }
-        context.interpolationQuality = .high
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        return context.makeImage()
     }
 }

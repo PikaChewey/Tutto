@@ -6,7 +6,8 @@
 //  window pictures for the switcher and the strip bar, the switcher's cards, the bar's tiles.
 //  They go on their own when unused (30 s after the switcher closes, a minute after the bar
 //  hides), and all at once when macOS says memory is short; each comes back the next time it's
-//  shown. After letting go, the freed pages are handed back so the footprint drops too.
+//  shown. Their pixels live in memory of their own (MappedImage), so letting go of a picture
+//  gives its memory back to macOS at once.
 //
 
 import Darwin
@@ -35,8 +36,8 @@ enum MemoryRelief {
         source = nil
     }
 
-    /// Freed picture buffers can stay in the allocator's free lists, still counted against Tutto;
-    /// this hands them back to macOS. A few milliseconds, so only after letting go of pictures.
+    /// Asks the allocator to give back what it's keeping for reuse. Under pressure only: measured
+    /// on macOS 26, it returns nothing for picture-sized blocks (MappedImage is what fixes those).
     static func returnFreedPages() {
         _ = malloc_zone_pressure_relief(nil, 0)
     }
