@@ -43,6 +43,9 @@ struct MenuPanel: View {
                 }
                 StatTiles(system: system, sensors: model.sensors)
             }
+            if let sensors = model.sensors, sensors.hasFans {
+                FanCard(sensors: sensors)
+            }
             if let sound = model.sound, SoundModule.isSupported {
                 SoundCard(sound: sound)
             }
@@ -425,7 +428,7 @@ private struct StatTiles: View {
                     StatTile(caption: "Temp", value: temperature.map { "\(Int($0.rounded()))" } ?? "—", unit: temperature == nil ? "" : "°C",
                              detail: fanText, alert: hot, page: .sensors, help: temperatureHelp,
                              spokenName: "Temperature",
-                             spokenValue: temperature.map { "\(Int($0.rounded())) degrees Celsius" + (fanText.isEmpty ? "" : ", \(fanText)") } ?? "unavailable") {
+                             spokenValue: temperature.map { "\(Int($0.rounded())) degrees Celsius" + ((sensors?.summary?.gpuAverage).map { ", graphics \(Int($0.rounded())) degrees" } ?? "") } ?? "unavailable") {
                         Meter(value: ((temperature ?? 30) - 30) / 70, height: 4, alert: hot, fill: .accentColor, track: Color.primary.opacity(0.1))
                             .frame(height: 4)
                             .frame(maxHeight: .infinity, alignment: .bottom)
@@ -461,14 +464,16 @@ private struct StatTiles: View {
 
     private var temperature: Double? { sensors?.summary.flatMap { $0.cpuAverage ?? $0.socAverage } }
 
+    /// The graphics chip's temperature beside the processor's (the fans have a card of their own).
     private var fanText: String {
-        guard let fan = sensors?.fans.first else { return "" }
-        return fan.isStopped ? "fan off" : "\(Format.number(Int(fan.currentRPM))) rpm"
+        guard let gpu = sensors?.summary?.gpuAverage else { return "" }
+        return "GPU \(Int(gpu.rounded()))°"
     }
 
     private var temperatureHelp: String {
         guard temperature != nil else { return "No temperature sensor could be read on this Mac" }
-        return ["Processor temperature", fanText].filter { !$0.isEmpty }.joined(separator: " · ")
+        return ["Processor temperature", sensors?.summary?.gpuAverage.map { "graphics \(Int($0.rounded())) °C" } ?? ""]
+            .filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
 
@@ -551,6 +556,102 @@ private struct StatTile<Graph: View>: View {
 
 /// The apps on the Mac as icons: click one to mute it at the speakers. Muted apps first, then
 /// the ones playing, then the rest in the order they opened.
+// MARK: - Fan
+
+/// Auto, Custom or Max for the fans, right in the panel (Bryan: "very useful and convenient to have
+/// there"). Every fan follows the one choice; the helper set-up and the full fan page are in the app.
+private struct FanCard: View {
+    @Bindable var sensors: SensorsModule
+    @State private var customRPM: Double = 0
+
+    private enum Choice: Hashable { case auto, custom, maximum }
+
+    private var fan: FanReading? { sensors.fans.first }
+
+    private var choice: Choice {
+        switch fan.flatMap({ sensors.commands[$0.index] }) {
+        case .none, .auto?: .auto
+        case .rpm?: .custom
+        case .maximum?: .maximum
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Fan")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Color.ink)
+                Text(speed)
+                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .foregroundStyle(Color.ink3)
+                    .contentTransition(.identity)
+                Spacer(minLength: 6)
+                InkSegmented(selection: Binding(get: { choice }, set: { select($0) }),
+                             options: [(Choice.auto, "Auto"), (.custom, "Custom"), (.maximum, "Max")])
+                    .fixedSize()
+                    .help("Auto: macOS controls the fan · Custom: hold a speed you choose · Max: full speed, for heavy work")
+            }
+            if choice == .custom, let fan {
+                HStack(spacing: 8) {
+                    Slider(value: $customRPM, in: fan.minRPM...fan.maxRPM, step: 100) { editing in
+                        if !editing { apply(.rpm(customRPM)) }
+                    }
+                    .controlSize(.mini)
+                    .accessibilityLabel("Fan speed")
+                    Text("\(Format.number(Int(customRPM))) rpm")
+                        .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                        .foregroundStyle(Color.ink2)
+                        .frame(width: 70, alignment: .trailing)
+                }
+                .transition(.opacity)
+            }
+            // Why a choice didn't take: the helper isn't set up, or it answered with an error.
+            if let message = sensors.helperMessage {
+                HStack(spacing: 8) {
+                    Text(message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 6)
+                    if sensors.helperStatus != .enabled {
+                        Button("Set Up") { afterPanelCloses { MainWindowController.shared.show(page: .sensors) } }
+                            .buttonStyle(OutlineButtonStyle(compact: true))
+                    }
+                }
+            }
+        }
+        .panelCard()
+        .animation(Motion.snappy, value: choice)
+        .background(VisibilityReader { visible in visible ? sensors.begin() : sensors.end() })
+        .onAppear {
+            if let fan, case .rpm(let rpm)? = sensors.commands[fan.index] { customRPM = rpm }
+            else if let fan { customRPM = fan.minRPM + (fan.maxRPM - fan.minRPM) / 2 }
+        }
+        .onChange(of: fan?.maxRPM) {
+            if let fan, customRPM == 0 { customRPM = fan.minRPM + (fan.maxRPM - fan.minRPM) / 2 }
+        }
+    }
+
+    private var speed: String {
+        guard let fan else { return "" }
+        return fan.isStopped ? "Off" : "\(Format.number(Int(fan.currentRPM))) rpm"
+    }
+
+    private func select(_ choice: Choice) {
+        switch choice {
+        case .auto: apply(.auto)
+        case .custom: apply(.rpm(customRPM))
+        case .maximum: apply(.maximum)
+        }
+    }
+
+    /// Every fan gets the same choice (a custom speed is clamped to each fan's own range).
+    private func apply(_ command: FanCommand) {
+        for fan in sensors.fans { sensors.set(command, for: fan) }
+    }
+}
+
 private struct SoundCard: View {
     @Bindable var sound: SoundModule
     @State private var order: [String] = []
@@ -896,14 +997,16 @@ private struct WindowModeSwitch: View {
         }
         .padding(2)
         .background(Capsule().fill(Color.primary.opacity(0.06)))
-        .help("Windows side by side on the strip, or every window full (⌃⌥⇧F)")
+        .disabled(strip.isSwitchingWindows)
+        .help("Windows side by side on the strip, or every window in full screen as its green button does (⌃⌥⇧F)")
     }
 
     private func option(_ title: String, full: Bool) -> some View {
         let selected = strip.fullWindows == full
         return Button {
             guard !selected else { return }
-            withAnimation(Motion.micro) { strip.setFullWindows(full) }
+            // Windows slide into Spaces of their own (or back): the panel goes first.
+            afterPanelCloses { strip.setFullWindows(full) }
         } label: {
             Text(title)
                 .font(.system(size: 11, weight: selected ? .semibold : .regular))

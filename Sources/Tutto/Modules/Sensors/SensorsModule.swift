@@ -11,8 +11,11 @@
 
 import AppKit
 import Observation
+import os
 import ServiceManagement
 import TuttoKit
+
+private let fanLog = Logger(subsystem: "ca.bryanyao.Tutto", category: "fans")
 
 @MainActor
 @Observable
@@ -116,6 +119,7 @@ final class SensorsModule {
 
     private func apply(_ command: FanCommand, to fan: FanReading) {
         refreshHelperStatus()
+        fanLog.notice("fan \(fan.index): \(String(describing: command), privacy: .public) asked; helper status \(self.helperStatus.rawValue)")
         guard helperStatus == .enabled else {
             commands[fan.index] = nil
             helperMessage = helperStatus == .requiresApproval
@@ -126,12 +130,14 @@ final class SensorsModule {
         let arguments = command.helperArguments(for: fan)
         isApplying = true
         helper { [weak self] error in
+            fanLog.error("fan helper unreachable: \(error.localizedDescription, privacy: .public)")
             MainActor.assumeIsolated {
                 self?.isApplying = false
                 self?.commands[fan.index] = nil
                 self?.helperMessage = "Couldn't reach the fan helper: \(error.localizedDescription)"
             }
         }?.setFan(fan.index, mode: arguments.mode, rpm: arguments.rpm) { [weak self] status, message in
+            fanLog.notice("fan \(fan.index): helper answered \(status) \(message ?? "", privacy: .public)")
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else { return }

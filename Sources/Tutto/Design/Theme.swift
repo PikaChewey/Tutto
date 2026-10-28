@@ -136,7 +136,8 @@ struct InkSwitch: View {
 struct InkSegmented<Value: Hashable>: View {
     @Binding var selection: Value
     var options: [(value: Value, title: String)]
-    var help: (Value) -> String = { _ in "" }
+    /// A tooltip per option (or one on the whole control, from outside).
+    var help: ((Value) -> String)? = nil
     /// Spoken names, when the visible titles are abbreviations.
     var spoken: (Value) -> String? = { _ in nil }
     @Namespace private var pill
@@ -161,14 +162,24 @@ struct InkSegmented<Value: Hashable>: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .help(help(option.value))
+                .modifier(PerOptionHelp(text: help?(option.value)))
                 .accessibilityLabel(spoken(option.value) ?? option.title)
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
         .padding(2)
         .background(Capsule().fill(Color.wash))
-        .overlay(Capsule().strokeBorder(Color.hairline, lineWidth: 1))
+        // The outline is drawn over the options and took their clicks: a mouse click on the fan card's
+        // Max did nothing while an Accessibility press worked (measured). It only draws.
+        .overlay(Capsule().strokeBorder(Color.hairline, lineWidth: 1).allowsHitTesting(false))
+    }
+}
+
+/// A segmented option's own tooltip, only when there is one.
+private struct PerOptionHelp: ViewModifier {
+    var text: String?
+    func body(content: Content) -> some View {
+        if let text, !text.isEmpty { content.help(text) } else { content }
     }
 }
 
@@ -199,7 +210,7 @@ struct InkStepper: View {
         }
         .frame(height: 24)
         .background(Capsule().fill(Color.wash))
-        .overlay(Capsule().strokeBorder(editing ? Color.ink4 : Color.hairline, lineWidth: 1))
+        .overlay(Capsule().strokeBorder(editing ? Color.ink4 : Color.hairline, lineWidth: 1).allowsHitTesting(false))
         .onAppear { text = "\(value)" }
         .onChange(of: value) { _, newValue in if !editing { text = "\(newValue)" } }
         .accessibilityElement(children: .combine)
