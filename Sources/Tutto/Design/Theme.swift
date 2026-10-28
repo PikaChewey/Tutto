@@ -341,30 +341,32 @@ struct CornerMark: View {
 
 /// Template images for the menu bar (tinted by macOS for light and dark menu bars).
 enum MenuBarGlyph {
-    /// Tutto's mark: the double t of its name, two stems hanging from one bar, the way
-    /// everything in Tutto hangs from the menu bar. 18 × 16 pt. On Retina, 1.5 pt strokes with
-    /// every edge on a pixel (3 px wide, no soft edge); on a 1x display, 1 px strokes centred on
-    /// pixels. The stems rise above the bar so it reads "tt", never π.
+    /// Tutto's mark: ∀, the logic symbol for "for all" (tutto, everything). 18 × 16 pt, round caps
+    /// and joins. On Retina, 1.5 pt strokes like the system's own items, the legs on a 2:1 slope so
+    /// their steps are even, and the crossbar exactly three pixels on whole pixels; on a 1x display,
+    /// legs a touch over a pixel and the crossbar one crisp row.
     static func image() -> NSImage {
         let image = NSImage(size: NSSize(width: 18, height: 16), flipped: false) { _ in
             let scale = NSGraphicsContext.current?.cgContext.userSpaceToDeviceSpaceTransform.a ?? 2
-            let sharp1x = scale < 1.5
-            let path = NSBezierPath()
-            path.lineWidth = sharp1x ? 1 : 1.5
-            path.lineCapStyle = .round
-            path.lineJoinStyle = .round
-            let stems: [CGFloat] = sharp1x ? [5.5, 12.5] : [5.75, 12.25]
-            let top: CGFloat = sharp1x ? 14.5 : 14.25, bottom: CGFloat = sharp1x ? 1.5 : 1.75
-            for x in stems {
-                path.move(to: NSPoint(x: x, y: top))
-                path.line(to: NSPoint(x: x, y: bottom + 2.6))
-                path.curve(to: NSPoint(x: x + 3, y: bottom), controlPoint1: NSPoint(x: x, y: bottom + 0.9), controlPoint2: NSPoint(x: x + 1.05, y: bottom))
-            }
-            let bar: CGFloat = sharp1x ? 10.5 : 10.25
-            path.move(to: NSPoint(x: sharp1x ? 2.5 : 2.25, y: bar))
-            path.line(to: NSPoint(x: sharp1x ? 15.5 : 15.75, y: bar))
             NSColor.black.setStroke()
-            path.stroke()
+            let legs = NSBezierPath(), bar = NSBezierPath()
+            for path in [legs, bar] {
+                path.lineCapStyle = .round
+                path.lineJoinStyle = .round
+            }
+            if scale >= 1.5 {
+                legs.lineWidth = 1.5
+                bar.lineWidth = 1.5
+                legs.move(to: NSPoint(x: 3.25, y: 13.75)); legs.line(to: NSPoint(x: 9, y: 2.25)); legs.line(to: NSPoint(x: 14.75, y: 13.75))
+                bar.move(to: NSPoint(x: 5.25, y: 9.75)); bar.line(to: NSPoint(x: 12.75, y: 9.75))
+            } else {
+                legs.lineWidth = 1.4
+                bar.lineWidth = 1
+                legs.move(to: NSPoint(x: 3.7, y: 13.3)); legs.line(to: NSPoint(x: 9, y: 2.7)); legs.line(to: NSPoint(x: 14.3, y: 13.3))
+                bar.move(to: NSPoint(x: 5.6, y: 9.5)); bar.line(to: NSPoint(x: 12.4, y: 9.5))
+            }
+            legs.stroke()
+            bar.stroke()
             return true
         }
         image.isTemplate = true
