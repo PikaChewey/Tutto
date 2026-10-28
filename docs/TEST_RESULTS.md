@@ -112,7 +112,11 @@ Run against the release build launched from `build/`, driven with real HID event
 | Panel accessibility | Every interactive element in the open panel through Accessibility | ✅ 19, none without a name. Found and fixed: the four large numbers weren't buttons to VoiceOver |
 | Capture overlay brightness | ⌘⇧2 with the pointer on the menu bar; a screenshot before and one with the overlay, compared per pixel; then a drag held while screenshotting | ✅ build 82: mean 38.5 → 31.6, every pixel darker (the bug); build 86: 34.2 → 34.5, 0.5 % of pixels differ (a window's 1-px rim). Dragging: inside the box 41.6 → 80.2 (white at 18 %), outside 29.7 → 30.0 |
 | Identity | The status item captured where it sits in the menu bar; the installed app's icon as Finder draws it | ✅ "tt" between the system's play and Bluetooth items at their weight; the new icon at 16–1024 px |
-| Performance | See [PERFORMANCE.md](PERFORMANCE.md) | ✅ all idle budgets |
+| Identity, round 3 (2026-10-28) | The three-sliders mark: the status item captured in the real menu bar, the installed app's icon as Finder draws it, the compiled icon set | ✅ glyph beside the play item, lines three full pixel rows (2.76 px of ink at the bar's tint); Finder icon and icon set show the sliders on white glass |
+| Capture and Edit key (2026-10-28) | ⌘⇧` and ⌘` posted at the HID level (marked), Esc after each | ✅ ⌘⇧` → the capture overlay (1512 × 982, nothing captured); ⌘` alone → the switcher with the front app's windows |
+| Strip · Full (2026-10-28) | The panel footer's switch clicked (Full, then Strip) on Desktop 1's strip with two test windows; every window's frame read before and after | ✅ every window full width (focused in view, the rest parked), then the test windows back at 66 % and 50 % and the full-width ones still full; `strip.fullWindows` 1 then 0 |
+| Memory soak (2026-10-28) | Build 93 after the picture fixes: each tool used 30 times with marked events, footprint every 10, then 60/90 s settle; `heap`/`footprint` | ✅ flat per tool (panel 62.6 → 62.5, switcher 62.5 → 62.1, strip 62.1 → 62.5, clipboard → 65.4, capture and palette back to ~65 within 20 s); settles at 65.6 MB. ⚠️ above PERF-3's 45 MB, and the main window's pages add ~30 MB (open item) |
+| Performance | See [PERFORMANCE.md](PERFORMANCE.md) | ✅ CPU, wake-up and panel budgets; ⚠️ memory after use is above PERF-3 (see the soak row) |
 
 ## Not yet verified on device (and why)
 

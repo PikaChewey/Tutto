@@ -10,7 +10,7 @@ Tools: `scripts/measure.sh` (CPU % = CPU-time delta from `ps` over wall time; fo
 |---|---|---|---|
 | PERF-1 | Idle, all modules on, panel closed: CPU ≤ 0.10 % | **0.011 %** (90 s, user away) | ✅ |
 | PERF-2 | Idle wake-ups ≤ 1 /s | **0.05 /s** | ✅ |
-| PERF-3 | Idle memory footprint ≤ 45 MB | **13 MB** before the panel is first opened, **30 MB** after | ✅ |
+| PERF-3 | Idle memory footprint ≤ 45 MB | **17–21 MB** fresh; **62–66 MB** once every tool has been used (flat after that); the main window's pages add ~30 MB (2026-10-28) | ⚠️ not met after use (see REQUIREMENTS PERF-3) |
 | PERF-4 | All modules off: CPU ≤ 0.02 %, wake-ups ≤ 0.5 /s | **0 %**, **0.02 /s**, 13 MB | ✅ |
 | PERF-5 | Menu bar panel open (1 Hz updates): CPU ≤ 3 % | **1.5 %**, 32 MB, 0.67 wake-ups/s (30 s) | ✅ (after fix, see below) |
 | PERF-6 | Lighter than the baseline apps combined | see comparison | ✅ |
