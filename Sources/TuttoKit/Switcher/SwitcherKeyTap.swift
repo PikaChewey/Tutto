@@ -26,6 +26,9 @@ public final class SwitcherKeyTap: @unchecked Sendable {
         case key(code: Int, shift: Bool, isRepeat: Bool)
         /// The trigger modifier was let go.
         case released
+        /// One of Tutto's own shortcuts on the switcher's keys (⇧⌘` for capture and edit): taken
+        /// here, before macOS's window cycling can, and run as that shortcut.
+        case shortcut(KeyShortcut)
     }
 
     public enum Mode: Int, Sendable {
@@ -48,6 +51,7 @@ public final class SwitcherKeyTap: @unchecked Sendable {
     private var _mode: Mode = .idle
     private var _trigger: Trigger = .command
     private var _appWindowsKey = true
+    private var _claimed: Set<KeyShortcut> = []
     private var swallowed = Set<Int64>()
     /// Whether the trigger modifier is down, as the key events themselves say. Tracked here
     /// because the hardware state misses software-posted keys (remote control, automation),
@@ -78,6 +82,13 @@ public final class SwitcherKeyTap: @unchecked Sendable {
     public var appWindowsKey: Bool {
         get { lock.withLock { _appWindowsKey } }
         set { lock.withLock { _appWindowsKey = newValue } }
+    }
+
+    /// Tutto's own shortcuts on Tab or the key above it: they run as those shortcuts instead of
+    /// opening the switcher, and neither macOS nor the front app ever sees them.
+    public var claimed: Set<KeyShortcut> {
+        get { lock.withLock { _claimed } }
+        set { lock.withLock { _claimed = newValue } }
     }
 
     public var isRunning: Bool { lock.withLock { port != nil } }
@@ -196,6 +207,15 @@ public final class SwitcherKeyTap: @unchecked Sendable {
             lock.unlock()
             return event
         case .idle:
+            if code == Int64(kVK_Tab) || code == Int64(kVK_ANSI_Grave), !_claimed.isEmpty {
+                let pressed = ShortcutTap.shortcut(code: code, flags: flags)
+                if _claimed.contains(pressed) {
+                    swallowed.insert(code)
+                    lock.unlock()
+                    if !isRepeat { deliver(.shortcut(pressed)) }
+                    return nil
+                }
+            }
             let others: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl]
             let extra = flags.intersection(others).subtracting(trigger.flag)
             let isTab = code == Int64(kVK_Tab)

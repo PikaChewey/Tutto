@@ -60,7 +60,10 @@ final class AppModel {
 
     /// `quietly` (offscreen snapshots) starts modules without taking any global shortcuts.
     func launch(quietly: Bool = false) {
-        hotkeys.onSuspendChange = { [weak self] suspended in self?.strip?.setShortcutsSuspended(suspended) }
+        hotkeys.onSuspendChange = { [weak self] suspended in
+            self?.strip?.setShortcutsSuspended(suspended)
+            self?.switcher?.suspendClaims(suspended)
+        }
         // A window left out of view by a strip that didn't get to stop (a crash) comes back, and so
         // does a Dock it hid.
         if !enabled.contains(.strip) && !quietly {
@@ -239,6 +242,19 @@ final class AppModel {
         }
         // The strip's keys win even where another app registered the same ones first.
         strip?.setShortcuts(stripKeys)
+        // So do ones on the switcher's keys (⇧⌘` is macOS's "previous window" too).
+        switcher?.claim(Set(ShortcutAction.all.compactMap { action -> KeyShortcut? in
+            guard action.module.map({ enabled.contains($0) }) ?? true else { return nil }
+            return shortcuts.shortcut(for: action)
+        }))
+    }
+
+    /// Runs whatever action this shortcut is bound to (for key filters that take the keys first).
+    func perform(shortcut: KeyShortcut) {
+        guard let action = ShortcutAction.all.first(where: { action in
+            (action.module.map { enabled.contains($0) } ?? true) && shortcuts.shortcut(for: action) == shortcut
+        }) else { return }
+        perform(action)
     }
 
     func setShortcut(_ shortcut: KeyShortcut?, for action: ShortcutAction) {

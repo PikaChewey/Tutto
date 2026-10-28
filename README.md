@@ -39,7 +39,7 @@ If another app already uses one of the shortcuts below, macOS may deliver the ke
 | ``⌘` `` | The front app's windows only (all your Firefox windows) |
 | `⌘⇧2` | Select an area → copied to the clipboard (no editor to dismiss) |
 | `⌘⇧1` | The whole screen under the pointer → clipboard |
-| `⌘⇧6` | Select an area → screenshot editor |
+| `` ⌘⇧` `` | Select an area → screenshot editor (it takes these keys from macOS's "back through an app's windows"; ⌘` still goes through them) |
 | `⌃⇧V` | Clipboard history: type to search, double-click or `↩` to paste into the app you were in (your clipboard stays as it was; Clipboard › "Keep pasted items on the clipboard" changes that), `⌘↩` copy, `⇥` filter by type, `⇧⌘P` pin, `⌘⌫` delete |
 | `⌃⇧B` | Window palette: type "left half", "max", "next display"…, `↩` |
 | `⌃⇧C` | Word counter: the cursor is ready, press `⌘V` (or type) to see words, characters (with and without spaces), sentences, paragraphs, reading and speaking time, and the same for a selection. `⌘K` clears, `Esc` closes |

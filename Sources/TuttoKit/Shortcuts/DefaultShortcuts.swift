@@ -14,12 +14,16 @@ public enum DefaultShortcuts {
     public static let windowPalette = KeyShortcut.ctrlShift(kVK_ANSI_B)
     public static let captureScreen = KeyShortcut.cmdShift(kVK_ANSI_1)
     public static let captureArea = KeyShortcut.cmdShift(kVK_ANSI_2)
-    /// Beside macOS's own screenshot keys (⇧⌘3, 4 and 5). Not ⇧⌘`, which macOS uses to go
-    /// back through an app's windows.
-    public static let captureAreaEdit = KeyShortcut.cmdShift(kVK_ANSI_6)
+    /// ⇧⌘`, Bryan's choice: it takes the keys from macOS's "back through an app's windows" on
+    /// purpose (⌘` still goes forward through them). The window switcher's key filter takes it
+    /// first, so macOS can't.
+    public static let captureAreaEdit = KeyShortcut.cmdShift(kVK_ANSI_Grave)
     public static let wordCounter = KeyShortcut.ctrlShift(kVK_ANSI_C)
 
     public static let all = [clipboardHistory, windowPalette, captureScreen, captureArea, captureAreaEdit, wordCounter]
+
+    /// Defaults that take a macOS shortcut on purpose.
+    public static let takenFromMacOS: Set<KeyShortcut> = [captureAreaEdit]
 }
 
 /// Well-known macOS shortcuts worth a warning when someone records them.

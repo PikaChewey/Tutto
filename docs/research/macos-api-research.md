@@ -420,7 +420,7 @@ The settings that comparable utilities converge on, with sensible defaults:
 - The same combo registered twice in one process returns `eventHotKeyExistsErr` (-9878).
 - Across processes, both registrations succeed and both fire, unless `kEventHotKeyExclusive` is used.
 - System shortcuts are **not** checked. Registration returns `noErr` but the hotkey may never fire.
-- (2026-10-24: Tutto's area→editor default moved off ⌘⇧` to ⌘⇧6 for this reason.) **⌘⇧`** is the implicit reverse of symbolic hotkey **27**, "Move focus to next window" (⌘`, params `[96, 50, 1048576]`). It is active by default on this Mac (ID 27 isn't overridden in `com.apple.symbolichotkeys`).
+- (2026-10-24: Tutto's area→editor default moved off ⌘⇧` to ⌘⇧6 for this reason. 2026-10-28: back on ⌘⇧` at Bryan's request, now taken by the window switcher's session event tap before macOS sees it, so the contest is gone.) **⌘⇧`** is the implicit reverse of symbolic hotkey **27**, "Move focus to next window" (⌘`, params `[96, 50, 1048576]`). It is active by default on this Mac (ID 27 isn't overridden in `com.apple.symbolichotkeys`).
   - Registration will likely succeed, but behaviour is contested. Avoid it as a default, or warn the user.
 - Detect conflicts with `CopySymbolicHotKeys` (keys `kHISymbolicHotKeyCode`, `…Modifiers`, `…Enabled`), plus a special case for ⌘⇧`.
 

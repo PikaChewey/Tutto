@@ -273,6 +273,25 @@ final class SwitcherKeyTapTests: XCTestCase {
         XCTAssertNotNil(tap.handle(type: .keyDown, event: key(kVK_ANSI_Grave, down: true, .maskCommand)))
     }
 
+    func testTuttosOwnShortcutOnTheKeyAboveTabRunsAsThatShortcut() {
+        let box = Box()
+        let tap = SwitcherKeyTap { box.events.append($0) }
+        tap.claimed = [.cmdShift(kVK_ANSI_Grave)]
+        // ⇧⌘` is capture and edit: taken here (before macOS cycles windows backwards) and run as the shortcut.
+        XCTAssertNil(tap.handle(type: .keyDown, event: key(kVK_ANSI_Grave, down: true, [.maskCommand, .maskShift])))
+        XCTAssertNil(tap.handle(type: .keyUp, event: key(kVK_ANSI_Grave, down: false, [.maskCommand, .maskShift])))
+        XCTAssertEqual(box.events, [.shortcut(.cmdShift(kVK_ANSI_Grave))])
+        XCTAssertEqual(tap.mode, .idle, "the switcher doesn't open")
+        // ⌘` alone still shows the front app's windows.
+        XCTAssertNil(tap.handle(type: .keyDown, event: key(kVK_ANSI_Grave, down: true, .maskCommand)))
+        XCTAssertEqual(box.events.last, .trigger(backward: false, appWindows: true, isRepeat: false))
+        // Claimed even with the key above Tab not opening the switcher.
+        tap.mode = .idle
+        tap.appWindowsKey = false
+        XCTAssertNil(tap.handle(type: .keyDown, event: key(kVK_ANSI_Grave, down: true, [.maskCommand, .maskShift])))
+        XCTAssertEqual(box.events.last, .shortcut(.cmdShift(kVK_ANSI_Grave)))
+    }
+
     func testOptionTrigger() {
         let box = Box()
         let tap = SwitcherKeyTap { box.events.append($0) }

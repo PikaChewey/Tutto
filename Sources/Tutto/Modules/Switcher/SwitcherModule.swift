@@ -183,6 +183,7 @@ final class SwitcherModule: ModuleController {
         }
         tap.trigger = trigger
         tap.appWindowsKey = appWindowsKey
+        tap.claimed = claimsSuspended ? [] : claimed
         self.tap = tap
         startListening()
         // Load the window server calls now so the first ⌘Tab doesn't pay for it.
@@ -263,7 +264,25 @@ final class SwitcherModule: ModuleController {
             handleKey(code, shift: shift)
         case .released:
             if isOpen, !session.pinned { commit() }
+        case .shortcut(let shortcut):
+            model?.perform(shortcut: shortcut)
         }
+    }
+
+    /// Tutto's shortcuts that sit on the switcher's keys: its key filter takes them first and
+    /// runs them, so macOS's window cycling can't (⇧⌘` for capture and edit, say).
+    private var claimed: Set<KeyShortcut> = []
+    private var claimsSuspended = false
+
+    func claim(_ shortcuts: Set<KeyShortcut>) {
+        claimed = shortcuts.filter { Int($0.keyCode) == kVK_Tab || Int($0.keyCode) == kVK_ANSI_Grave }
+        tap?.claimed = claimsSuspended ? [] : claimed
+    }
+
+    /// While a shortcut is being recorded, the keys go to the recorder.
+    func suspendClaims(_ suspended: Bool) {
+        claimsSuspended = suspended
+        tap?.claimed = suspended ? [] : claimed
     }
 
     private func handleKey(_ code: Int, shift: Bool) {
