@@ -86,9 +86,11 @@ private struct PanelWindowReader: NSViewRepresentable {
 // MARK: - Pieces
 
 private extension View {
-    /// A group on the panel: a soft rounded surface instead of rules and captions.
-    func panelCard() -> some View {
-        padding(PanelGrid.inset)
+    /// A group on the panel: a soft rounded surface instead of rules and captions. `vertical` trims
+    /// a one-row card (the sides stay on the grid).
+    func panelCard(vertical: CGFloat = PanelGrid.inset) -> some View {
+        padding(.horizontal, PanelGrid.inset)
+            .padding(.vertical, vertical)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.055)))
     }
@@ -621,7 +623,7 @@ private struct FanCard: View {
                 }
             }
         }
-        .panelCard()
+        .panelCard(vertical: 8)
         .animation(Motion.snappy, value: choice)
         .background(VisibilityReader { visible in visible ? sensors.begin() : sensors.end() })
         .onAppear {
