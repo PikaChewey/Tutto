@@ -42,63 +42,23 @@ final class StripModelTests: XCTestCase {
         XCTAssertEqual(s.columns[0].width, 0.5)
     }
 
-    func testFullWindowsMakesEveryColumnFullAndGivesEachItsWidthBack() {
-        var s = strip([0.5, 1.0 / 3.0, 1, 0.75])
-        XCTAssertFalse(s.isAllFull)
-        XCTAssertEqual(s.setAllFull(true), .done("Full windows"))
-        XCTAssertTrue(s.isAllFull)
-        XCTAssertEqual(s.columns.map(\.width), [1, 1, 1, 1])
-        XCTAssertEqual(s.setAllFull(true), .refused("Every window is already full."))
-        XCTAssertEqual(s.setAllFull(false, fallback: 0.5), .done("Strip"))
-        // Each goes back to the width it had; one that was already full stays full.
-        XCTAssertEqual(s.columns.map(\.width), [0.5, 1.0 / 3.0, 1, 0.75])
-        XCTAssertFalse(s.columns.contains { $0.widthBeforeFull != nil || $0.widthBeforeAllFull != nil })
-        // A column that arrived while full (no width to go back to) takes the fallback.
-        var t = strip([0.5])
-        _ = t.setAllFull(true)
-        t.columns.append(StripColumn(windows: [99], width: 1))
-        _ = t.setAllFull(false, fallback: 0.5)
-        XCTAssertEqual(t.columns.map(\.width), [0.5, 0.5])
-        var empty = Strip()
-        XCTAssertEqual(empty.setAllFull(true), .refused("The strip is empty."))
+    func testFullWindowsSendsTheWindowYoureOnFirst() {
+        // Yours goes full screen at once; the others follow behind it.
+        XCTAssertEqual(StripFullScreen.sendingOrder([1, 2, 3, 4], focused: 2), [2, 1, 3, 4])
+        XCTAssertEqual(StripFullScreen.sendingOrder([1, 2, 3], focused: nil), [1, 2, 3])
+        XCTAssertEqual(StripFullScreen.sendingOrder([1, 2, 3], focused: 9), [1, 2, 3])
+        XCTAssertEqual(StripFullScreen.sendingOrder([], focused: 1), [])
     }
 
-    func testFullWindowsLeavesAStripThatWasAlreadyFullAsItWas() {
-        // Every window already full (brought onto the strip at 100 %): Full, then Strip, keeps them full.
-        var s = strip([1, 1])
-        XCTAssertEqual(s.setAllFull(true), .done("Full windows"))
-        XCTAssertEqual(s.setAllFull(true), .refused("Every window is already full."))
-        XCTAssertEqual(s.setAllFull(false, fallback: 0.5), .done("Strip"))
-        XCTAssertEqual(s.columns.map(\.width), [1, 1])
-    }
-
-    func testAWindowAwayWhileFullComesBackToItsOwnWidth() {
-        // Hidden or minimized while Full windows is on, a window keeps its strip width in its slot.
-        var s = strip([0.75, 0.5])
-        _ = s.setAllFull(true)
-        let slot = s.slot(of: 1)!
-        s.remove(1)
-        s.restore(1, to: slot)
-        XCTAssertEqual(s.columns.map(\.width), [1, 1])
-        _ = s.setAllFull(false, fallback: 0.5)
-        XCTAssertEqual(s.columns.map(\.width), [0.75, 0.5])
-    }
-
-    func testWindowsJoiningWhileFullComeInFullAndGoBackToTheirStripWidths() {
-        var s = strip([0.5])
-        _ = s.setAllFull(true)
-        // One back from before Full windows (its slot says 0.75), one from full screen (full on the
-        // strip too), one brand new (no strip width of its own: it takes the fallback).
-        s.restore(7, to: StripSlot(index: 1, row: 0, width: 0.75, leftNeighbour: 1, rightNeighbour: nil, stackedWith: []))
-        s.joinFull(7, stripWidth: 0.75)
-        s.insert(8, width: 1)
-        s.joinFull(8, stripWidth: 1)
-        s.insert(9, width: 1)
-        s.joinFull(9, stripWidth: nil)
-        XCTAssertTrue(s.isAllFull)
-        _ = s.setAllFull(false, fallback: 0.5)
-        let widths = Dictionary(uniqueKeysWithValues: s.columns.map { ($0.windows[0], $0.width) })
-        XCTAssertEqual(widths, [1: 0.5, 7: 0.75, 8: 1, 9: 0.5])
+    func testStripBringsBackOnlyTheWindowsFullSentThatStillExist() {
+        // Sent in this order; 3 has closed since, and 7 was in full screen before (never sent).
+        let sent: [StripFullScreen.Sent] = [.init(window: 4, pid: 40), .init(window: 1, pid: 10), .init(window: 3, pid: 30)]
+        XCTAssertEqual(StripFullScreen.toBringBack(sent, existing: [1, 4, 7]).map(\.window), [4, 1])
+        XCTAssertEqual(StripFullScreen.toBringBack([], existing: [1]).map(\.window), [])
+        // Kept across launches: the record survives a round trip through its stored form.
+        let stored = StripFullScreen.store(sent)
+        XCTAssertEqual(StripFullScreen.load(stored), sent)
+        XCTAssertEqual(StripFullScreen.load(nil), [])
     }
 
     func testFocusAndMoveStopAtTheEnds() {

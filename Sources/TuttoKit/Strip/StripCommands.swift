@@ -107,7 +107,7 @@ public enum StripCommand: Hashable, Sendable, Identifiable {
         case .showStrip: "Show the strip"
         case .cycleWidth: "Cycle width"
         case .fullWidth: "Full width"
-        case .fullWindows: "Every window full, or back to the strip"
+        case .fullWindows: "Every window in full screen, or back to the strip"
         case .centre: "Centre the column"
         case .wider: "Wider"
         case .narrower: "Narrower"

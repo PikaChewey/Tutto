@@ -99,11 +99,9 @@ final class StripModule: ModuleController {
     var gap: Double { didSet { save(gap, Keys.gap); relayoutAll() } }
     var presets: [Double] { didSet { save(presets, Keys.presets) } }
     var defaultWidth: Double { didSet { save(defaultWidth, Keys.defaultWidth) } }
-    /// Full windows: every window on every strip fills the screen (the strip scrolls between
-    /// them), instead of sitting side by side at its own width. New windows arrive full too.
+    /// Full windows: every window on the strip in native full screen, as its green button sends
+    /// it (a Space each), instead of side by side on the strip. New windows go full screen too.
     private(set) var fullWindows: Bool { didSet { save(fullWindows, Keys.fullWindows) } }
-    /// The width a window joins the strip at.
-    private var newColumnWidth: Double { fullWindows ? 1 : defaultWidth }
     var fullHeight: Bool { didSet { save(fullHeight, Keys.fullHeight); relayoutAll() } }
     var centring: StripCentring { didSet { save(centring.rawValue, Keys.centring); relayoutAll(reveal: true) } }
     var animation: StripAnimation { didSet { save(animation.rawValue, Keys.animation) } }
@@ -142,6 +140,12 @@ final class StripModule: ModuleController {
     /// Windows in native full screen, each on a Space of its own, which the strip leaves alone.
     private(set) var fullScreenWindowCount = 0
     private(set) var isBringingHome = false
+    /// Full windows is sending windows into full screen, or Strip is bringing them back.
+    private(set) var isSwitchingWindows = false
+    /// The windows Full sent into full screen (kept across launches): Strip brings back these.
+    @ObservationIgnored private var sentFullScreen: [StripFullScreen.Sent] {
+        didSet { defaults.set(StripFullScreen.store(sentFullScreen), forKey: Keys.sentFullScreen) }
+    }
 
     weak var model: AppModel?
 
@@ -243,7 +247,10 @@ final class StripModule: ModuleController {
         gap = d.object(forKey: Keys.gap) as? Double ?? 8
         presets = (d.array(forKey: Keys.presets) as? [Double]).flatMap { $0.isEmpty ? nil : $0 } ?? Strip.defaultPresets
         defaultWidth = d.object(forKey: Keys.defaultWidth) as? Double ?? 0.5
-        fullWindows = d.bool(forKey: Keys.fullWindows)
+        sentFullScreen = StripFullScreen.load(d.data(forKey: Keys.sentFullScreen))
+        // Full used to mean full-width columns on the strip; with nothing sent to full screen the
+        // windows are on the strip, and the switch says so.
+        fullWindows = d.bool(forKey: Keys.fullWindows) && !sentFullScreen.isEmpty
         fullHeight = d.object(forKey: Keys.fullHeight) as? Bool ?? true
         centring = StripCentring(rawValue: d.string(forKey: Keys.centring) ?? "") ?? .never
         animation = StripAnimation(rawValue: d.string(forKey: Keys.animation) ?? "") ?? .smooth
@@ -656,6 +663,7 @@ final class StripModule: ModuleController {
     }
 
     private func spaceChanged() {
+        spaceSettled?.signal()
         guard isRunning else { return }
         indicator.hide()
         tabBars.removeAll()
@@ -761,9 +769,9 @@ final class StripModule: ModuleController {
                 return a.0.shown.minX != b.0.shown.minX ? a.0.shown.minX < b.0.shown.minX : a.1 < b.1
             }) where !strip.contains(w.id) {
                 let full = self.arrivals.removeValue(forKey: w.id) != nil
-                let width = full ? 1 : initialWidth(w.shown, metrics: metrics)
-                strip.insert(w.id, width: width, besideFocused: false, focus: false)
-                if fullWindows { strip.joinFull(w.id, stripWidth: width) }
+                strip.insert(w.id, width: full ? 1 : initialWidth(w.shown, metrics: metrics), besideFocused: false, focus: false)
+                // Full windows is on: one that opened as the Space changed (not one coming back) goes too.
+                if fullWindows, !full, away[w.id] == nil { sendNewWindowFullScreen(w.id) }
             }
             if let front = incoming.min(by: { $0.1 < $1.1 })?.0, restoring.contains(state.key) { strip.focus(front.id) }
             state.strip = strip
@@ -982,9 +990,8 @@ final class StripModule: ModuleController {
         guard let w = admit(element, pid: pid, bundleID: app?.bundleIdentifier, into: state) else { return }
         let front = focus ?? (NSWorkspace.shared.frontmostApplication?.processIdentifier == pid)
         let arrival = arrivals.removeValue(forKey: w.id) != nil
-        state.strip.insert(w.id, width: arrival ? 1 : newColumnWidth, besideFocused: front, focus: front)
-        // Back from full screen it would be full on the strip too; a new window takes the default then.
-        if fullWindows { state.strip.joinFull(w.id, stripWidth: arrival ? 1 : nil) }
+        state.strip.insert(w.id, width: arrival ? 1 : defaultWidth, besideFocused: front, focus: front)
+        if fullWindows, !arrival { sendNewWindowFullScreen(w.id) }
         if front { reveal(state) }
         arrangeIfAlways(state)
         windowCount = windows.count
@@ -1117,17 +1124,17 @@ final class StripModule: ModuleController {
     /// A window back from the Dock, from hiding or from full screen goes back to its slot.
     private func comeBack(_ id: CGWindowID, element: AXUIElement, pid: pid_t, focus: Bool) {
         guard isRunning, windows[id] == nil else { return }
-        let record = away.removeValue(forKey: id)
         // Some apps hand out a new element for a window after it's been minimized.
         let fresh = StripAX.windows(of: pid).first { StripAX.windowID($0) == id } ?? element
+        // A notice during the animation into full screen isn't a return: keep its place till it is.
         guard !StripAX.isMinimized(fresh), !StripAX.isFullScreen(fresh), let frame = StripAX.frame(fresh) else { return }
+        let record = away.removeValue(forKey: id)
         let state = record?.key.flatMap { isCurrent($0) ? strips[$0] : nil } ?? self.state(for: frame)
         guard let state, let w = admit(fresh, pid: pid, bundleID: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier, into: state) else { return }
         if let slot = record?.slot {
             state.strip.restore(w.id, to: slot)
-            if fullWindows { state.strip.joinFull(w.id, stripWidth: slot.width) }
         } else {
-            state.strip.insert(w.id, width: newColumnWidth, besideFocused: true, focus: focus)
+            state.strip.insert(w.id, width: defaultWidth, besideFocused: true, focus: focus)
         }
         if focus { state.strip.focus(w.id) }
         reveal(state)
@@ -1228,6 +1235,9 @@ final class StripModule: ModuleController {
             Toast.shared.show("The strip is stopped", detail: isTrusted ? "⌃⌥Q starts it again." : "Allow Accessibility for Tutto first.")
             return
         }
+        // Full windows ⇄ strip works from anywhere, a full-screen window's own Space above all
+        // (where Full leaves you): there's no strip there, and the key used to do nothing.
+        if command == .fullWindows { return setFullWindows(!fullWindows) }
         // A full-screen app's Space (or a display the strip is off for) has no strip: say why,
         // once in a while, instead of doing nothing silently.
         guard let state = activeState() else {
@@ -1298,7 +1308,7 @@ final class StripModule: ModuleController {
         case .toggleRunning:
             return
         case .fullWindows:
-            return setFullWindows(!fullWindows)
+            return  // handled above, before looking for a strip
         }
         if resized, strip.columns.indices.contains(strip.focusColumn) {
             for id in strip.columns[strip.focusColumn].windows {
@@ -1337,28 +1347,244 @@ final class StripModule: ModuleController {
         showIndicator(state, message: outcome.message, refused: !outcome.changed)
     }
 
-    /// Full windows ⇄ strip, for every window on every strip at once: each fills the screen (⌘Tab
-    /// and the strip keys move between them), or goes back to the width it had.
+    /// Full windows ⇄ strip. Full sends every window on the strip here into native full screen, as
+    /// its green button would (a Space each; swipe or ⌘Tab between them); Strip brings back the
+    /// windows Full sent, each to its place on the strip. Apps you keep in full screen yourself
+    /// stay there. Either way you stay on the window you're on: it moves in front of you, and the
+    /// others move behind a still picture of the screen.
     func setFullWindows(_ on: Bool) {
-        guard isRunning else { return }
+        guard isRunning, !isBringingHome else { return }
+        // Asked again while windows are on their way: the last word wins once they're done.
+        if isSwitchingWindows {
+            fullWindows = on
+            queuedMode = on
+            return
+        }
         fullWindows = on
-        var shown: StripState?
-        for state in strips.values {
-            var strip = state.strip
-            guard strip.setAllFull(on, fallback: defaultWidth).changed else { continue }
-            for id in strip.allWindows {
-                windows[id]?.enforcedWidth = nil
-                windows[id]?.refusals = 0
+        let anchor = windowYoureOn()
+        if on {
+            var targets: [SwitchTarget] = []
+            for key in currentKeys.values {
+                guard let state = strips[key] else { continue }
+                let focused = anchor.map(\.id).flatMap { state.strip.contains($0) ? $0 : nil } ?? state.strip.focusedWindow
+                for id in StripFullScreen.sendingOrder(state.strip.allWindows, focused: focused) {
+                    if let w = windows[id] { targets.append(SwitchTarget(id: id, pid: w.pid, element: w.element, display: state.display.frame.size)) }
+                }
             }
-            state.strip = strip
-            if isCurrent(state.key) {
-                reveal(state)
-                apply(state, animated: true)
-                shown = state
+            guard !targets.isEmpty else {
+                return Toast.shared.show("Full windows", detail: "Nothing on the strip right now; new windows will open in full screen.", duration: 3)
+            }
+            switchWindows(targets, fullScreen: true, anchor: anchor)
+        } else {
+            var back = StripFullScreen.toBringBack(sentFullScreen, existing: StripAX.existingWindowIDs())
+            sentFullScreen.removeAll()
+            guard !back.isEmpty else { return }
+            pendingFullScreen.removeAll()
+            // Yours comes back first, in front of you.
+            if let anchor, let i = back.firstIndex(where: { $0.window == anchor.id }) { back.insert(back.remove(at: i), at: 0) }
+            let display = StripDisplay.all().first?.frame.size ?? NSScreen.main?.frame.size ?? .zero
+            switchWindows(back.map { SwitchTarget(id: $0.window, pid: pid_t($0.pid), element: away[$0.window]?.element, display: display) },
+                          fullScreen: false, anchor: anchor)
+        }
+    }
+
+    private struct SwitchTarget: @unchecked Sendable {
+        var id: CGWindowID
+        var pid: pid_t
+        var element: AXUIElement?
+        /// The display it goes full screen on (a full-screen window fills it, less the notch's band).
+        var display: CGSize
+    }
+
+    /// Windows that opened while a round was under way: they go next.
+    @ObservationIgnored private var pendingFullScreen: [SwitchTarget] = []
+    /// Full or Strip asked for while a round was under way.
+    @ObservationIgnored private var queuedMode: Bool?
+    /// Signalled when macOS has finished switching Spaces (each window going into or out of full
+    /// screen ends with one): the next window can be asked then, and not before.
+    @ObservationIgnored nonisolated(unsafe) private var spaceSettled: DispatchSemaphore?
+
+    /// The window in front: the front app's focused window.
+    private func windowYoureOn() -> SwitchTarget? {
+        guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != ownPID,
+              let element = StripAX.focusedWindow(of: app.processIdentifier), let id = StripAX.windowID(element) else { return nil }
+        let display = StripDisplay.all().first?.frame.size ?? NSScreen.main?.frame.size ?? .zero
+        return SwitchTarget(id: id, pid: app.processIdentifier, element: element, display: display)
+    }
+
+    /// macOS takes one window at a time into (or out of) full screen, animating each and switching
+    /// to its Space; a request made while another is on its way is dropped, and none happen out of
+    /// sight, not even behind a picture of the screen (measured and filmed). So the window you're on
+    /// goes first, the others follow as fast as macOS takes them (each the moment the last Space
+    /// switch has finished), and you end on yours again. Any that didn't go are asked once more.
+    private func switchWindows(_ targets: [SwitchTarget], fullScreen: Bool, anchor: SwitchTarget? = nil) {
+        isSwitchingWindows = true
+        let first = targets.first.flatMap { $0.id == anchor?.id ? $0 : nil }
+        let rest = first == nil ? targets : Array(targets.dropFirst())
+        let settled = DispatchSemaphore(value: 0)
+        spaceSettled = settled
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var elements: [CGWindowID: AXUIElement] = [:]
+            func element(for target: SwitchTarget) -> AXUIElement? {
+                if let known = elements[target.id] ?? target.element { return known }
+                var found = WindowElements.element(for: target.id, pid: target.pid, budget: 0.4)
+                if found == nil, !fullScreen,
+                   let title = WindowServer.windows(of: [target.pid]).first(where: { $0.id == target.id })?.title,
+                   WindowElements.chooseFromWindowMenu(title: title, pid: target.pid) {
+                    // The app brings the window forward; on its own Space it can be asked.
+                    Thread.sleep(forTimeInterval: 0.7)
+                    found = WindowElements.element(for: target.id, pid: target.pid, budget: 0.2)
+                }
+                elements[target.id] = found
+                return found
+            }
+            func ask(_ target: SwitchTarget, _ element: AXUIElement) -> Bool {
+                if Self.switchFullScreen(element, id: target.id, to: fullScreen, display: target.display, settled: settled) { return true }
+                // Out of full screen, a window on a Space that isn't showing leaves it in the background
+                // (measured); one that didn't answer is brought forward and asked again.
+                guard !fullScreen else { return false }
+                Self.bringToItsSpace(target.id, pid: target.pid, element: element, settled: settled)
+                return Self.switchFullScreen(element, id: target.id, to: fullScreen, display: target.display, settled: settled)
+            }
+            var switched: [SwitchTarget] = []
+            if let first, let element = element(for: first), ask(first, element) { switched.append(first) }
+            for target in rest {
+                guard let element = element(for: target) else { continue }
+                _ = ask(target, element)
+            }
+            for target in rest {
+                guard let element = element(for: target) else { continue }
+                if StripAX.isFullScreen(element) == fullScreen || ask(target, element) { switched.append(target) }
+            }
+            if !rest.isEmpty || !fullScreen, let anchor, let element = anchor.element {
+                Self.returnTo(anchor.id, pid: anchor.pid, element: element, settled: settled)
+            }
+            let done = switched
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.spaceSettled = nil
+                    self.isSwitchingWindows = false
+                    if fullScreen {
+                        self.sentFullScreen += done.map { StripFullScreen.Sent(window: $0.id, pid: Int32($0.pid)) }
+                    } else {
+                        self.rebuild(arrange: true)
+                    }
+                    self.refreshSetupChecks()
+                    let missed = targets.count - done.count
+                    if missed > 0 {
+                        Toast.shared.show("\(missed) \(missed == 1 ? "window" : "windows") didn't \(fullScreen ? "go full screen" : "come back")",
+                                          detail: "Use the switch again to try once more.", duration: 3)
+                    }
+                    // The switch was used meanwhile: do what it says now.
+                    if let queued = self.queuedMode {
+                        self.queuedMode = nil
+                        if queued != fullScreen { return self.setFullWindows(queued) }
+                    }
+                    // Windows that opened meanwhile go behind the window you're on.
+                    let pending = self.pendingFullScreen.filter { self.windows[$0.id] != nil }
+                    self.pendingFullScreen.removeAll()
+                    if self.fullWindows, !pending.isEmpty {
+                        self.switchWindows(pending, fullScreen: true, anchor: self.windowYoureOn())
+                    }
+                }
             }
         }
-        saveLayoutsSoon()
-        if let shown { showIndicator(shown, message: on ? "Full windows" : "Strip", refused: false) }
+    }
+
+    /// A window in full screen on a Space that isn't showing doesn't answer being asked to leave it
+    /// (measured: of five, only the one on screen came back). Bring it forward first, which moves to
+    /// its Space, and ask once it's on screen.
+    nonisolated private static func bringToItsSpace(_ id: CGWindowID, pid: pid_t, element: AXUIElement, settled: DispatchSemaphore) {
+        guard !isShowing(id) else { return }
+        drain(settled)
+        WindowFocus.focus(window: id, pid: pid, element: element)
+        _ = settled.wait(timeout: .now() + 1.5)
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+
+    /// Whether the window is on the Space the display is showing.
+    nonisolated private static func isShowing(_ id: CGWindowID) -> Bool {
+        guard let space = WindowServer.space(of: id) else { return false }
+        return WindowServer.currentSpaces().values.contains { $0.id == space }
+    }
+
+    /// Forgets Space switches that finished before we asked for the next one.
+    nonisolated private static func drain(_ settled: DispatchSemaphore) {
+        while settled.wait(timeout: .now()) == .success {}
+    }
+
+    /// Back to the window you were on once the others are done: its own Space if it's in full
+    /// screen (the strip shows it if it's on one).
+    /// Bringing forward a window of the app that's already in front doesn't change Spaces (measured
+    /// with one app's windows), so if it's still not showing, choose it from the app's Window menu,
+    /// which does.
+    nonisolated private static func returnTo(_ id: CGWindowID, pid: pid_t, element: AXUIElement, settled: DispatchSemaphore) {
+        let showing = isShowing(id)
+        // The last window's animation can outlast its Space switch by a moment; a request made in
+        // it is dropped like any other.
+        if !showing { Thread.sleep(forTimeInterval: 0.15) }
+        drain(settled)
+        // Brought forward even when its Space is showing: on the strip, the window in front is the one in view.
+        WindowFocus.focus(window: id, pid: pid, element: element)
+        guard !showing else { return }
+        if settled.wait(timeout: .now() + 0.8) == .timedOut || !isShowing(id) {
+            if let title = WindowServer.windows(of: [pid]).first(where: { $0.id == id })?.title,
+               WindowElements.chooseFromWindowMenu(title: title, pid: pid) {
+                _ = settled.wait(timeout: .now() + 1.5)
+            }
+        }
+    }
+
+    /// Asks for full screen on or off and waits until the window has got there. Going in always
+    /// ends with macOS switching to the window's new Space: done once that switch has finished
+    /// (signalled). The window's own state flips within ~70 ms, long before its animation ends, and
+    /// a request made then is dropped (measured), so it can't be the sign. Coming out, a window on a
+    /// Space that isn't showing goes back to its desktop without a switch: done as soon as it's out.
+    /// Up to 3 s, asked twice.
+    nonisolated private static func switchFullScreen(_ element: AXUIElement, id: CGWindowID, to on: Bool, display: CGSize,
+                                                     settled: DispatchSemaphore) -> Bool {
+        func arrived() -> Bool {
+            guard StripAX.isFullScreen(element) == on else { return false }
+            if let space = WindowServer.space(of: id) { return WindowServer.spaces()[space]?.isFullScreen == on }
+            guard let frame = StripAX.frame(element) else { return false }
+            let filling = frame.width >= display.width - 1 && frame.height >= display.height - 48
+            return on == filling
+        }
+        for _ in 0..<2 {
+            drain(settled)
+            let before = WindowServer.currentSpaces()
+            AXUIElementSetAttributeValue(element, "AXFullScreen" as CFString, on ? kCFBooleanTrue : kCFBooleanFalse)
+            let deadline = Date().addingTimeInterval(3)
+            var switching = on
+            while Date() < deadline {
+                if settled.wait(timeout: .now() + 0.05) == .success {
+                    let end = Date().addingTimeInterval(1)
+                    while Date() < end {
+                        if arrived() { return true }
+                        Thread.sleep(forTimeInterval: 0.05)
+                    }
+                    break
+                }
+                if !switching, WindowServer.currentSpaces() != before { switching = true }
+                if !switching, arrived() { return true }
+            }
+            if !on, arrived() { return true }
+        }
+        return arrived()
+    }
+
+    /// While Full windows is on, a window that opens goes into full screen too, once it's settled.
+    private func sendNewWindowFullScreen(_ id: CGWindowID) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.fullWindows, let w = self.windows[id], let state = self.strips[w.key] else { return }
+                let target = SwitchTarget(id: id, pid: w.pid, element: w.element, display: state.display.frame.size)
+                if self.isSwitchingWindows { return self.pendingFullScreen.append(target) }
+                // The window you just opened is the one you're on: it goes in front of you.
+                self.switchWindows([target], fullScreen: true, anchor: target)
+            }
+        }
     }
 
     private func toggleRunning() {
@@ -1432,7 +1658,7 @@ final class StripModule: ModuleController {
                                        key: target.key, frame: frame)
             windows[id] = w
             observers[app.processIdentifier]?.watch(element, as: id)
-            target.strip.insert(id, width: newColumnWidth, besideFocused: true, focus: true)
+            target.strip.insert(id, width: defaultWidth, besideFocused: true, focus: true)
             reveal(target)
             apply(target, animated: true)
             showIndicator(target, message: "Tiled · back on the strip", refused: false)
@@ -2172,6 +2398,7 @@ final class StripModule: ModuleController {
         static let presets = "strip.presets"
         static let defaultWidth = "strip.defaultWidth"
         static let fullWindows = "strip.fullWindows"
+        static let sentFullScreen = "strip.sentFullScreen"
         static let fullHeight = "strip.fullHeight"
         static let centring = "strip.centring"
         static let animation = "strip.animation"
