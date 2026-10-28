@@ -78,6 +78,8 @@ public struct StripSlot: Equatable, Codable, Sendable {
     public var leftNeighbour: StripWindow?
     public var rightNeighbour: StripWindow?
     public var stackedWith: [StripWindow]
+    /// The column's width before Full windows, if it went away while that was on.
+    public var widthBeforeAllFull: Double? = nil
 }
 
 public struct Strip: Equatable, Codable, Sendable {
@@ -304,20 +306,35 @@ public struct Strip: Equatable, Codable, Sendable {
     public mutating func setAllFull(_ full: Bool, fallback: Double = 0.5) -> StripOutcome {
         guard !columns.isEmpty else { return .refused("The strip is empty.") }
         if full {
-            guard !isAllFull || columns.contains(where: { $0.widthBeforeAllFull == nil && $0.width < 0.999 }) else {
-                return .refused("Every window is already full.")
-            }
+            // Every column remembers its width, also one that's full already: without that, coming
+            // back would take it for a window that arrived while full and give it the fallback.
+            var changed = false
             for c in columns.indices {
-                if columns[c].widthBeforeAllFull == nil { columns[c].widthBeforeAllFull = columns[c].width }
-                columns[c].width = 1
+                if columns[c].widthBeforeAllFull == nil {
+                    columns[c].widthBeforeAllFull = columns[c].width
+                    changed = true
+                }
+                if columns[c].width != 1 {
+                    columns[c].width = 1
+                    changed = true
+                }
             }
-            return .done("Full windows")
+            return changed ? .done("Full windows") : .refused("Every window is already full.")
         }
         for c in columns.indices {
             columns[c].width = columns[c].widthBeforeAllFull ?? (columns[c].width >= 0.999 ? fallback : columns[c].width)
             columns[c].widthBeforeAllFull = nil
         }
         return .done("Strip")
+    }
+
+    /// While Full windows is on, a window joining the strip comes in full. `stripWidth` is the width
+    /// it goes back to when the strip comes back; nil means the fallback then. A column that already
+    /// remembers a width (the window's slot carried it) keeps it.
+    public mutating func joinFull(_ window: StripWindow, stripWidth: Double?) {
+        guard let (c, _) = location(of: window) else { return }
+        if columns[c].widthBeforeAllFull == nil { columns[c].widthBeforeAllFull = stripWidth }
+        columns[c].width = 1
     }
 
     public mutating func adjustWidth(by step: Double) -> StripOutcome {
@@ -475,7 +492,8 @@ public struct Strip: Equatable, Codable, Sendable {
         return StripSlot(index: c, row: r, width: column.width,
                          leftNeighbour: c > 0 ? columns[c - 1].windows.first : nil,
                          rightNeighbour: c + 1 < columns.count ? columns[c + 1].windows.first : nil,
-                         stackedWith: column.windows.filter { $0 != window })
+                         stackedWith: column.windows.filter { $0 != window },
+                         widthBeforeAllFull: column.widthBeforeAllFull)
     }
 
     /// Puts a window back where it was: in its old stack if that's still here, else between
@@ -495,7 +513,9 @@ public struct Strip: Equatable, Codable, Sendable {
         let before = slot.rightNeighbour.flatMap { location(of: $0)?.column }
         let wanted = after ?? before ?? slot.index
         let index = min(max(wanted, range.lowerBound), range.upperBound)
-        columns.insert(StripColumn(windows: [window], width: slot.width), at: index)
+        var column = StripColumn(windows: [window], width: slot.width)
+        column.widthBeforeAllFull = slot.widthBeforeAllFull
+        columns.insert(column, at: index)
         if columns.count > 1, index <= focusColumn { focusColumn += 1 }
     }
 

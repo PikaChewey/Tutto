@@ -761,7 +761,9 @@ final class StripModule: ModuleController {
                 return a.0.shown.minX != b.0.shown.minX ? a.0.shown.minX < b.0.shown.minX : a.1 < b.1
             }) where !strip.contains(w.id) {
                 let full = self.arrivals.removeValue(forKey: w.id) != nil
-                strip.insert(w.id, width: full ? 1 : initialWidth(w.shown, metrics: metrics), besideFocused: false, focus: false)
+                let width = full ? 1 : initialWidth(w.shown, metrics: metrics)
+                strip.insert(w.id, width: width, besideFocused: false, focus: false)
+                if fullWindows { strip.joinFull(w.id, stripWidth: width) }
             }
             if let front = incoming.min(by: { $0.1 < $1.1 })?.0, restoring.contains(state.key) { strip.focus(front.id) }
             state.strip = strip
@@ -979,8 +981,10 @@ final class StripModule: ModuleController {
         let app = NSRunningApplication(processIdentifier: pid)
         guard let w = admit(element, pid: pid, bundleID: app?.bundleIdentifier, into: state) else { return }
         let front = focus ?? (NSWorkspace.shared.frontmostApplication?.processIdentifier == pid)
-        let width = arrivals.removeValue(forKey: w.id) != nil ? 1 : newColumnWidth
-        state.strip.insert(w.id, width: width, besideFocused: front, focus: front)
+        let arrival = arrivals.removeValue(forKey: w.id) != nil
+        state.strip.insert(w.id, width: arrival ? 1 : newColumnWidth, besideFocused: front, focus: front)
+        // Back from full screen it would be full on the strip too; a new window takes the default then.
+        if fullWindows { state.strip.joinFull(w.id, stripWidth: arrival ? 1 : nil) }
         if front { reveal(state) }
         arrangeIfAlways(state)
         windowCount = windows.count
@@ -1121,6 +1125,7 @@ final class StripModule: ModuleController {
         guard let state, let w = admit(fresh, pid: pid, bundleID: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier, into: state) else { return }
         if let slot = record?.slot {
             state.strip.restore(w.id, to: slot)
+            if fullWindows { state.strip.joinFull(w.id, stripWidth: slot.width) }
         } else {
             state.strip.insert(w.id, width: newColumnWidth, besideFocused: true, focus: focus)
         }
