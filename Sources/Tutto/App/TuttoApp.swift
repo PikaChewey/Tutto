@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Snapshots.runIfRequested() { return NSApp.terminate(nil) }
         if AudioProbe.runIfRequested() { return NSApp.terminate(nil) }
         if SwitcherLab.runIfRequested() { return NSApp.terminate(nil) }
+        if MemoryLab.runIfRequested() { return NSApp.terminate(nil) }
         #endif
         let model = AppModel.shared
         let launchedAtLogin = Self.wasLaunchedAsLoginItem()
