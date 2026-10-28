@@ -2,52 +2,81 @@
 //  MenuPanel.swift
 //  Tutto
 //
-//  The menu bar panel: what you click the menu bar for, and nothing else. How the Mac is doing
-//  (a verdict line, the four numbers people check large, GPU, disk and network small, every
-//  number a click away from its page), per-app sound, and the tools' shortcuts as rows you can
-//  click. Settings live in the app. Each part appears only if its module is on, and readings
-//  run only while the panel is open.
+//  The menu bar panel: what you open the menu bar for, in the order you look. Tutto's mark
+//  and how the Mac is doing in plain words; the battery with its health and the apps using
+//  the processor most; six tiles (CPU, memory, GPU, disk, network, temperature), each a
+//  number, an engraved caption and the last minute as a line; the apps' sound; and the
+//  tools with their keys, to click instead of pressing them. Settings live in the app.
+//  Each part appears only if its module is on, and readings run only while the panel is
+//  open (no process is started for them).
 //
-//  One grid: cards inset 10 pt from the panel, content 12 pt inside them (text starts at
-//  x = 22 and ends at 298), 8 pt between blocks. Hover backgrounds reach outward, so nothing
-//  moves. One accent (the system's), on meters and the playing badge; red only for alarms.
+//  One grid: cards inset 10 pt from the panel, content 12 pt inside them (text from x = 22
+//  to 298), 8 pt between blocks. Hover backgrounds reach outward, so nothing moves. One
+//  accent (the system's) for what's live: the lines, meters, the playing badge, pressed
+//  keys; red only for alarms.
 //
 
 import AppKit
 import SwiftUI
 import TuttoKit
 
-private enum Grid {
+private enum PanelGrid {
     static let width: CGFloat = 320
     static let outer: CGFloat = 10
     static let inset: CGFloat = 12
     static let gap: CGFloat = 8
-    /// Columns in the stats card: the content width split in four.
-    static let column: CGFloat = (width - 2 * outer - 2 * inset) / 4
+    /// A tile: half the cards' width.
+    static let tile: CGFloat = (width - 2 * outer - gap) / 2
 }
 
 struct MenuPanel: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Grid.gap) {
+        VStack(alignment: .leading, spacing: PanelGrid.gap) {
+            PanelHeader(model: model)
             if let system = model.system {
-                VitalsCard(system: system, sensors: model.sensors)
+                if let battery = system.battery {
+                    BatteryCard(battery: battery, system: system)
+                } else {
+                    BusyAppsList(apps: system.busyApps, measured: system.busyAppsMeasured).panelCard()
+                }
+                StatTiles(system: system, sensors: model.sensors)
             }
             if let sound = model.sound, SoundModule.isSupported {
                 SoundCard(sound: sound)
             }
             if !ShortcutRows.rows(model).isEmpty {
-                ShortcutsCard(model: model)
+                ToolsCard(model: model)
             }
             Notices(model: model)
             PanelFooter(model: model)
         }
-        .padding(.horizontal, Grid.outer)
-        .padding(.top, Grid.outer)
+        .padding(.horizontal, PanelGrid.outer)
+        .padding(.top, PanelGrid.outer)
         .padding(.bottom, 6)
-        .frame(width: Grid.width)
+        .frame(width: PanelGrid.width)
         .fixedSize(horizontal: false, vertical: true)
+        .watching(model.system, model.system?.panelFeeds ?? [])
+        .background(PanelWindowReader())
+    }
+}
+
+/// Remembers the panel's own window, so it's closed only while it's actually showing.
+@MainActor
+private enum PanelWindow {
+    static weak var current: NSWindow?
+}
+
+private struct PanelWindowReader: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Reader() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    final class Reader: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { MainActor.assumeIsolated { PanelWindow.current = window } }
+        }
     }
 }
 
@@ -56,7 +85,7 @@ struct MenuPanel: View {
 private extension View {
     /// A group on the panel: a soft rounded surface instead of rules and captions.
     func panelCard() -> some View {
-        padding(Grid.inset)
+        padding(PanelGrid.inset)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.055)))
     }
@@ -68,23 +97,6 @@ private extension View {
             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(on ? Color.primary.opacity(0.08) : .clear))
             .padding(.horizontal, -x)
             .padding(.vertical, -y)
-    }
-}
-
-/// A card's title row: the title, and something quiet on the right.
-private struct CardTitle<Trailing: View>: View {
-    var title: String
-    @ViewBuilder var trailing: Trailing
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(title)
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(Color.ink)
-            Spacer(minLength: 8)
-            trailing
-        }
-        .lineLimit(1)
     }
 }
 
@@ -106,6 +118,23 @@ private struct QuietLink: View {
     }
 }
 
+/// A card's title row: the title, and something quiet on the right.
+private struct CardTitle<Trailing: View>: View {
+    var title: String
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(Color.ink)
+            Spacer(minLength: 8)
+            trailing
+        }
+        .lineLimit(1)
+    }
+}
+
 /// Runs an action after the panel has closed, so it isn't in the picture or in the way, and
 /// the app you were in is the front app again. The panel is closed through the menu bar icon's
 /// own button, as a click on the icon closes it: closing its window directly left SwiftUI
@@ -122,6 +151,8 @@ private func afterPanelCloses(_ action: @escaping @MainActor () -> Void) {
 /// itself (Tutto stays the active app), so anything that opens a page closes the panel first.
 @MainActor
 private func closePanel() {
+    // A click on the icon toggles: only while the panel is up, or a late call would open it again.
+    guard PanelWindow.current?.isVisible ?? true else { return }
     if let button = menuBarButton() { button.performClick(nil) } else { NSApp.keyWindow?.close() }
 }
 
@@ -144,100 +175,36 @@ private func menuBarButton() -> NSStatusBarButton? {
         .first
 }
 
-// MARK: - Vitals
+// MARK: - Header
 
-/// How the Mac is doing: the verdict as the card's title, the four numbers people check, and
-/// GPU, disk and network on the same columns underneath. Every number opens its page.
-private struct VitalsCard: View {
-    var system: SystemMonitor
-    var sensors: SensorsModule?
-
-    private enum Vital: Hashable { case battery, cpu, memory, temperature, gpu }
+/// Tutto's mark and how the Mac is doing in plain words: a problem first, else the battery.
+private struct PanelHeader: View {
+    var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VerdictLine(glance: glance)
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(heroes, id: \.self) { vital in column(vital) }
-            }
-            HStack(spacing: 0) {
-                if !heroes.contains(.gpu) {
-                    SmallReadout(label: "GPU", value: "\(Format.percent(system.gpu?.utilization ?? 0))%", page: .gpu, help: "Graphics load")
-                }
-                if let volume = system.rootVolume {
-                    SmallReadout(label: "Disk", value: diskFree(volume.available), page: .disk, help: "Free space on \(volume.name)")
-                }
-                SmallReadout(label: "↓", value: Format.rate(system.networkIn), page: .network, help: "Downloading")
-                SmallReadout(label: "↑", value: Format.rate(system.networkOut), page: .network, help: "Uploading")
+        HStack(alignment: .center, spacing: 8) {
+            Image(nsImage: MenuBarGlyph.image())
+                .renderingMode(.template)
+                .foregroundStyle(Color.ink)
+                .accessibilityHidden(true)
+            if let system = model.system {
+                VerdictLine(glance: Glance.make(battery: system.battery, cpu: system.cpu.total, memoryPressure: system.memory?.pressure,
+                                                hottest: model.sensors?.summary?.hottest, diskFree: system.rootVolume?.available,
+                                                diskUsed: system.rootVolume?.usedFraction))
+            } else {
+                Text("Tutto")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Color.ink)
+                Spacer()
             }
         }
-        .panelCard()
-        .watching(system, system.panelFeeds)
-        .background(VisibilityReader { visible in
-            guard let sensors else { return }
-            visible ? sensors.begin() : sensors.end()
-        })
-    }
-
-    private var glance: Glance {
-        Glance.make(battery: system.battery, cpu: system.cpu.total, memoryPressure: system.memory?.pressure,
-                    hottest: sensors?.summary?.hottest, diskFree: system.rootVolume?.available,
-                    diskUsed: system.rootVolume?.usedFraction)
-    }
-
-    private var temperature: Double? { sensors?.summary.flatMap { $0.cpuAverage ?? $0.socAverage } }
-
-    private var heroes: [Vital] {
-        var list: [Vital] = system.battery == nil ? [] : [.battery]
-        list += [.cpu, .memory]
-        if temperature != nil { list.append(.temperature) }
-        if list.count < 4 { list.insert(.gpu, at: min(2, list.count)) }
-        return Array(list.prefix(4))
-    }
-
-    /// Whole gigabytes above 10 ("96 GB"), one decimal below ("9.6 GB").
-    private func diskFree(_ bytes: Int64) -> String {
-        let gb = Double(bytes) / 1_000_000_000
-        if gb >= 1000 { return String(format: "%.1f TB", gb / 1000) }
-        return gb >= 10 ? "\(Int(gb.rounded())) GB" : String(format: "%.1f GB", gb)
-    }
-
-    @ViewBuilder
-    private func column(_ vital: Vital) -> some View {
-        switch vital {
-        case .battery:
-            let battery = system.battery
-            let percent = battery?.percent ?? 0
-            VitalColumn(label: "Battery", value: "\(percent)", unit: "%", fraction: Double(percent) / 100,
-                        alert: percent <= 10 && battery?.isPluggedIn == false, page: .battery,
-                        help: battery.map { "\($0.stateText), \($0.percent)%" } ?? "Battery",
-                        badge: battery?.isCharging == true ? "bolt.fill" : nil)
-        case .cpu:
-            VitalColumn(label: "CPU", value: Format.percent(system.cpu.total), unit: "%", fraction: system.cpu.total,
-                        page: .cpu, help: "Processor load")
-        case .memory:
-            let used = system.memory?.usedFraction ?? 0
-            VitalColumn(label: "Memory", value: Format.percent(used), unit: "%", fraction: used,
-                        alert: system.memory?.pressure == .critical, page: .memory,
-                        help: "Memory used · pressure \(system.memory?.pressure.label.lowercased() ?? "unknown")")
-        case .temperature:
-            let celsius = temperature ?? 0
-            VitalColumn(label: "Temp", value: temperature.map { "\(Int($0.rounded()))" } ?? "—", unit: "°C",
-                        fraction: (celsius - 30) / 70, alert: celsius >= 95, page: .sensors, help: fanHelp)
-        case .gpu:
-            let load = system.gpu?.utilization ?? 0
-            VitalColumn(label: "GPU", value: Format.percent(load), unit: "%", fraction: load, page: .gpu, help: "Graphics load")
-        }
-    }
-
-    private var fanHelp: String {
-        guard let fan = sensors?.fans.first else { return "Temperatures" }
-        return fan.isStopped ? "Temperatures · fan off" : "Temperatures · fan \(Format.number(Int(fan.currentRPM))) rpm"
+        .frame(height: 22)
+        .padding(.horizontal, PanelGrid.inset)
     }
 }
 
-/// The stats card's title: the verdict on the left, its detail on the right. A problem gets a ⚠︎
-/// ahead of it (red when it's an alarm); a calm Mac gets nothing.
+/// The verdict: its title on the left, the detail on the right. A problem gets a ⚠︎ ahead of
+/// it (red when it's an alarm); a calm Mac gets nothing.
 struct VerdictLine: View {
     var glance: Glance
 
@@ -263,88 +230,320 @@ struct VerdictLine: View {
     }
 }
 
-/// Small label, a large light number with a small unit, and a meter in the accent colour.
-/// One quarter of the card; opens its page.
-private struct VitalColumn: View {
-    var label: String
-    var value: String
-    var unit: String
-    var fraction: Double
-    var alert = false
-    var page: MainPage
-    var help: String
-    /// An SF Symbol beside the label (a bolt while the battery charges).
-    var badge: String?
+// MARK: - Battery
+
+/// The battery: how full, what the Mac is drawing, how healthy it is, and the apps using the
+/// processor most right now.
+private struct BatteryCard: View {
+    var battery: BatteryInfo
+    var system: SystemMonitor
     @State private var hovering = false
 
     var body: some View {
-        Button {
-            showInApp(page)
-        } label: {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 3) {
-                    Text(label)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.ink3)
-                    if let badge {
-                        Image(systemName: badge)
-                            .font(.system(size: 8.5, weight: .semibold))
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                showInApp(.battery)
+            } label: {
+                HStack(alignment: .center, spacing: 12) {
+                    BatteryGlyph(level: Double(battery.percent) / 100, charging: battery.isCharging, alert: low)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(alignment: .firstTextBaseline, spacing: 1) {
+                            Text("\(battery.percent)")
+                                .font(.system(size: 24, weight: .semibold).monospacedDigit())
+                                .foregroundStyle(low ? Color.alert : Color.ink)
+                            Text("%")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color.ink3)
+                        }
+                        Text(healthLine)
+                            .font(.system(size: 11))
                             .foregroundStyle(Color.ink3)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 2) {
+                            Text(Format.watts(battery.powerDraw))
+                                .font(.system(size: 17, weight: .medium).monospacedDigit())
+                                .foregroundStyle(Color.ink)
+                            Text("W")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color.ink3)
+                        }
+                        Caption(powerCaption)
                     }
                 }
-                HStack(alignment: .firstTextBaseline, spacing: 1) {
-                    Text(value)
-                        .font(.system(size: 28, weight: .light).monospacedDigit())
-                        .foregroundStyle(alert ? Color.alert : Color.ink)
-                    Text(unit)
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(Color.ink3)
-                }
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                Meter(value: fraction, height: 3, alert: alert, fill: .accentColor, track: Color.primary.opacity(0.1))
-                    .padding(.top, 4)
-                    .padding(.trailing, 10)
+                .hoverBackground(hovering, x: 6, y: 4)
+                .contentShape(Rectangle())
             }
-            .frame(width: Grid.column, alignment: .leading)
-            .hoverBackground(hovering, x: 6, y: 4)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help("Battery details")
+            .accessibilityLabel("Battery")
+            .accessibilityValue("\(battery.percent) percent, \(battery.stateText), \(Format.watts(battery.powerDraw)) watts \(powerCaption), \(healthLine)")
+            .accessibilityHint("Shows details")
+            // A battery that needs attention says so on a line of its own (it's rare, and it matters).
+            if let condition = unusualCondition {
+                Label(condition, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.alert)
+                    .lineLimit(1)
+            }
+            BusyAppsList(apps: system.busyApps, measured: system.busyAppsMeasured)
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help(help)
-        // On the button itself, so it stays a button (a new element with `.ignore` wasn't one).
-        .accessibilityLabel(label)
-        .accessibilityValue("\(value)\(unit == "%" ? " percent" : (unit == "°C" ? " degrees" : unit))")
-        .accessibilityHint("Shows details")
+        .panelCard()
+    }
+
+    private var unusualCondition: String? {
+        guard let condition = battery.condition, !condition.isEmpty, condition.lowercased() != "normal" else { return nil }
+        return condition
+    }
+
+    private var low: Bool { battery.percent <= 10 && !battery.isPluggedIn }
+
+    /// "Health 94 % · 148 cycles" (a condition other than Normal gets its own line).
+    private var healthLine: String {
+        "Health \(battery.healthPercent) % · \(Format.number(battery.cycleCount)) cycles"
+    }
+
+    /// The figure is what the Mac is using: from the adapter when plugged in, from the battery when not.
+    private var powerCaption: String {
+        battery.isPluggedIn ? "system" : "drain"
     }
 }
 
-/// A label and a value in one quarter of the card, for the second line.
-private struct SmallReadout: View {
-    var label: String
+/// The three apps using the processor most right now, helpers counted as their app (read
+/// from the kernel every 2 s while the panel is open). Always three rows tall, so the panel
+/// doesn't jump as apps come and go.
+private struct BusyAppsList: View {
+    var apps: [AppActivity]
+    /// False until the first reading since the panel opened.
+    var measured: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Caption("Busiest apps")
+                Spacer()
+                Caption("CPU")
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(0..<3, id: \.self) { index in
+                    if index < apps.count {
+                        BusyAppRow(app: apps[index])
+                    } else if index == 0 {
+                        Text(measured ? "All quiet" : "Measuring…")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Color.ink3)
+                            .frame(height: 18)
+                    } else {
+                        Color.clear.frame(height: 18)
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Busiest apps")
+    }
+}
+
+private struct BusyAppRow: View {
+    var app: AppActivity
+
+    var body: some View {
+        HStack(spacing: 7) {
+            AppIcon(pid: app.pid)
+                .frame(width: 15, height: 15)
+            Text(app.name)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Color.ink)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 6)
+            Text(app.cpu >= 10 ? "\(Int(app.cpu.rounded())) %" : String(format: "%.1f %%", app.cpu))
+                .font(.geist(11, weight: .medium))
+                .foregroundStyle(Color.ink2)
+        }
+        .frame(height: 18)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Tiles
+
+/// Six tiles in two columns: CPU, memory, GPU, disk, network and temperature, each a number,
+/// an engraved caption, a detail and the last minute as a line (or a meter). Each opens its page.
+/// With Sensors & Fans off there's no temperature, and the network tile takes the row.
+private struct StatTiles: View {
+    var system: SystemMonitor
+    var sensors: SensorsModule?
+
+    var body: some View {
+        VStack(spacing: PanelGrid.gap) {
+            HStack(spacing: PanelGrid.gap) {
+                StatTile(caption: "CPU", value: Format.percent(system.cpu.total), unit: "%", detail: loadText,
+                         page: .cpu, help: "Processor load · load average \(loadValue)",
+                         spokenName: "CPU", spokenValue: "\(Format.percent(system.cpu.total)) percent, load average \(loadValue)") {
+                    Sparkline(values: system.cpuHistory, color: .accentColor, stretch: true)
+                }
+                StatTile(caption: "Memory", value: Format.percent(system.memory?.usedFraction ?? 0), unit: "%", detail: memoryUsed,
+                         alert: system.memory?.pressure == .critical, page: .memory,
+                         help: "Memory used · pressure \(system.memory?.pressure.label.lowercased() ?? "unknown")",
+                         spokenName: "Memory", spokenValue: "\(Format.percent(system.memory?.usedFraction ?? 0)) percent, \(memoryUsed) used") {
+                    Sparkline(values: system.memoryHistory, color: .accentColor, stretch: true)
+                }
+            }
+            HStack(spacing: PanelGrid.gap) {
+                StatTile(caption: "GPU", value: Format.percent(system.gpu?.utilization ?? 0), unit: "%", detail: gpuMemory,
+                         page: .gpu, help: "Graphics load",
+                         spokenName: "GPU", spokenValue: "\(Format.percent(system.gpu?.utilization ?? 0)) percent") {
+                    Sparkline(values: system.gpuHistory, color: .accentColor, stretch: true)
+                }
+                let disk = system.rootVolume.map { Format.diskParts($0.available) } ?? ("—", "")
+                let full = (system.rootVolume?.usedFraction ?? 0) >= 0.95
+                StatTile(caption: "Disk", value: disk.0, unit: disk.1, detail: "free", alert: full, page: .disk,
+                         help: "Free space on \(system.rootVolume?.name ?? "the startup disk")",
+                         spokenName: "Disk", spokenValue: system.rootVolume == nil ? "unavailable" : "\(disk.0) \(disk.1) free") {
+                    Meter(value: system.rootVolume?.usedFraction ?? 0, height: 4, alert: full, fill: .accentColor, track: Color.primary.opacity(0.1))
+                        .frame(height: 4)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .padding(.bottom, 4)
+                }
+            }
+            HStack(spacing: PanelGrid.gap) {
+                let down = Format.rateParts(system.networkIn)
+                StatTile(caption: "Network", value: down.0, unit: down.1, detail: "↑ " + Format.rate(system.networkOut),
+                         prefix: "↓", page: .network, help: "Downloading and uploading",
+                         spokenName: "Network",
+                         spokenValue: "download \(Format.spokenRate(system.networkIn)), upload \(Format.spokenRate(system.networkOut))",
+                         wide: sensors == nil) {
+                    Sparkline(values: system.networkHistory, color: .accentColor, stretch: true)
+                }
+                // Temperature belongs to Sensors & Fans: with that off, there's no tile.
+                if sensors != nil {
+                    let hot = (temperature ?? 0) >= 95
+                    StatTile(caption: "Temp", value: temperature.map { "\(Int($0.rounded()))" } ?? "—", unit: temperature == nil ? "" : "°C",
+                             detail: fanText, alert: hot, page: .sensors, help: temperatureHelp,
+                             spokenName: "Temperature",
+                             spokenValue: temperature.map { "\(Int($0.rounded())) degrees Celsius" + (fanText.isEmpty ? "" : ", \(fanText)") } ?? "unavailable") {
+                        Meter(value: ((temperature ?? 30) - 30) / 70, height: 4, alert: hot, fill: .accentColor, track: Color.primary.opacity(0.1))
+                            .frame(height: 4)
+                            .frame(maxHeight: .infinity, alignment: .bottom)
+                            .padding(.bottom, 4)
+                    }
+                }
+            }
+        }
+        .background(VisibilityReader { visible in
+            guard let sensors else { return }
+            visible ? sensors.begin() : sensors.end()
+        })
+    }
+
+    private var loadValue: String {
+        guard let load = system.loadAverage.first else { return "unknown" }
+        return String(format: "%.1f", load)
+    }
+
+    private var loadText: String {
+        system.loadAverage.first == nil ? "" : "load \(loadValue)"
+    }
+
+    private var memoryUsed: String {
+        guard let memory = system.memory else { return "" }
+        return String(format: "%.1f GB", Double(memory.used) / 1_073_741_824)
+    }
+
+    private var gpuMemory: String {
+        guard let bytes = system.gpu?.memoryInUse, bytes > 0 else { return "" }
+        return String(format: "%.1f GB", Double(bytes) / 1_073_741_824)
+    }
+
+    private var temperature: Double? { sensors?.summary.flatMap { $0.cpuAverage ?? $0.socAverage } }
+
+    private var fanText: String {
+        guard let fan = sensors?.fans.first else { return "" }
+        return fan.isStopped ? "fan off" : "\(Format.number(Int(fan.currentRPM))) rpm"
+    }
+
+    private var temperatureHelp: String {
+        guard temperature != nil else { return "No temperature sensor could be read on this Mac" }
+        return ["Processor temperature", fanText].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
+
+/// One tile: an engraved caption and a detail on top, the number and its line beneath. The number
+/// never shrinks or truncates: the line gives way instead (down to 26 pt) when it needs the room.
+private struct StatTile<Graph: View>: View {
+    var caption: String
     var value: String
+    var unit: String
+    var detail: String
+    var alert = false
+    /// A small mark ahead of the number (the network's ↓).
+    var prefix: String?
     var page: MainPage
     var help: String
+    var spokenName: String
+    var spokenValue: String
+    /// Spans both columns.
+    var wide = false
+    @ViewBuilder var graph: Graph
     @State private var hovering = false
 
     var body: some View {
         Button {
             showInApp(page)
         } label: {
-            HStack(spacing: 4) {
-                Text(label).foregroundStyle(Color.ink3)
-                Text(value).foregroundStyle(hovering ? Color.ink : Color.ink2)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Caption(caption)
+                    Spacer(minLength: 4)
+                    Text(detail)
+                        .font(.system(size: 10.5).monospacedDigit())
+                        .foregroundStyle(Color.ink3)
+                        .lineLimit(1)
+                }
+                HStack(alignment: .bottom, spacing: 6) {
+                    // A word unit (GB, KB/s) gets a little air; % and °C sit close.
+                    HStack(alignment: .firstTextBaseline, spacing: unit.first?.isLetter == true ? 2.5 : 1) {
+                        if let prefix {
+                            Text(prefix)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.ink3)
+                        }
+                        Text(value)
+                            .font(.system(size: 21, weight: .medium).monospacedDigit())
+                            .foregroundStyle(alert ? Color.alert : Color.ink)
+                        if !unit.isEmpty {
+                            Text(unit)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color.ink3)
+                        }
+                    }
+                    .lineLimit(1)
+                    .fixedSize()
+                    .layoutPriority(1)
+                    Spacer(minLength: 2)
+                    graph
+                        .frame(minWidth: 26, maxWidth: wide ? 120 : 46)
+                        .frame(height: 20)
+                }
+                .frame(height: 24)
             }
-            .font(.system(size: 11.5).monospacedDigit())
-            .lineLimit(1)
-            .frame(width: Grid.column, alignment: .leading)
+            .padding(.horizontal, PanelGrid.inset)
+            .padding(.vertical, 9)
+            .frame(width: wide ? PanelGrid.tile * 2 + PanelGrid.gap : PanelGrid.tile, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(hovering ? 0.085 : 0.055)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(help)
-        .accessibilityElement(children: .combine)
+        .accessibilityLabel(spokenName)
+        .accessibilityValue(spokenValue)
+        .accessibilityHint("Shows details")
     }
 }
 
@@ -463,14 +662,16 @@ private struct SoundCard: View {
     }
 }
 
-// MARK: - Shortcuts
+// MARK: - Tools
 
-/// The tools' shortcuts, as rows: click one to do the same as pressing its keys.
+/// The tools, each with its keys: click one to do the same as pressing them.
 @MainActor
 enum ShortcutRows {
     struct Row: Identifiable {
         var action: ShortcutAction
         var title: String
+        /// The tile's label.
+        var short: String
         var symbol: String
         var id: String { action.id }
     }
@@ -478,40 +679,55 @@ enum ShortcutRows {
     static func rows(_ model: AppModel) -> [Row] {
         var rows: [Row] = []
         if model.screenshots != nil {
-            rows.append(Row(action: .captureArea, title: "Capture Area", symbol: "rectangle.dashed"))
-            rows.append(Row(action: .captureAreaEdit, title: "Capture and Edit", symbol: "pencil.and.scribble"))
-            rows.append(Row(action: .captureScreen, title: "Capture Screen", symbol: "laptopcomputer"))
+            rows.append(Row(action: .captureArea, title: "Capture Area", short: "Area", symbol: "rectangle.dashed"))
+            rows.append(Row(action: .captureAreaEdit, title: "Capture and Edit", short: "Edit", symbol: "pencil.and.scribble"))
+            rows.append(Row(action: .captureScreen, title: "Capture Screen", short: "Screen", symbol: "laptopcomputer"))
         }
-        if model.clipboard != nil { rows.append(Row(action: .clipboardHistory, title: "Clipboard History", symbol: "list.clipboard")) }
-        if model.windows != nil { rows.append(Row(action: .windowPalette, title: "Snap Window", symbol: "rectangle.split.2x1")) }
-        if model.wordCounter != nil { rows.append(Row(action: .wordCounter, title: "Count Words", symbol: ModuleID.wordCounter.symbol)) }
+        if model.clipboard != nil {
+            rows.append(Row(action: .clipboardHistory, title: "Clipboard History", short: "History", symbol: "list.clipboard"))
+        }
+        if model.windows != nil { rows.append(Row(action: .windowPalette, title: "Snap Window", short: "Snap", symbol: "rectangle.split.2x1")) }
+        if model.wordCounter != nil {
+            rows.append(Row(action: .wordCounter, title: "Count Words", short: "Words", symbol: ModuleID.wordCounter.symbol))
+        }
         return rows
     }
 }
 
-private struct ShortcutsCard: View {
+private struct ToolsCard: View {
     var model: AppModel
+    /// A tool is on its way (keys lighting, panel closing): the row ignores further clicks, so a
+    /// quick double click can't run it twice or bring the panel back.
+    @State private var launching = false
+    private static let inset: CGFloat = 6
+    private static let gap: CGFloat = 2
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            CardTitle(title: "Shortcuts") { EmptyView() }
-                .padding(.bottom, 4)
-            ForEach(ShortcutRows.rows(model)) { row in
-                ShortcutRow(row: row, shortcut: model.shortcuts.shortcut(for: row.action)) {
+        let rows = ShortcutRows.rows(model)
+        let count = CGFloat(max(rows.count, 1))
+        // Each tile an equal share of the card, so a long shortcut can't widen it.
+        let tile = (PanelGrid.width - 2 * PanelGrid.outer - 2 * Self.inset - Self.gap * (count - 1)) / count
+        HStack(spacing: Self.gap) {
+            ForEach(rows) { row in
+                ToolTile(row: row, shortcut: model.shortcuts.shortcut(for: row.action), launching: $launching) {
                     afterPanelCloses { model.perform(row.action) }
                 }
+                .frame(width: tile)
             }
         }
-        .panelCard()
+        .padding(.horizontal, Self.inset)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.055)))
     }
 }
 
-/// A row like a menu item: symbol and name on the left, the keys on the right the way a menu
-/// sets them (modifiers, then the key in its own column). Clicking it presses the keys you'd
-/// press: they light up one after another, then the panel closes and the tool runs.
-private struct ShortcutRow: View {
+/// A tool: its symbol, a short name and its keys. Clicking it presses the keys you'd press:
+/// they light up one after another, then the panel closes and the tool runs.
+private struct ToolTile: View {
     var row: ShortcutRows.Row
     var shortcut: KeyShortcut?
+    @Binding var launching: Bool
     var action: () -> Void
     @State private var hovering = false
     @State private var lit = 0
@@ -519,46 +735,67 @@ private struct ShortcutRow: View {
 
     var body: some View {
         Button(action: press) {
-            HStack(spacing: 10) {
+            VStack(spacing: 4) {
                 Image(systemName: row.symbol)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(hovering ? Color.ink : Color.ink2)
-                    .frame(width: 18)
-                Text(row.title)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: 14.5))
                     .foregroundStyle(Color.ink)
-                Spacer(minLength: 8)
-                if let shortcut { keys(shortcut.symbols) }
+                    .frame(height: 18)
+                Text(row.short)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Color.ink2)
+                    .lineLimit(1)
+                if let shortcut {
+                    keys(shortcut)
+                } else {
+                    Text("—").font(.system(size: 9.5)).foregroundStyle(Color.ink4).frame(height: 14)
+                }
             }
-            .frame(height: 24)   // a native menu row
-            .hoverBackground(hovering)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(hovering ? Color.primary.opacity(0.08) : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .onHover { hovering = $0 }
-        .help(shortcut.map { "\(row.action.title) (\($0.displayString))" } ?? row.action.title)
+        .help(shortcut.map { "\(row.title) (\($0.displayString))" } ?? row.title)
         .accessibilityLabel(row.title)
         .accessibilityValue(shortcut?.spokenDescription ?? "")
     }
 
-    /// ⇧⌘ right-aligned, then the key in a fixed column, as in a native menu. While pressed, each
-    /// key fills in turn with the accent.
-    private func keys(_ symbols: [String]) -> some View {
-        HStack(spacing: 1) {
-            ForEach(Array(symbols.enumerated()), id: \.offset) { index, symbol in
-                Text(symbol)
-                    .font(.system(size: 12))
-                    .foregroundStyle(lit > index ? Color.white : Color.ink3)
-                    .frame(minWidth: index == symbols.count - 1 ? 12 : nil)
-                    .padding(.horizontal, 1.5)
-                    .background(RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(Color.accentColor).opacity(lit > index ? 1 : 0))
-            }
+    /// Keycaps when they fit the tile; a longer custom shortcut falls back to one line of text.
+    private func keys(_ shortcut: KeyShortcut) -> some View {
+        ViewThatFits(in: .horizontal) {
+            keycaps(shortcut.symbols)
+            Text(shortcut.displayString)
+                .font(.system(size: 9, weight: .medium, design: .rounded))
+                .foregroundStyle(lit > 0 ? Color.accentColor : Color.ink2)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .frame(height: 13)
         }
     }
 
+    /// Small keycaps; while pressed, each fills in turn with the accent.
+    private func keycaps(_ symbols: [String]) -> some View {
+        HStack(spacing: 1.5) {
+            ForEach(Array(symbols.enumerated()), id: \.offset) { index, symbol in
+                Text(symbol)
+                    .font(.system(size: 8.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(lit > index ? Color.white : Color.ink2)
+                    .frame(minWidth: 11, minHeight: 13)
+                    .padding(.horizontal, symbol.count > 1 ? 2 : 0)
+                    .background(RoundedRectangle(cornerRadius: 3, style: .continuous).fill(lit > index ? Color.accentColor : Color.wash))
+                    .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(lit > index ? Color.clear : Color.hairline))
+            }
+        }
+        .fixedSize()
+    }
+
     /// Keys light 30 ms apart (all at once under Reduce Motion), the tool runs 80 ms after the last,
-    /// and the keys go dark once the panel has faded.
+    /// and the keys go dark once the panel has faded. One launch at a time for the whole row.
     private func press() {
+        guard !launching else { return }
+        launching = true
         let count = shortcut?.symbols.count ?? 0
         let step = reduceMotion ? 0 : 0.03
         for index in 0..<count {
@@ -568,7 +805,10 @@ private struct ShortcutRow: View {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + step * Double(count) + 0.08) {
             action()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { lit = 0 }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                lit = 0
+                launching = false
+            }
         }
     }
 }
@@ -594,6 +834,14 @@ private struct PanelFooter: View {
             .buttonStyle(PressStyle())
             .onHover { hovering = $0 }
             Spacer()
+            if let system = model.system, let footprint = system.ownFootprint {
+                // What Tutto itself costs, right now: never a guess.
+                Text(ownCost(footprint, system.ownCPU))
+                    .font(.geist(10.5, weight: .medium))
+                    .foregroundStyle(Color.ink3)
+                    .help("What Tutto itself is using right now")
+                    .accessibilityLabel("Tutto is using \(ownCost(footprint, system.ownCPU))")
+            }
             Menu {
                 if let clipboard = model.clipboard {
                     Toggle("Pause Clipboard History", isOn: Binding(get: { clipboard.isPaused }, set: { clipboard.isPaused = $0 }))
@@ -622,8 +870,14 @@ private struct PanelFooter: View {
             .help("More")
             .accessibilityLabel("More")
         }
-        .padding(.leading, Grid.inset)
-        .padding(.trailing, Grid.inset - 6)
+        .padding(.leading, PanelGrid.inset)
+        .padding(.trailing, PanelGrid.inset - 6)
+    }
+
+    private func ownCost(_ footprint: Double, _ cpu: Double?) -> String {
+        let memory = "\(Int(footprint.rounded())) MB"
+        guard let cpu else { return memory }
+        return memory + " · " + String(format: "%.1f %% CPU", cpu)
     }
 }
 
@@ -673,7 +927,7 @@ private struct NoticeRow: View {
                 .buttonStyle(InkButtonStyle(compact: true))
         }
         .padding(.vertical, 6)
-        .padding(.horizontal, Grid.inset)
+        .padding(.horizontal, PanelGrid.inset)
         .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .help(help)
     }
@@ -709,15 +963,18 @@ struct AppIcon: View {
     var pid: Int32
 
     var body: some View {
-        if let icon = AppIconCache.icon(for: pid) {
-            Image(nsImage: icon).resizable().interpolation(.high)
-        } else {
-            Image(systemName: "gearshape")
-                .resizable()
-                .scaledToFit()
-                .foregroundStyle(Color.ink4)
-                .padding(1.5)
+        Group {
+            if let icon = AppIconCache.icon(for: pid) {
+                Image(nsImage: icon).resizable().interpolation(.high)
+            } else {
+                Image(systemName: "gearshape")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(Color.ink4)
+                    .padding(1.5)
+            }
         }
+        .accessibilityHidden(true)  // the row's name already says what it is
     }
 }
 

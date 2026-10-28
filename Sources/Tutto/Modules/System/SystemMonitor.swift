@@ -17,6 +17,9 @@ enum SystemFeed: Hashable, CaseIterable {
     case load
     /// Every mounted volume (refreshed every 10 s).
     case volumes
+    /// The busiest apps (helpers counted as their app), read from the kernel every 2 s; no
+    /// process is started. Also Tutto's own memory and processor use.
+    case apps
     /// Top processes by energy impact (a streaming `top`).
     case energyProcesses
     case cpuProcesses
@@ -47,6 +50,13 @@ final class SystemMonitor {
     private(set) var energyProcesses: [ProcessSample] = []
     private(set) var cpuProcesses: [ProcessSample] = []
     private(set) var memoryProcesses: [ProcessSample] = []
+    /// The busiest apps right now, most first.
+    private(set) var busyApps: [AppActivity] = []
+    /// False until the first reading of `busyApps` since the panel opened (so an empty list means quiet).
+    private(set) var busyAppsMeasured = false
+    /// Tutto's own footprint (MB) and processor use (percent of one core), shown so its cost is never a guess.
+    private(set) var ownFootprint: Double?
+    private(set) var ownCPU: Double?
 
     private var watchers: [SystemFeed: Int] = [:]
     private var timer: DispatchSourceTimer?
@@ -57,6 +67,8 @@ final class SystemMonitor {
     private var netInMeter = RateMeter()
     private var netOutMeter = RateMeter()
     private var streams: [SystemFeed: TopProcessStream] = [:]
+    private var appSampler: AppActivitySampler?
+    private var ownLast: (cpu: UInt64, at: UInt64)?
 
     var isSampling: Bool { timer != nil }
 
@@ -74,9 +86,9 @@ final class SystemMonitor {
         rootVolume = DiskReader.rootVolume()
     }
 
-    /// What the menu bar panel needs while it's open: the 1 Hz numbers, no process list (that
-    /// runs `top`, and lives on the Battery, CPU and Memory pages).
-    var panelFeeds: Set<SystemFeed> { [.load] }
+    /// What the menu bar panel needs while it's open: the 1 Hz numbers and the busiest apps
+    /// (read from the kernel, no `top`: that lives on the Battery, CPU and Memory pages).
+    var panelFeeds: Set<SystemFeed> { [.load, .apps] }
 
     // MARK: Watching
 
@@ -102,7 +114,20 @@ final class SystemMonitor {
     private func watching(_ feed: SystemFeed) -> Bool { (watchers[feed] ?? 0) > 0 }
 
     private func update() {
-        let wantsLoad = watching(.load) || watching(.volumes)
+        let wantsLoad = watching(.load) || watching(.volumes) || watching(.apps)
+        if watching(.apps), appSampler == nil {
+            // The starting reading now, so the first list comes with the first tick.
+            let sampler = AppActivitySampler()
+            _ = sampler.sample()
+            appSampler = sampler
+            ownLast = nil
+        } else if !watching(.apps), appSampler != nil {
+            appSampler = nil
+            busyApps = []
+            busyAppsMeasured = false
+            ownLast = nil
+            ownCPU = nil   // else the last opening's figure shows until the next reading
+        }
         if wantsLoad && timer == nil {
             startTimer()
         } else if !wantsLoad, let timer {
@@ -113,6 +138,11 @@ final class SystemMonitor {
             diskWriteMeter.reset()
             netInMeter.reset()
             netOutMeter.reset()
+            // They're drawn as "the last minute"; once nothing is reading, they no longer are.
+            cpuHistory = []
+            gpuHistory = []
+            memoryHistory = []
+            networkHistory = []
         }
         for feed in [SystemFeed.energyProcesses, .cpuProcesses, .memoryProcesses] {
             if watching(feed), streams[feed] == nil {
@@ -189,6 +219,27 @@ final class SystemMonitor {
         if tick % 5 == 0 { battery = BatteryReader.read() }
         loadAverage = CPUReader.loadAverage()
         if tick % 10 == 0 { sampleSlow() }
+        // Every 2 s, the first at 1.25 s: a whole second's worth, so the first list is a fair one.
+        if let appSampler, tick % 2 == 0 {
+            busyApps = appSampler.sample(limit: 3)
+            busyAppsMeasured = true
+            sampleOwnCost()
+        }
+    }
+
+    /// Tutto's own footprint and processor use since the last reading.
+    private func sampleOwnCost() {
+        var info = rusage_info_v4()
+        let status: Int32 = withUnsafeMutablePointer(to: &info) { pointer -> Int32 in
+            pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { raw -> Int32 in proc_pid_rusage(getpid(), RUSAGE_INFO_V4, raw) }
+        }
+        guard status == 0 else { return }
+        ownFootprint = Double(info.ri_phys_footprint) / 1_048_576
+        let now = mach_absolute_time(), cpu = info.ri_user_time + info.ri_system_time
+        if let ownLast, now > ownLast.at, cpu >= ownLast.cpu {
+            ownCPU = Double(cpu - ownLast.cpu) / Double(now - ownLast.at) * 100
+        }
+        ownLast = (cpu, now)
     }
 
     /// Things that change slowly: battery, volumes, addresses.

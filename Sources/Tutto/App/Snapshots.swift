@@ -24,7 +24,7 @@ enum Snapshots {
         let model = AppModel.shared
         AppModel.rendersOffscreen = true
         model.launch(quietly: true)
-        model.system?.begin([.load, .volumes, .energyProcesses, .cpuProcesses, .memoryProcesses])
+        model.system?.begin([.load, .volumes, .apps, .energyProcesses, .cpuProcesses, .memoryProcesses])
         model.sensors?.begin()
         model.sound?.begin()   // lists apps and reads which play; mutes nothing
         // Let readings and the first `top` samples arrive.

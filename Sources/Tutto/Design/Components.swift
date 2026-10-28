@@ -43,11 +43,15 @@ struct Meter: View {
 struct Sparkline: View {
     var values: [Double]
     var capacity = 60
+    /// The line; its area is filled with a faint wash of the same colour.
+    var color: Color = .primary
+    /// A short history spans the whole width (the panel's tiles), instead of growing from the right.
+    var stretch = false
 
     var body: some View {
         Canvas { context, size in
             guard values.count > 1 else { return }
-            let step = size.width / CGFloat(max(capacity - 1, 1))
+            let step = size.width / CGFloat(max((stretch ? min(values.count, capacity) : capacity) - 1, 1))
             let start = size.width - step * CGFloat(values.count - 1)
             var line = Path()
             for (index, value) in values.enumerated() {
@@ -59,8 +63,8 @@ struct Sparkline: View {
             fill.addLine(to: CGPoint(x: size.width, y: size.height))
             fill.addLine(to: CGPoint(x: start, y: size.height))
             fill.closeSubpath()
-            context.fill(fill, with: .color(.primary.opacity(0.06)))
-            context.stroke(line, with: .color(.primary.opacity(0.85)), lineWidth: 1)
+            context.fill(fill, with: .color(color == .primary ? .primary.opacity(0.06) : color.opacity(0.14)))
+            context.stroke(line, with: .color(color == .primary ? .primary.opacity(0.85) : color), lineWidth: color == .primary ? 1 : 1.25)
         }
         .accessibilityHidden(true)
     }
@@ -350,6 +354,18 @@ enum Format {
         // ByteCountFormatter spells nothing as "Zero KB"; a rate reads better as a number.
         if bytesPerSecond < 1000 { return "\(Int(bytesPerSecond / 1000)) KB/s" }
         return ByteCountFormatter.string(fromByteCount: Int64(bytesPerSecond), countStyle: .file) + "/s"
+    }
+
+    /// "12.4 MB/s" split into ("12.4", "MB/s") for value + unit typography; "—" alone when unknown.
+    static func rateParts(_ bytesPerSecond: Double?) -> (String, String) {
+        let text = rate(bytesPerSecond)
+        guard let space = text.firstIndex(of: " ") else { return (text, "") }
+        return (String(text[..<space]), String(text[text.index(after: space)...]))
+    }
+
+    /// A rate as VoiceOver should say it: "12.4 MB per second", or "measuring" before the first reading.
+    static func spokenRate(_ bytesPerSecond: Double?) -> String {
+        bytesPerSecond == nil ? "measuring" : rate(bytesPerSecond).replacingOccurrences(of: "/s", with: " per second")
     }
 
     static func watts(_ value: Double?) -> String {
