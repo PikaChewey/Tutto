@@ -16,7 +16,7 @@ public enum StripCommand: Hashable, Sendable, Identifiable {
     case moveLeft, moveRight, moveUp, moveDown, moveToFirst, moveToLast
     case moveToNumber(Int)
     case nextDisplay, toggleRunning, showStrip
-    case cycleWidth, fullWidth, centre, wider, narrower
+    case cycleWidth, fullWidth, fullWindows, centre, wider, narrower
     case taller, shorter, equalizeHeights
     case pinLeft, pinRight
     case stackLeft, stackRight, popOutRight, popOutLeft
@@ -36,7 +36,7 @@ public enum StripCommand: Hashable, Sendable, Identifiable {
         + [.showStrip, .nextDisplay, .toggleRunning]
         + [.moveLeft, .moveRight, .moveUp, .moveDown, .moveToFirst, .moveToLast]
         + (1...9).map { .moveToNumber($0) }
-        + [.cycleWidth, .fullWidth, .centre, .wider, .narrower, .taller, .shorter, .equalizeHeights, .pinLeft, .pinRight]
+        + [.cycleWidth, .fullWidth, .fullWindows, .centre, .wider, .narrower, .taller, .shorter, .equalizeHeights, .pinLeft, .pinRight]
         + [.stackLeft, .stackRight, .popOutRight, .popOutLeft, .toggleTabbed, .toggleFloat]
 
     public var id: String {
@@ -68,6 +68,7 @@ public enum StripCommand: Hashable, Sendable, Identifiable {
         case .showStrip: "showStrip"
         case .cycleWidth: "cycleWidth"
         case .fullWidth: "fullWidth"
+        case .fullWindows: "fullWindows"
         case .centre: "centre"
         case .wider: "wider"
         case .narrower: "narrower"
@@ -106,6 +107,7 @@ public enum StripCommand: Hashable, Sendable, Identifiable {
         case .showStrip: "Show the strip"
         case .cycleWidth: "Cycle width"
         case .fullWidth: "Full width"
+        case .fullWindows: "Every window full, or back to the strip"
         case .centre: "Centre the column"
         case .wider: "Wider"
         case .narrower: "Narrower"
@@ -128,7 +130,7 @@ public enum StripCommand: Hashable, Sendable, Identifiable {
         case .focusLeft, .focusRight, .focusUp, .focusDown, .focusFirst, .focusLast, .focusNumber,
              .showStrip, .nextDisplay, .toggleRunning: .navigate
         case .moveLeft, .moveRight, .moveUp, .moveDown, .moveToFirst, .moveToLast, .moveToNumber: .move
-        case .cycleWidth, .fullWidth, .centre, .wider, .narrower, .taller, .shorter, .equalizeHeights,
+        case .cycleWidth, .fullWidth, .fullWindows, .centre, .wider, .narrower, .taller, .shorter, .equalizeHeights,
              .pinLeft, .pinRight: .size
         case .stackLeft, .stackRight, .popOutRight, .popOutLeft, .toggleTabbed, .toggleFloat: .stacks
         }
@@ -165,6 +167,7 @@ public enum StripCommand: Hashable, Sendable, Identifiable {
         case .showStrip: return key(kVK_ANSI_S, co)
         case .cycleWidth: return key(kVK_ANSI_R, co)
         case .fullWidth: return key(kVK_ANSI_F, co)
+        case .fullWindows: return key(kVK_ANSI_F, cos)
         case .centre: return key(kVK_ANSI_C, co)
         case .wider: return key(kVK_ANSI_Equal, co)
         case .narrower: return key(kVK_ANSI_Minus, co)

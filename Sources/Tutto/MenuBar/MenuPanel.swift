@@ -834,12 +834,15 @@ private struct PanelFooter: View {
             .buttonStyle(PressStyle())
             .onHover { hovering = $0 }
             Spacer()
+            if let strip = model.strip, strip.isRunning {
+                WindowModeSwitch(strip: strip)
+            }
             if let system = model.system, let footprint = system.ownFootprint {
                 // What Tutto itself costs, right now: never a guess.
-                Text(ownCost(footprint, system.ownCPU))
+                Text("\(Int(footprint.rounded())) MB")
                     .font(.geist(10.5, weight: .medium))
                     .foregroundStyle(Color.ink3)
-                    .help("What Tutto itself is using right now")
+                    .help("What Tutto itself is using right now: \(ownCost(footprint, system.ownCPU))")
                     .accessibilityLabel("Tutto is using \(ownCost(footprint, system.ownCPU))")
             }
             Menu {
@@ -878,6 +881,41 @@ private struct PanelFooter: View {
         let memory = "\(Int(footprint.rounded())) MB"
         guard let cpu else { return memory }
         return memory + " · " + String(format: "%.1f %% CPU", cpu)
+    }
+}
+
+/// Strip ⇄ full windows, as two words: the one in use in ink on a faint pill, the other quiet.
+/// Every window on the strip switches size at once (⌃⌥⇧F does the same).
+private struct WindowModeSwitch: View {
+    var strip: StripModule
+
+    var body: some View {
+        HStack(spacing: 1) {
+            option("Strip", full: false)
+            option("Full", full: true)
+        }
+        .padding(2)
+        .background(Capsule().fill(Color.primary.opacity(0.06)))
+        .help("Windows side by side on the strip, or every window full (⌃⌥⇧F)")
+    }
+
+    private func option(_ title: String, full: Bool) -> some View {
+        let selected = strip.fullWindows == full
+        return Button {
+            guard !selected else { return }
+            withAnimation(Motion.micro) { strip.setFullWindows(full) }
+        } label: {
+            Text(title)
+                .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                .foregroundStyle(selected ? Color.ink : Color.ink3)
+                .padding(.horizontal, 7)
+                .frame(height: 18)
+                .background(Capsule().fill(selected ? Color.primary.opacity(0.1) : .clear))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(full ? "Full windows" : "Strip")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

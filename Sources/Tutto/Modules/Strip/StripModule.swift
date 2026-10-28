@@ -99,6 +99,11 @@ final class StripModule: ModuleController {
     var gap: Double { didSet { save(gap, Keys.gap); relayoutAll() } }
     var presets: [Double] { didSet { save(presets, Keys.presets) } }
     var defaultWidth: Double { didSet { save(defaultWidth, Keys.defaultWidth) } }
+    /// Full windows: every window on every strip fills the screen (the strip scrolls between
+    /// them), instead of sitting side by side at its own width. New windows arrive full too.
+    private(set) var fullWindows: Bool { didSet { save(fullWindows, Keys.fullWindows) } }
+    /// The width a window joins the strip at.
+    private var newColumnWidth: Double { fullWindows ? 1 : defaultWidth }
     var fullHeight: Bool { didSet { save(fullHeight, Keys.fullHeight); relayoutAll() } }
     var centring: StripCentring { didSet { save(centring.rawValue, Keys.centring); relayoutAll(reveal: true) } }
     var animation: StripAnimation { didSet { save(animation.rawValue, Keys.animation) } }
@@ -238,6 +243,7 @@ final class StripModule: ModuleController {
         gap = d.object(forKey: Keys.gap) as? Double ?? 8
         presets = (d.array(forKey: Keys.presets) as? [Double]).flatMap { $0.isEmpty ? nil : $0 } ?? Strip.defaultPresets
         defaultWidth = d.object(forKey: Keys.defaultWidth) as? Double ?? 0.5
+        fullWindows = d.bool(forKey: Keys.fullWindows)
         fullHeight = d.object(forKey: Keys.fullHeight) as? Bool ?? true
         centring = StripCentring(rawValue: d.string(forKey: Keys.centring) ?? "") ?? .never
         animation = StripAnimation(rawValue: d.string(forKey: Keys.animation) ?? "") ?? .smooth
@@ -973,7 +979,7 @@ final class StripModule: ModuleController {
         let app = NSRunningApplication(processIdentifier: pid)
         guard let w = admit(element, pid: pid, bundleID: app?.bundleIdentifier, into: state) else { return }
         let front = focus ?? (NSWorkspace.shared.frontmostApplication?.processIdentifier == pid)
-        let width = arrivals.removeValue(forKey: w.id) != nil ? 1 : defaultWidth
+        let width = arrivals.removeValue(forKey: w.id) != nil ? 1 : newColumnWidth
         state.strip.insert(w.id, width: width, besideFocused: front, focus: front)
         if front { reveal(state) }
         arrangeIfAlways(state)
@@ -1116,7 +1122,7 @@ final class StripModule: ModuleController {
         if let slot = record?.slot {
             state.strip.restore(w.id, to: slot)
         } else {
-            state.strip.insert(w.id, width: defaultWidth, besideFocused: true, focus: focus)
+            state.strip.insert(w.id, width: newColumnWidth, besideFocused: true, focus: focus)
         }
         if focus { state.strip.focus(w.id) }
         reveal(state)
@@ -1286,6 +1292,8 @@ final class StripModule: ModuleController {
             return toggleFloat(in: state)
         case .toggleRunning:
             return
+        case .fullWindows:
+            return setFullWindows(!fullWindows)
         }
         if resized, strip.columns.indices.contains(strip.focusColumn) {
             for id in strip.columns[strip.focusColumn].windows {
@@ -1322,6 +1330,30 @@ final class StripModule: ModuleController {
         if !outcome.changed { commandStarted = nil }
         #endif
         showIndicator(state, message: outcome.message, refused: !outcome.changed)
+    }
+
+    /// Full windows ⇄ strip, for every window on every strip at once: each fills the screen (⌘Tab
+    /// and the strip keys move between them), or goes back to the width it had.
+    func setFullWindows(_ on: Bool) {
+        guard isRunning else { return }
+        fullWindows = on
+        var shown: StripState?
+        for state in strips.values {
+            var strip = state.strip
+            guard strip.setAllFull(on, fallback: defaultWidth).changed else { continue }
+            for id in strip.allWindows {
+                windows[id]?.enforcedWidth = nil
+                windows[id]?.refusals = 0
+            }
+            state.strip = strip
+            if isCurrent(state.key) {
+                reveal(state)
+                apply(state, animated: true)
+                shown = state
+            }
+        }
+        saveLayoutsSoon()
+        if let shown { showIndicator(shown, message: on ? "Full windows" : "Strip", refused: false) }
     }
 
     private func toggleRunning() {
@@ -1395,7 +1427,7 @@ final class StripModule: ModuleController {
                                        key: target.key, frame: frame)
             windows[id] = w
             observers[app.processIdentifier]?.watch(element, as: id)
-            target.strip.insert(id, width: defaultWidth, besideFocused: true, focus: true)
+            target.strip.insert(id, width: newColumnWidth, besideFocused: true, focus: true)
             reveal(target)
             apply(target, animated: true)
             showIndicator(target, message: "Tiled · back on the strip", refused: false)
@@ -2134,6 +2166,7 @@ final class StripModule: ModuleController {
         static let gap = "strip.gap"
         static let presets = "strip.presets"
         static let defaultWidth = "strip.defaultWidth"
+        static let fullWindows = "strip.fullWindows"
         static let fullHeight = "strip.fullHeight"
         static let centring = "strip.centring"
         static let animation = "strip.animation"

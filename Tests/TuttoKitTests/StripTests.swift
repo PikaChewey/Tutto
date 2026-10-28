@@ -42,6 +42,27 @@ final class StripModelTests: XCTestCase {
         XCTAssertEqual(s.columns[0].width, 0.5)
     }
 
+    func testFullWindowsMakesEveryColumnFullAndGivesEachItsWidthBack() {
+        var s = strip([0.5, 1.0 / 3.0, 1, 0.75])
+        XCTAssertFalse(s.isAllFull)
+        XCTAssertEqual(s.setAllFull(true), .done("Full windows"))
+        XCTAssertTrue(s.isAllFull)
+        XCTAssertEqual(s.columns.map(\.width), [1, 1, 1, 1])
+        XCTAssertEqual(s.setAllFull(true), .refused("Every window is already full."))
+        XCTAssertEqual(s.setAllFull(false, fallback: 0.5), .done("Strip"))
+        // Each goes back to the width it had; one that was already full stays full.
+        XCTAssertEqual(s.columns.map(\.width), [0.5, 1.0 / 3.0, 1, 0.75])
+        XCTAssertFalse(s.columns.contains { $0.widthBeforeFull != nil || $0.widthBeforeAllFull != nil })
+        // A column that arrived while full (no width to go back to) takes the fallback.
+        var t = strip([0.5])
+        _ = t.setAllFull(true)
+        t.columns.append(StripColumn(windows: [99], width: 1))
+        _ = t.setAllFull(false, fallback: 0.5)
+        XCTAssertEqual(t.columns.map(\.width), [0.5, 0.5])
+        var empty = Strip()
+        XCTAssertEqual(empty.setAllFull(true), .refused("The strip is empty."))
+    }
+
     func testFocusAndMoveStopAtTheEnds() {
         var s = strip([0.5, 0.5, 0.5])
         XCTAssertEqual(s.focusLeft(), .refused("That's the first window on the strip."))

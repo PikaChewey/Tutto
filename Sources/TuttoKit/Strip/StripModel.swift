@@ -27,6 +27,8 @@ public struct StripColumn: Equatable, Codable, Sendable {
     public var width: Double
     /// The width before Full Width, to toggle back to.
     public var widthBeforeFull: Double?
+    /// The width before Full Windows (every column full at once), to go back to.
+    public var widthBeforeAllFull: Double?
     public var tabbed: Bool
     /// Which window shows in a tabbed column.
     public var activeTab: Int
@@ -291,6 +293,31 @@ public struct Strip: Equatable, Codable, Sendable {
         columns[focusColumn].widthBeforeFull = columns[focusColumn].width
         columns[focusColumn].width = 1
         return .done("Full width · fills the screen")
+    }
+
+    /// Every column fills the screen (one window at a time, the strip scrolling between them).
+    public var isAllFull: Bool { !columns.isEmpty && columns.allSatisfy { $0.width >= 0.999 } }
+
+    /// Full windows: every column at full width, each remembering the width it had. Off again,
+    /// each goes back to exactly that width; one that arrived while full takes the fallback.
+    /// Kept apart from the full width key's own memory, so neither undoes the other.
+    public mutating func setAllFull(_ full: Bool, fallback: Double = 0.5) -> StripOutcome {
+        guard !columns.isEmpty else { return .refused("The strip is empty.") }
+        if full {
+            guard !isAllFull || columns.contains(where: { $0.widthBeforeAllFull == nil && $0.width < 0.999 }) else {
+                return .refused("Every window is already full.")
+            }
+            for c in columns.indices {
+                if columns[c].widthBeforeAllFull == nil { columns[c].widthBeforeAllFull = columns[c].width }
+                columns[c].width = 1
+            }
+            return .done("Full windows")
+        }
+        for c in columns.indices {
+            columns[c].width = columns[c].widthBeforeAllFull ?? (columns[c].width >= 0.999 ? fallback : columns[c].width)
+            columns[c].widthBeforeAllFull = nil
+        }
+        return .done("Strip")
     }
 
     public mutating func adjustWidth(by step: Double) -> StripOutcome {
