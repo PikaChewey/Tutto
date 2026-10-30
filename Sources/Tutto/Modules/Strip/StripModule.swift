@@ -2027,6 +2027,9 @@ final class StripModule: ModuleController {
         lastFrameAt = 0
         #endif
         updateDecor()
+        // The bar shades the tiles of windows out of view: which those are is settled now (it was
+        // only refreshed when a picture came in, so tiles could stay shaded for a moment).
+        updateIndicatorTiles()
         // Pictures are taken of windows at rest: the bar's are refreshed once the strip is still.
         if indicator.isVisible && indicator.state.previews { photographSoon() }
         for w in settled where w.resized && !w.parked {
