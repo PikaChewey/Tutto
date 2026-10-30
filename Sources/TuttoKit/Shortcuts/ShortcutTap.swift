@@ -23,10 +23,11 @@ public final class ShortcutTap: @unchecked Sendable {
     private var swallowed = Set<Int64>()
     private var _onModifiers: (@Sendable (KeyShortcut.Modifiers) -> Void)?
     private var heldModifiers: KeyShortcut.Modifiers = []
-    private let deliver: @Sendable (String) -> Void
+    private let deliver: @Sendable (String, Bool) -> Void
 
-    /// `deliver` gets the id bound to the shortcut, on the tap's thread.
-    public init(deliver: @escaping @Sendable (String) -> Void) {
+    /// `deliver` gets the id bound to the shortcut, on the tap's thread, and whether the press is a
+    /// repeat of a key held down (a held arrow shouldn't loop round the strip; a fresh press does).
+    public init(deliver: @escaping @Sendable (String, Bool) -> Void) {
         self.deliver = deliver
     }
 
@@ -151,7 +152,7 @@ public final class ShortcutTap: @unchecked Sendable {
             }
             swallowed.insert(code)
             lock.unlock()
-            deliver(id)
+            deliver(id, event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
             return nil
         default:
             return event

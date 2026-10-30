@@ -9,7 +9,8 @@
 //
 //  The commands behave the way the strip is known to, step for step:
 //    cycle width 25 → 33 → 50 → 66 → 75 → 25 %, full width toggles back to the width before,
-//    focus and move stop at the ends, stack joins the neighbouring column, pop out gives the
+//    focus and move loop round at the ends (a held key stops there instead, so it can't
+//    overshoot), stack joins the neighbouring column, pop out gives the
 //    window its own column again, tabbed toggles one-at-full-height ↔ stacked, and a pinned
 //    column stays at its screen edge (first or last on the strip) while the rest scrolls.
 //
@@ -127,16 +128,31 @@ public struct Strip: Equatable, Codable, Sendable {
         if columns[c].tabbed { columns[c].activeTab = r }
     }
 
-    public mutating func focusLeft() -> StripOutcome {
-        guard focusColumn > 0 else { return .refused("That's the first window on the strip.") }
-        setFocus(column: focusColumn - 1)
-        return .done("Focus left")
+    /// One column left; on the first it loops round to the last, unless `wrap` is off (a held key, a
+    /// fast wheel spin): then it stops there, and a fresh press loops.
+    public mutating func focusLeft(wrap: Bool = true) -> StripOutcome {
+        guard !columns.isEmpty else { return .refused("The strip is empty.") }
+        if focusColumn > 0 {
+            setFocus(column: focusColumn - 1)
+            return .done("Focus left")
+        }
+        guard columns.count > 1 else { return .refused("That's the only window on the strip.") }
+        guard wrap else { return .refused("That's the first window on the strip. Press again to loop.") }
+        setFocus(column: columns.count - 1)
+        return .done("Focus left · looped to the last window")
     }
 
-    public mutating func focusRight() -> StripOutcome {
-        guard focusColumn < columns.count - 1 else { return .refused("That's the last window on the strip.") }
-        setFocus(column: focusColumn + 1)
-        return .done("Focus right")
+    /// One column right; on the last it loops round to the first (see `focusLeft`).
+    public mutating func focusRight(wrap: Bool = true) -> StripOutcome {
+        guard !columns.isEmpty else { return .refused("The strip is empty.") }
+        if focusColumn < columns.count - 1 {
+            setFocus(column: focusColumn + 1)
+            return .done("Focus right")
+        }
+        guard columns.count > 1 else { return .refused("That's the only window on the strip.") }
+        guard wrap else { return .refused("That's the last window on the strip. Press again to loop.") }
+        setFocus(column: 0)
+        return .done("Focus right · looped to the first window")
     }
 
     public mutating func focusFirst() -> StripOutcome {
@@ -161,24 +177,33 @@ public struct Strip: Equatable, Codable, Sendable {
         return .done("Window \(index + 1)")
     }
 
-    public mutating func focusUp() -> StripOutcome { focusVertically(-1) }
-    public mutating func focusDown() -> StripOutcome { focusVertically(1) }
+    /// Up and down a stack (or its tabs), looping round at the top and bottom like ← and →.
+    public mutating func focusUp(wrap: Bool = true) -> StripOutcome { focusVertically(-1, wrap: wrap) }
+    public mutating func focusDown(wrap: Bool = true) -> StripOutcome { focusVertically(1, wrap: wrap) }
 
-    private mutating func focusVertically(_ step: Int) -> StripOutcome {
+    private mutating func focusVertically(_ step: Int, wrap: Bool) -> StripOutcome {
         guard columns.indices.contains(focusColumn) else { return .refused("The strip is empty.") }
         var column = columns[focusColumn]
         guard column.windows.count > 1 else { return .refused("This column has one window.") }
         let current = column.tabbed ? column.activeTab : focusRow
-        let next = current + step
-        guard column.windows.indices.contains(next) else {
-            if column.tabbed { return .refused(step < 0 ? "That's the first tab." : "That's the last tab.") }
-            return .refused(step < 0 ? "That's the top of the column." : "That's the bottom of the column.")
+        var next = current + step
+        let looped = !column.windows.indices.contains(next)
+        if looped {
+            guard wrap else {
+                if column.tabbed { return .refused(step < 0 ? "That's the first tab. Press again to loop." : "That's the last tab. Press again to loop.") }
+                return .refused(step < 0 ? "That's the top of the column. Press again to loop." : "That's the bottom of the column. Press again to loop.")
+            }
+            next = step < 0 ? column.windows.count - 1 : 0
         }
         if column.tabbed { column.activeTab = next }
         focusRow = next
         columns[focusColumn] = column
-        if column.tabbed { return .done(step < 0 ? "Previous tab" : "Next tab") }
-        return .done(step < 0 ? "Focus up" : "Focus down")
+        switch (column.tabbed, looped) {
+        case (true, true): return .done(step < 0 ? "Previous tab · looped to the last" : "Next tab · looped to the first")
+        case (true, false): return .done(step < 0 ? "Previous tab" : "Next tab")
+        case (false, true): return .done(step < 0 ? "Focus up · looped to the bottom" : "Focus down · looped to the top")
+        case (false, false): return .done(step < 0 ? "Focus up" : "Focus down")
+        }
     }
 
     private mutating func setFocus(column index: Int) {
@@ -189,14 +214,33 @@ public struct Strip: Equatable, Codable, Sendable {
 
     // MARK: Moving
 
-    public mutating func moveLeft() -> StripOutcome {
-        moveFocusedColumn(to: focusColumn - 1, swap: true, done: "Move left · swapped places",
-                          refused: "Already at the start of the strip.")
-    }
+    /// Swaps the focused column with its neighbour; at the start of the strip it loops round to
+    /// the end (the rest keep their order), unless `wrap` is off (a held key): then it stops there.
+    public mutating func moveLeft(wrap: Bool = true) -> StripOutcome { moveAlong(-1, wrap: wrap) }
 
-    public mutating func moveRight() -> StripOutcome {
-        moveFocusedColumn(to: focusColumn + 1, swap: true, done: "Move right · swapped places",
-                          refused: "Already at the end of the strip.")
+    /// The mirror of `moveLeft`: at the end of the strip it loops round to the start.
+    public mutating func moveRight(wrap: Bool = true) -> StripOutcome { moveAlong(1, wrap: wrap) }
+
+    private mutating func moveAlong(_ step: Int, wrap: Bool) -> StripOutcome {
+        guard columns.indices.contains(focusColumn) else { return .refused("The strip is empty.") }
+        guard columns[focusColumn].pin == nil else { return .refused("A pinned column stays at its edge.") }
+        let range = scrollingRange
+        let next = focusColumn + step
+        if range.contains(next) {
+            columns.swapAt(focusColumn, next)
+            focusColumn = next
+            return .done(step < 0 ? "Move left · swapped places" : "Move right · swapped places")
+        }
+        guard range.count > 1 else {
+            return .refused(columns.count > 1 ? "The other windows are pinned." : "That's the only window on the strip.")
+        }
+        guard wrap else {
+            return .refused(step < 0 ? "Already at the start of the strip. Press again to loop." : "Already at the end of the strip. Press again to loop.")
+        }
+        let end = step < 0 ? range.upperBound - 1 : range.lowerBound
+        columns.insert(columns.remove(at: focusColumn), at: end)
+        focusColumn = end
+        return .done(step < 0 ? "Move left · looped to the end" : "Move right · looped to the start")
     }
 
     public mutating func moveToFirst() -> StripOutcome {
@@ -242,24 +286,34 @@ public struct Strip: Equatable, Codable, Sendable {
         if let focused { focus(focused) }
     }
 
-    /// Moves the focused window up or down inside its stack.
-    public mutating func moveUp() -> StripOutcome { moveInStack(-1) }
-    public mutating func moveDown() -> StripOutcome { moveInStack(1) }
+    /// Moves the focused window up or down inside its stack; past the top or bottom it loops round
+    /// to the other end, taking its height with it.
+    public mutating func moveUp(wrap: Bool = true) -> StripOutcome { moveInStack(-1, wrap: wrap) }
+    public mutating func moveDown(wrap: Bool = true) -> StripOutcome { moveInStack(1, wrap: wrap) }
 
-    private mutating func moveInStack(_ step: Int) -> StripOutcome {
+    private mutating func moveInStack(_ step: Int, wrap: Bool) -> StripOutcome {
         guard columns.indices.contains(focusColumn) else { return .refused("The strip is empty.") }
         var column = columns[focusColumn]
         guard column.windows.count > 1 else { return .refused("Stack windows first, then move them up and down.") }
         let row = column.tabbed ? column.activeTab : focusRow
-        let target = row + step
-        guard column.windows.indices.contains(target) else {
-            return .refused(step < 0 ? "Already at the top of the column." : "Already at the bottom of the column.")
+        var target = row + step
+        let looped = !column.windows.indices.contains(target)
+        let keepsHeights = column.heights.count == column.windows.count
+        if looped {
+            guard wrap else {
+                return .refused(step < 0 ? "Already at the top of the column. Press again to loop." : "Already at the bottom of the column. Press again to loop.")
+            }
+            target = step < 0 ? column.windows.count - 1 : 0
+            column.windows.insert(column.windows.remove(at: row), at: target)
+            if keepsHeights { column.heights.insert(column.heights.remove(at: row), at: target) }
+        } else {
+            column.windows.swapAt(row, target)
+            if keepsHeights { column.heights.swapAt(row, target) }
         }
-        column.windows.swapAt(row, target)
-        if column.heights.count == column.windows.count { column.heights.swapAt(row, target) }
         if column.tabbed { column.activeTab = target }
         focusRow = target
         columns[focusColumn] = column
+        if looped { return .done(step < 0 ? "Moved up · looped to the bottom" : "Moved down · looped to the top") }
         return .done(step < 0 ? "Moved up" : "Moved down")
     }
 

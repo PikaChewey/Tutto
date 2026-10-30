@@ -46,10 +46,18 @@ final class StripIndicatorState {
         var iconSide: CGFloat { previews ? 22 * max(scale, 0.7) : tile.width * 0.72 }
     }
 
+    /// Trips round the strip's ends so far, and which way the last went (forward: → on the last
+    /// window). The outline carries on that way, off one end of the bar and back in at the other.
+    struct Turn: Equatable {
+        var count = 0
+        var forward = true
+    }
+
     var tiles: [Tile] = []
     var message: String?
     var refused = false
     var layout = Layout(previews: false, scale: 1)
+    var turn = Turn()
 
     /// Window pictures instead of app icons.
     var previews: Bool { layout.previews }
@@ -104,6 +112,15 @@ final class StripIndicator {
     private static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     var isVisible: Bool { shown }
+
+    /// Focus went round from one end of the strip to the other: the outline carries on the same
+    /// way instead of sliding back across every tile.
+    func wentRound(forward: Bool) {
+        for surface in surfaces {
+            surface.state.turn.count += 1
+            surface.state.turn.forward = forward
+        }
+    }
 
     /// `previews`: window pictures, else app icons. Changing it while the bar is up fades the
     /// bar into the other one.
@@ -334,8 +351,18 @@ private struct StripIndicatorView: View {
     var move: (Int, Int) -> Void
     @State private var dragging: Int?
     @State private var dragOffset: CGFloat = 0
+    /// The tile the outline is on (past an end while it goes round); nil: the focused tile.
+    @State private var outline: CGFloat?
+    @State private var outlineShows = true
+    @State private var outlineMoves = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var focusIndex: Int? { state.tiles.firstIndex(where: \.focused) }
+
+    private struct OutlineGoal: Equatable {
+        var index: Int?
+        var turn: StripIndicatorState.Turn
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -366,11 +393,12 @@ private struct StripIndicatorView: View {
                     RoundedRectangle(cornerRadius: state.corner + 3, style: .continuous)
                         .strokeBorder(Color.ink, lineWidth: 2.5)
                         .frame(width: state.tileSize.width + 6, height: state.tileSize.height + 6)
-                        .offset(x: CGFloat(focusIndex) * (state.tileSize.width + state.spacing) - 3)
-                        .animation(Motion.snappy, value: focusIndex)
+                        .offset(x: (outline ?? CGFloat(focusIndex)) * (state.tileSize.width + state.spacing) - 3)
+                        .opacity(outlineShows ? 1 : 0)
                         .allowsHitTesting(false)
                 }
             }
+            .onChange(of: OutlineGoal(index: focusIndex, turn: state.turn)) { old, new in moveOutline(from: old, to: new) }
             if let message = state.message {
                 Text(message)
                     .font(.geist(12, weight: .medium))
@@ -383,6 +411,43 @@ private struct StripIndicatorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(PaletteBackground())
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.hairline))
+    }
+
+    /// The outline slides to the focused tile. When focus went round from one end of the strip to
+    /// the other it carries on the same way, off the end of the bar, and comes back in at the
+    /// other end, as the windows do.
+    private func moveOutline(from old: OutlineGoal, to new: OutlineGoal) {
+        guard let index = new.index else { return }
+        outlineMoves += 1
+        let move = outlineMoves
+        guard new.turn != old.turn, let from = old.index, from != index else {
+            withAnimation(reduceMotion ? nil : Motion.snappy) {
+                outline = CGFloat(index)
+                outlineShows = true
+            }
+            return
+        }
+        guard !reduceMotion else {
+            outline = CGFloat(index)
+            outlineShows = true
+            return
+        }
+        let forward = new.turn.forward
+        let count = CGFloat(state.tiles.count)
+        withAnimation(.easeIn(duration: 0.09)) {
+            outline = CGFloat(from) + (forward ? 1 : -1)
+            outlineShows = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) {
+            guard move == outlineMoves else { return }
+            var jump = Transaction()
+            jump.disablesAnimations = true
+            withTransaction(jump) { outline = forward ? -1 : count }
+            withAnimation(Motion.snappy) {
+                outline = CGFloat(focusIndex ?? index)
+                outlineShows = true
+            }
+        }
     }
 
     /// A tile, with pictures or with icons: the app's icon sits in the corner of the picture, or

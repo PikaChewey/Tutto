@@ -11,6 +11,9 @@
 //  - The viewport moves just far enough to show the focused column, or centres it (never,
 //    only when the strip doesn't fit, or always). It never rests past the strip's ends,
 //    except after an explicit Centre.
+//  - Looping round (→ on the last window) carries on the way the key points: for that move
+//    the strip repeats, its start a gap after its end, so the first window comes in from the
+//    right as the last goes out to the left.
 //  - A window that's out of view waits tucked into a bottom corner of its own display with
 //    one point showing: macOS moves a window that has left its display entirely onto
 //    whichever display it landed on, and can refuse to put it back.
@@ -157,12 +160,13 @@ public struct StripGeometry: Sendable {
         }
     }
 
-    /// Every window's frame at `offset`. Frames may lie off screen; see `isInView`.
-    public func placements(offset: Double) -> [StripPlacement] {
+    /// Every window's frame at `offset`, or with the strip repeating every `period` points while it
+    /// loops round (see `loopedScreenX`). Frames may lie off screen; see `isInView`.
+    public func placements(offset: Double, loop period: Double? = nil) -> [StripPlacement] {
         let inner = metrics.inner
         var result: [StripPlacement] = []
         for (c, column) in strip.columns.enumerated() {
-            let x = screenX(of: c, offset: offset)
+            let x = period.map { loopedScreenX(of: c, offset: offset, period: $0) } ?? screenX(of: c, offset: offset)
             let width = widths[c]
             if column.tabbed {
                 let top = inner.minY + metrics.tabBarHeight
@@ -236,6 +240,46 @@ public struct StripGeometry: Sendable {
             return index
         }
         return range.upperBound - 1
+    }
+
+    // MARK: Looping round
+
+    /// Screen x of a column's left edge at `offset` with the strip repeating every `period` points:
+    /// a column that has gone past the viewport's left edge comes round again after the strip's end.
+    /// Any offset a whole period on shows the same. Pinned columns stay at their edges.
+    public func loopedScreenX(of column: Int, offset: Double, period: Double) -> Double {
+        guard strip.columns[column].pin == nil, period > 0, offset.isFinite else { return screenX(of: column, offset: offset) }
+        var along = offset.truncatingRemainder(dividingBy: period)
+        if along < 0 { along += period }
+        var x = positions[column] - along
+        if positions[column] + widths[column] <= along { x += period }
+        return (viewportMinX + x).rounded()
+    }
+
+    /// How far apart the strip's copies sit while it loops round from `start` to `end` (both rest
+    /// offsets): the strip and a gap, so the first window follows the last as closely as any two
+    /// windows. More when that isn't enough: room for the widest window to go off one side before
+    /// it comes back on the other (never on screen twice), and, for an end centred with room
+    /// beside it, room for nothing to show there, so the loop begins and ends on exactly what the
+    /// strip shows at rest.
+    public func loopPeriod(from start: Double, to end: Double) -> Double {
+        let gap = metrics.gap
+        var period = length + gap
+        for index in strip.scrollingRange { period = max(period, viewportWidth + widths[index] + gap) }
+        for offset in [start, end] {
+            if offset < 0 { period = max(period, length - offset + gap) }
+            if offset > maxOffset { period = max(period, viewportWidth + offset + gap) }
+        }
+        return period
+    }
+
+    /// Where a loop round starts: `current` moved on (or back) by whole periods, which shows the
+    /// same, so the way to `target` runs `forward` (the strip moving left, as → carries on) or back.
+    public static func loopStart(from current: Double, to target: Double, period: Double, forward: Bool) -> Double {
+        guard period > 0, current.isFinite, target.isFinite else { return current }
+        if forward, current > target { return current - (((current - target) / period).rounded(.up)) * period }
+        if !forward, current < target { return current + (((target - current) / period).rounded(.up)) * period }
+        return current
     }
 
     /// Where a swipe comes to rest. `velocity` is points per second along the strip.

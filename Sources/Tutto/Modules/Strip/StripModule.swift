@@ -72,6 +72,16 @@ final class StripManagedWindow {
     }
 }
 
+/// A loop round in flight (→ on the last window carries on to the first): for that move the strip
+/// repeats every `period` points, its start a gap after its end, and its windows ride the viewport.
+struct StripLoop {
+    /// The layout it goes round with; anything that changes it ends the loop first.
+    let geometry: StripGeometry
+    let period: Double
+    /// The offset it comes to rest at.
+    var destination: Double
+}
+
 /// The strip on one display's current Space.
 @MainActor
 final class StripState {
@@ -84,6 +94,8 @@ final class StripState {
     var centred = false
     var swiping = false
     var swipe = SwipeTracker()
+    /// Going round from one end to the other; the offset runs on past the end meanwhile.
+    var loop: StripLoop?
 
     init(key: StripKey, display: StripDisplay) {
         self.key = key
@@ -182,6 +194,9 @@ final class StripModule: ModuleController {
     /// Windows coming out of full screen to join the strip: full width, in their Spaces' order.
     @ObservationIgnored private var arrivals: [CGWindowID: Int] = [:]
     @ObservationIgnored private var lastNoStripHint: TimeInterval = -1_000
+    /// When the last ⌃⌥ wheel notch came: notches close together are one spin, which stops at the
+    /// strip's ends like a held key (a notch after a pause loops round).
+    @ObservationIgnored private var lastNotch: TimeInterval = 0
     /// ⌃⌥ held right now, as the key filter reports it.
     @ObservationIgnored private var holdingModifiers = false
     @ObservationIgnored private var lastModifierEvent: TimeInterval = 0
@@ -488,11 +503,11 @@ final class StripModule: ModuleController {
 
     private func startKeyTap() {
         guard AXIsProcessTrusted() else { return }
-        let tap = keyTap ?? ShortcutTap { [weak self] id in
+        let tap = keyTap ?? ShortcutTap { [weak self] id, isRepeat in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, let command = self.keyCommands[id] else { return }
-                    self.perform(command)
+                    self.perform(command, held: isRepeat)
                 }
             }
         }
@@ -1214,6 +1229,112 @@ final class StripModule: ModuleController {
         state.strip.offset = geometry(for: state).offset(revealing: state.strip.focusColumn, from: state.strip.offset, centring: centring)
     }
 
+    // MARK: Going round
+
+    /// A key went past an end and round to the other (or a trip round is under way): the strip
+    /// carries on the way the key points instead of sliding back along its whole length. For
+    /// that move it repeats, its start a gap after its end, so → on the last window brings the
+    /// first in from the right as the last goes out to the left. False: an ordinary move.
+    private func goRound(_ state: StripState, towards side: StripSide?, wentRound: Bool, from before: Strip) -> Bool {
+        guard isCurrent(state.key), animation != .instant else { return false }
+        let geometry = geometry(for: state)
+        if let loop = state.loop, Self.sameLayout(loop.geometry, geometry) {
+            keepGoingRound(state, loop, towards: side)
+            return true
+        }
+        guard wentRound, let side, geometry.overflows else { return false }
+        finishLoop(state)
+        let target = state.strip.offset
+        let now = state.offset.value
+        var start: Double
+        let period: Double
+        if before.columns == state.strip.columns {
+            // Focus went round: the same strip, a lap on.
+            period = geometry.loopPeriod(from: now, to: target)
+            start = now
+        } else {
+            // A window moved round: it stays where it is on screen and the strip carries on past
+            // it as it was, a gap from end to start (not possible when the strip rested past an
+            // end, or only just overflows: then it moves the ordinary way).
+            let old = self.geometry(for: state, strip: before)
+            guard let id = state.strip.focusedWindow, let w = windows[id], !w.parked, !w.held,
+                  let column = state.strip.location(of: id)?.column,
+                  now >= -0.5, now <= old.maxOffset + 0.5 else { return false }
+            period = geometry.length + geometry.metrics.gap
+            guard geometry.loopPeriod(from: target, to: target) <= period + 0.5 else { return false }
+            start = geometry.viewportMinX + geometry.positions[column] - w.shown.minX
+        }
+        start = StripGeometry.loopStart(from: start, to: target, period: period, forward: side == .right)
+        guard abs(start - target) > 0.5 else { return false }
+        state.loop = StripLoop(geometry: geometry, period: period, destination: target)
+        // Re-based by whole laps (the same picture), keeping its speed.
+        state.offset.value = start
+        prepareLoop(state, geometry)
+        return true
+    }
+
+    /// A trip round under way and another key, or a window taking focus: when the strip is headed
+    /// somewhere new, the offset is moved by whole laps (which shows the same) so the rest of the
+    /// way runs the way the key points, or the nearer way. Headed to the same place, it just
+    /// carries on.
+    private func keepGoingRound(_ state: StripState, _ loop: StripLoop, towards side: StripSide?) {
+        let target = state.strip.offset
+        let now = state.offset.value
+        if let side {
+            state.offset.value = StripGeometry.loopStart(from: now, to: target, period: loop.period, forward: side == .right)
+        } else if abs(target - loop.destination) > 0.5 {
+            let ahead = StripGeometry.loopStart(from: now, to: target, period: loop.period, forward: true)
+            let back = StripGeometry.loopStart(from: now, to: target, period: loop.period, forward: false)
+            state.offset.value = abs(target - ahead) <= abs(target - back) ? ahead : back
+        }
+        state.loop?.destination = target
+        prepareLoop(state, geometry(for: state))
+    }
+
+    /// Sets every window's destination (where it rests when the trip is over) and hands its motion
+    /// to the strip's offset.
+    private func prepareLoop(_ state: StripState, _ geometry: StripGeometry) {
+        for placement in geometry.placements(offset: state.strip.offset) {
+            guard let w = windows[placement.window] else { continue }
+            w.target = placement.frame
+            w.column = placement.column
+            w.isBackgroundTab = placement.isBackgroundTab
+            w.spring = nil
+            animating.remove(w.id)
+            if placement.isBackgroundTab, !w.held { park(w, in: state, side: .right) }
+        }
+        geometries[state.key] = geometry
+        followLoop(state)
+        link.start()
+        updateTabBars()
+        updateIndicatorTiles()
+    }
+
+    /// One frame of a trip round: each window where the repeating strip has it at the offset now.
+    private func followLoop(_ state: StripState) {
+        guard let loop = state.loop else { return }
+        for placement in loop.geometry.placements(offset: state.offset.value, loop: loop.period) where !placement.isBackgroundTab {
+            guard let w = windows[placement.window], !w.held else { continue }
+            place(w, at: placement.frame, state: state, geometry: loop.geometry)
+        }
+    }
+
+    /// Ends a trip round where it's headed: every window at rest in its place.
+    private func finishLoop(_ state: StripState) {
+        guard let loop = state.loop else { return }
+        state.loop = nil
+        state.offset.snap(to: loop.destination)
+        for id in loop.geometry.strip.allWindows {
+            guard let w = windows[id], !w.held, !w.isBackgroundTab else { continue }
+            place(w, at: w.target, state: state, geometry: loop.geometry, settling: true)
+        }
+    }
+
+    /// Whether two layouts put the same windows in the same columns at the same sizes.
+    private static func sameLayout(_ a: StripGeometry, _ b: StripGeometry) -> Bool {
+        a.strip.columns == b.strip.columns && a.widths == b.widths && a.metrics == b.metrics
+    }
+
     /// Gives the focused column's window the keyboard, after its first move is on its way.
     private func focusWindow(in state: StripState) {
         guard let id = state.strip.focusedWindow, let w = windows[id] else { return }
@@ -1228,7 +1349,9 @@ final class StripModule: ModuleController {
 
     // MARK: Commands
 
-    func perform(_ command: StripCommand) {
+    /// `held`: a repeat of a key held down (or a wheel notch in a fast spin). Those stop at the
+    /// strip's ends; a fresh press loops round to the other end.
+    func perform(_ command: StripCommand, held: Bool = false) {
         let timing = PerfLog.begin("strip \(command.id)"); defer { timing.end() }
         if command == .toggleRunning { return toggleRunning() }
         guard isRunning else {
@@ -1257,21 +1380,22 @@ final class StripModule: ModuleController {
         prune(state, existing: StripAX.existingWindowIDs(), thorough: false)
         matchSystemFocus(state)
         let before = state.strip.focusedWindow
+        let stripBefore = state.strip
         var strip = state.strip
         var outcome: StripOutcome
         var resized = false
         switch command {
-        case .focusLeft: outcome = strip.focusLeft()
-        case .focusRight: outcome = strip.focusRight()
-        case .focusUp: outcome = strip.focusUp()
-        case .focusDown: outcome = strip.focusDown()
+        case .focusLeft: outcome = strip.focusLeft(wrap: !held)
+        case .focusRight: outcome = strip.focusRight(wrap: !held)
+        case .focusUp: outcome = strip.focusUp(wrap: !held)
+        case .focusDown: outcome = strip.focusDown(wrap: !held)
         case .focusFirst: outcome = strip.focusFirst()
         case .focusLast: outcome = strip.focusLast()
         case .focusNumber(let n): outcome = strip.focusNumber(n)
-        case .moveLeft: outcome = strip.moveLeft()
-        case .moveRight: outcome = strip.moveRight()
-        case .moveUp: outcome = strip.moveUp()
-        case .moveDown: outcome = strip.moveDown()
+        case .moveLeft: outcome = strip.moveLeft(wrap: !held)
+        case .moveRight: outcome = strip.moveRight(wrap: !held)
+        case .moveUp: outcome = strip.moveUp(wrap: !held)
+        case .moveDown: outcome = strip.moveDown(wrap: !held)
         case .moveToFirst: outcome = strip.moveToFirst()
         case .moveToLast: outcome = strip.moveToLast()
         case .moveToNumber(let n): outcome = strip.moveToNumber(n)
@@ -1324,6 +1448,10 @@ final class StripModule: ModuleController {
             sizingBar = true
             if indicator.isVisible { showIndicator(state, message: outcome.message, refused: !outcome.changed) }
         }
+        // The way the key points, and whether it went past an end and round to the other.
+        let towards: StripSide? = [.focusRight, .moveRight].contains(command) ? .right : [.focusLeft, .moveLeft].contains(command) ? .left : nil
+        let wentRound = outcome.changed && towards != nil
+            && (towards == .right ? state.strip.focusColumn < stripBefore.focusColumn : state.strip.focusColumn > stripBefore.focusColumn)
         if outcome.changed {
             if command == .centre {
                 state.centred = true
@@ -1331,7 +1459,8 @@ final class StripModule: ModuleController {
             } else {
                 reveal(state)
             }
-            apply(state, animated: true)
+            if !goRound(state, towards: towards, wentRound: wentRound, from: stripBefore) { apply(state, animated: true) }
+            if wentRound, let towards { indicator.wentRound(forward: towards == .right) }
             if state.strip.focusedWindow != before { focusWindow(in: state) }
             if mouseFollowsFocus { warpPointer(to: state) }
             saveLayoutsSoon()
@@ -1673,15 +1802,17 @@ final class StripModule: ModuleController {
         StripMetrics(area: state.display.visible, gap: gap, fullHeight: fullHeight)
     }
 
-    private func geometry(for state: StripState) -> StripGeometry {
+    /// The strip laid out on its display (`strip`: as it was a moment ago, if not as it is).
+    private func geometry(for state: StripState, strip: Strip? = nil) -> StripGeometry {
+        let strip = strip ?? state.strip
         var enforced: [StripWindow: Double] = [:]
         var natural: [StripWindow: Double] = [:]
-        for id in state.strip.allWindows {
+        for id in strip.allWindows {
             guard let w = windows[id] else { continue }
             if let width = w.enforcedWidth { enforced[id] = width }
             natural[id] = w.naturalHeight
         }
-        return StripGeometry(strip: state.strip, metrics: metrics(for: state), enforcedWidths: enforced, naturalHeights: natural)
+        return StripGeometry(strip: strip, metrics: metrics(for: state), enforcedWidths: enforced, naturalHeights: natural)
     }
 
     private func relayoutAll(reveal revealing: Bool = false) {
@@ -1699,6 +1830,14 @@ final class StripModule: ModuleController {
         guard isCurrent(state.key) else { return }
         let geometry = geometry(for: state)
         if !state.centred, centring != .always { state.strip.offset = geometry.clamped(state.strip.offset) }
+        // Going round from one end to the other: the same layout keeps going round (to wherever
+        // the strip is headed now, the nearer way); a new one first finishes the trip.
+        if let loop = state.loop {
+            if animated, animation != .instant, Self.sameLayout(loop.geometry, geometry) {
+                return keepGoingRound(state, loop, towards: nil)
+            }
+            finishLoop(state)
+        }
         let instant = !animated || animation == .instant
         if instant { state.offset.snap(to: state.strip.offset) }
         let now = geometry.placements(offset: state.offset.value)
@@ -1745,10 +1884,16 @@ final class StripModule: ModuleController {
         for key in currentKeys.values {
             guard let state = strips[key], !state.swiping else { continue }
             if let omega, dt > 0 { state.offset.step(toward: state.strip.offset, omega: omega, dt: dt) }
-            if omega == nil || state.offset.isSettled(at: state.strip.offset) {
+            let settled = omega == nil || state.offset.isSettled(at: state.strip.offset)
+            if settled {
                 state.offset.snap(to: state.strip.offset)
             } else {
                 moving = true
+            }
+            // Going round: every window rides the offset, the strip repeating past its end.
+            if state.loop != nil {
+                followLoop(state)
+                if settled { finishLoop(state) }
             }
         }
         var settled: [StripManagedWindow] = []
@@ -2035,7 +2180,11 @@ final class StripModule: ModuleController {
     private func handleInput(_ event: StripInputTap.Event) {
         guard isRunning else { return }
         switch event {
-        case .notch(let step): perform(step > 0 ? .focusRight : .focusLeft)
+        case .notch(let step):
+            let now = ProcessInfo.processInfo.systemUptime
+            let spinning = now - lastNotch < 0.35
+            lastNotch = now
+            perform(step > 0 ? .focusRight : .focusLeft, held: spinning)
         case .scroll(let points, let ended): drag(by: points, ended: ended)
         case .swipe(let fraction):
             guard let state = activeState(pointer: true) else { return }
@@ -2050,6 +2199,7 @@ final class StripModule: ModuleController {
         let owner = swipeKey.flatMap { isCurrent($0) ? strips[$0] : nil }
         guard let state = owner ?? activeState(pointer: true) else { return }
         let now = ProcessInfo.processInfo.systemUptime
+        if !state.swiping, points != 0 { finishLoop(state) }
         let geometry = geometry(for: state)
         if !state.swiping, points != 0 {
             swipeKey = state.key
@@ -2308,7 +2458,7 @@ final class StripModule: ModuleController {
             }
         }
         if !frames.isEmpty { tabBars.follow(frames) }
-        if focusBorder, let id = decorWindow, let w = windows[id], let state = strips[w.key], w.spring != nil, !w.parked {
+        if focusBorder, let id = decorWindow, let w = windows[id], let state = strips[w.key], w.spring != nil || state.loop != nil, !w.parked {
             decor.update(window: id, frame: w.spring?.roundedRect ?? w.shown, display: state.display, showBorder: true, dimOthers: dimInactive)
         }
     }

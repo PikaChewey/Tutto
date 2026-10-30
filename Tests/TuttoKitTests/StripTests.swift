@@ -61,18 +61,104 @@ final class StripModelTests: XCTestCase {
         XCTAssertEqual(StripFullScreen.load(nil), [])
     }
 
-    func testFocusAndMoveStopAtTheEnds() {
+    func testFocusLoopsRoundAtTheEnds() {
+        // ⌃⌥← on the first window goes round to the last, ⌃⌥→ on the last back to the first.
         var s = strip([0.5, 0.5, 0.5])
-        XCTAssertEqual(s.focusLeft(), .refused("That's the first window on the strip."))
-        XCTAssertEqual(s.focusRight(), .done("Focus right"))
-        XCTAssertEqual(s.focusLast(), .done("Last window"))
-        XCTAssertEqual(s.focusRight(), .refused("That's the last window on the strip."))
-        XCTAssertEqual(s.moveRight(), .refused("Already at the end of the strip."))
-        XCTAssertEqual(s.moveLeft(), .done("Move left · swapped places"))
-        XCTAssertEqual(s.allWindows, [1, 3, 2])
+        XCTAssertEqual(s.focusLeft(), .done("Focus left · looped to the last window"))
         XCTAssertEqual(s.focusedWindow, 3)
+        XCTAssertEqual(s.focusRight(), .done("Focus right · looped to the first window"))
+        XCTAssertEqual(s.focusedWindow, 1)
+        // In between, a step is a step.
+        XCTAssertEqual(s.focusRight(), .done("Focus right"))
+        XCTAssertEqual(s.focusedWindow, 2)
         XCTAssertEqual(s.focusFirst(), .done("First window"))
         XCTAssertEqual(s.focusedWindow, 1)
+    }
+
+    func testAHeldKeyStopsAtTheEnds() {
+        // A held arrow (or a fast wheel spin) runs to the end and stops there; a fresh press loops.
+        var s = strip([0.5, 0.5, 0.5], focus: 2)
+        XCTAssertEqual(s.focusRight(wrap: false), .refused("That's the last window on the strip. Press again to loop."))
+        XCTAssertEqual(s.focusedWindow, 3)
+        XCTAssertEqual(s.moveRight(wrap: false), .refused("Already at the end of the strip. Press again to loop."))
+        XCTAssertEqual(s.allWindows, [1, 2, 3])
+        XCTAssertEqual(s.moveLeft(wrap: false), .done("Move left · swapped places"))
+        XCTAssertEqual(s.allWindows, [1, 3, 2])
+        _ = s.focusFirst()
+        XCTAssertEqual(s.focusLeft(wrap: false), .refused("That's the first window on the strip. Press again to loop."))
+        XCTAssertEqual(s.moveLeft(wrap: false), .refused("Already at the start of the strip. Press again to loop."))
+        XCTAssertEqual(s.focusedWindow, 1)
+    }
+
+    func testMovingLoopsRoundToTheOtherEnd() {
+        // ⌃⌥⇧→ on the last window makes it the first; the rest keep their order.
+        var s = strip([0.5, 0.5, 0.5, 0.5], focus: 3)
+        XCTAssertEqual(s.moveRight(), .done("Move right · looped to the start"))
+        XCTAssertEqual(s.allWindows, [4, 1, 2, 3])
+        XCTAssertEqual(s.focusColumn, 0)
+        XCTAssertEqual(s.focusedWindow, 4)
+        XCTAssertEqual(s.moveLeft(), .done("Move left · looped to the end"))
+        XCTAssertEqual(s.allWindows, [1, 2, 3, 4])
+        XCTAssertEqual(s.focusColumn, 3)
+        XCTAssertEqual(s.focusedWindow, 4)
+    }
+
+    func testLoopingGoesRoundPinnedColumns() {
+        // A pinned column stays at its edge: a window moved past the end lands just after the pin.
+        var s = strip([0.5, 0.5, 0.5, 0.5], focus: 0)
+        _ = s.togglePin(.left)
+        _ = s.focusLast()
+        XCTAssertEqual(s.moveRight(), .done("Move right · looped to the start"))
+        XCTAssertEqual(s.allWindows, [1, 4, 2, 3])
+        XCTAssertEqual(s.focusedWindow, 4)
+        XCTAssertEqual(s.moveLeft(), .done("Move left · looped to the end"))
+        XCTAssertEqual(s.allWindows, [1, 2, 3, 4])
+        // Focus goes round every column, the pinned one included.
+        XCTAssertEqual(s.focusRight(), .done("Focus right · looped to the first window"))
+        XCTAssertEqual(s.focusedWindow, 1)
+        XCTAssertEqual(s.moveRight(), .refused("A pinned column stays at its edge."))
+    }
+
+    func testOneWindowHasNowhereToLoop() {
+        var s = strip([0.5])
+        XCTAssertEqual(s.focusRight(), .refused("That's the only window on the strip."))
+        XCTAssertEqual(s.focusLeft(), .refused("That's the only window on the strip."))
+        XCTAssertEqual(s.moveRight(), .refused("That's the only window on the strip."))
+        var empty = Strip()
+        XCTAssertEqual(empty.focusRight(), .refused("The strip is empty."))
+        XCTAssertEqual(empty.moveLeft(), .refused("The strip is empty."))
+    }
+
+    func testUpAndDownLoopInAStackAndItsTabs() {
+        var s = Strip(columns: [StripColumn(windows: [1, 2, 3], width: 0.5)], focusColumn: 0, focusRow: 2)
+        XCTAssertEqual(s.focusDown(), .done("Focus down · looped to the top"))
+        XCTAssertEqual(s.focusedWindow, 1)
+        XCTAssertEqual(s.focusUp(), .done("Focus up · looped to the bottom"))
+        XCTAssertEqual(s.focusedWindow, 3)
+        XCTAssertEqual(s.focusDown(wrap: false), .refused("That's the bottom of the column. Press again to loop."))
+        _ = s.toggleTabbed()
+        XCTAssertEqual(s.focusDown(), .done("Next tab · looped to the first"))
+        XCTAssertEqual(s.focusedWindow, 1)
+        XCTAssertEqual(s.columns[0].activeTab, 0)
+        XCTAssertEqual(s.focusUp(), .done("Previous tab · looped to the last"))
+        XCTAssertEqual(s.focusedWindow, 3)
+        XCTAssertEqual(s.focusDown(wrap: false), .refused("That's the last tab. Press again to loop."))
+    }
+
+    func testMovingUpAndDownLoopsInAStack() {
+        // The bottom window moved down goes to the top, taking its height with it.
+        var s = Strip(columns: [StripColumn(windows: [1, 2, 3], width: 0.5, heights: [0.2, 0.3, 0.5])], focusColumn: 0, focusRow: 2)
+        XCTAssertEqual(s.moveDown(), .done("Moved down · looped to the top"))
+        XCTAssertEqual(s.columns[0].windows, [3, 1, 2])
+        XCTAssertEqual(s.columns[0].heights, [0.5, 0.2, 0.3])
+        XCTAssertEqual(s.focusedWindow, 3)
+        XCTAssertEqual(s.moveUp(), .done("Moved up · looped to the bottom"))
+        XCTAssertEqual(s.columns[0].windows, [1, 2, 3])
+        XCTAssertEqual(s.columns[0].heights, [0.2, 0.3, 0.5])
+        XCTAssertEqual(s.moveUp(wrap: false), .done("Moved up"))
+        XCTAssertEqual(s.columns[0].windows, [1, 3, 2])
+        _ = s.moveUp(wrap: false)
+        XCTAssertEqual(s.moveUp(wrap: false), .refused("Already at the top of the column. Press again to loop."))
     }
 
     func testJumpByNumberAndNineIsTheLast() {
@@ -120,7 +206,7 @@ final class StripModelTests: XCTestCase {
         XCTAssertEqual(s.focusedWindow, 2)
         XCTAssertEqual(s.focusUp(), .done("Previous tab"))
         XCTAssertEqual(s.focusedWindow, 1)
-        XCTAssertEqual(s.focusUp(), .refused("That's the first tab."))
+        XCTAssertEqual(s.focusUp(wrap: false), .refused("That's the first tab. Press again to loop."))
 
         let geometry = StripGeometry(strip: s, metrics: StripMetrics(area: CGRect(x: 0, y: 25, width: 1000, height: 800), gap: 10))
         let placements = geometry.placements(offset: 0)
@@ -304,6 +390,106 @@ final class StripGeometryTests: XCTestCase {
         XCTAssertEqual(g.placements(offset: 0)[0].frame, CGRect(x: 10, y: 35, width: 485, height: 400))
     }
 
+    // MARK: Looping round
+
+    /// What's on screen: each window in view, and where.
+    private func shown(_ g: StripGeometry, _ placements: [StripPlacement]) -> [StripWindow: CGRect] {
+        Dictionary(uniqueKeysWithValues: placements.filter { g.isInView($0.frame, column: $0.column) }.map { ($0.window, $0.frame) })
+    }
+
+    /// Walks a loop round from `start` to `end` a few points at a time. It must run the way the key
+    /// points (`forward`: the strip moves left, as → carries on), begin with what the strip shows at
+    /// rest at `rest`, finish with what it shows at rest at `end`, and every window moves with the
+    /// strip the whole way: none jumps while on screen, and one coming on or going off does so at
+    /// an edge.
+    private func assertLoopsSmoothly(_ g: StripGeometry, from start: Double, to end: Double, period: Double, startingAt rest: Double,
+                                     forward: Bool, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(forward ? start < end : start > end, "runs the wrong way: \(start) to \(end)", file: file, line: line)
+        XCTAssertEqual(shown(g, g.placements(offset: start, loop: period)), shown(g, g.placements(offset: rest)), "start", file: file, line: line)
+        XCTAssertEqual(shown(g, g.placements(offset: end, loop: period)), shown(g, g.placements(offset: end)), "end", file: file, line: line)
+        func showing(_ frame: CGRect) -> Double { min(frame.maxX, g.viewportMaxX) - max(frame.minX, g.viewportMinX) }
+        let steps = 200
+        let step = (end - start) / Double(steps)
+        var before = shown(g, g.placements(offset: start, loop: period))
+        for index in 1...steps {
+            let offset = start + step * Double(index)
+            let now = shown(g, g.placements(offset: offset, loop: period))
+            for (window, frame) in now {
+                if let previous = before[window] {
+                    XCTAssertEqual(frame.minX - previous.minX, -step, accuracy: 1.01, "window \(window) jumped at \(offset)", file: file, line: line)
+                } else {
+                    XCTAssertLessThanOrEqual(showing(frame), abs(step) + 2, "window \(window) popped in at \(offset)", file: file, line: line)
+                }
+            }
+            for (window, frame) in before where now[window] == nil {
+                XCTAssertLessThanOrEqual(showing(frame), abs(step) + 2, "window \(window) vanished at \(offset)", file: file, line: line)
+            }
+            before = now
+        }
+    }
+
+    func testALoopingStripShowsItsStartRightAfterItsEnd() {
+        let g = geometry([0.5, 0.5, 0.5, 0.5])  // 485 wide, 10 apart: a strip 1,970 long on a 980 screen
+        // Resting anywhere along the strip, looping changes nothing on screen.
+        for offset in [0.0, 300, g.maxOffset] {
+            XCTAssertEqual(shown(g, g.placements(offset: offset, loop: 1980)), shown(g, g.placements(offset: offset)))
+        }
+        // Past the end, the first window comes round after the last, a gap on.
+        let seam = shown(g, g.placements(offset: 1485, loop: 1980))
+        XCTAssertEqual(seam.count, 2)
+        XCTAssertEqual(seam[4]?.minX, 10)
+        XCTAssertEqual(seam[1]?.minX, 505)
+        // A whole loop back shows the same.
+        XCTAssertEqual(g.placements(offset: 1485 - 1980, loop: 1980), g.placements(offset: 1485, loop: 1980))
+    }
+
+    func testLoopingRoundCarriesOnOneScreen() {
+        // From the end of four half-width windows, → carries on one screen and a gap to the start;
+        // ← from the start runs the same way round, backwards.
+        let g = geometry([0.5, 0.5, 0.5, 0.5])
+        let period = g.loopPeriod(from: g.maxOffset, to: 0)
+        XCTAssertEqual(period, 1980)
+        let forward = StripGeometry.loopStart(from: g.maxOffset, to: 0, period: period, forward: true)
+        XCTAssertEqual(forward, -990)
+        assertLoopsSmoothly(g, from: forward, to: 0, period: period, startingAt: g.maxOffset, forward: true)
+        let back = StripGeometry.loopStart(from: 0, to: g.maxOffset, period: period, forward: false)
+        XCTAssertEqual(back, 1980)
+        assertLoopsSmoothly(g, from: back, to: g.maxOffset, period: period, startingAt: 0, forward: false)
+        // Halfway round, carrying on to the next window needs no extra lap.
+        XCTAssertEqual(StripGeometry.loopStart(from: -500, to: 495, period: period, forward: true), -500)
+    }
+
+    func testAFullWidthLoopIsOneWindowOutAndOneIn() {
+        // Every window full width (the strip after Bring Them Here): → on the last moves exactly one
+        // screen, the last window out to the left, the first in from the right.
+        let g = geometry([1, 1, 1, 1, 1])
+        let period = g.loopPeriod(from: g.maxOffset, to: 0)
+        let start = StripGeometry.loopStart(from: g.maxOffset, to: 0, period: period, forward: true)
+        XCTAssertEqual(0 - start, 990)
+        let middle = shown(g, g.placements(offset: start + 495, loop: period))
+        XCTAssertEqual(Set(middle.keys), [5, 1])
+        XCTAssertLessThan(middle[5]?.minX ?? .infinity, middle[1]?.minX ?? -.infinity)
+        assertLoopsSmoothly(g, from: start, to: 0, period: period, startingAt: g.maxOffset, forward: true)
+    }
+
+    func testTwoWideWindowsLoopWithRoomToPass() {
+        // Two 75% windows: copies of the strip a gap apart would put one window on screen twice.
+        let g = geometry([0.75, 0.75])
+        let period = g.loopPeriod(from: g.maxOffset, to: 0)
+        let start = StripGeometry.loopStart(from: g.maxOffset, to: 0, period: period, forward: true)
+        assertLoopsSmoothly(g, from: start, to: 0, period: period, startingAt: g.maxOffset, forward: true)
+    }
+
+    func testCentredEndsLoopWithNothingLeftBesideThem() {
+        // Always centre: the first window rests with room on its left, and the last window that went
+        // round mustn't still be there when the loop ends.
+        let g = geometry([0.5, 0.5, 0.5, 0.5])
+        let from = g.centredOffset(for: 3), to = g.centredOffset(for: 0)
+        let period = g.loopPeriod(from: from, to: to)
+        let start = StripGeometry.loopStart(from: from, to: to, period: period, forward: true)
+        assertLoopsSmoothly(g, from: start, to: to, period: period, startingAt: from, forward: true)
+    }
+
     func testParkingLeavesOnePointOnItsOwnDisplay() {
         let display = CGRect(x: 0, y: 25, width: 1512, height: 900)
         let size = CGSize(width: 800, height: 600)
@@ -427,7 +613,7 @@ final class ShortcutTapTests: XCTestCase {
 
     func testExactMatchesAreTakenAndTheRestPassThrough() {
         let box = Box()
-        let tap = ShortcutTap { box.ids.append($0) }
+        let tap = ShortcutTap { id, _ in box.ids.append(id) }
         tap.bindings = [StripCommand.focusRight.defaultShortcut: "right", StripCommand.cycleWidth.defaultShortcut: "width"]
         // Arrow keys arrive with the keypad and fn flags too; they don't count.
         XCTAssertNil(tap.handle(type: .keyDown, event: key(kVK_RightArrow, [.maskControl, .maskAlternate, .maskNumericPad, .maskSecondaryFn])))
@@ -444,7 +630,7 @@ final class ShortcutTapTests: XCTestCase {
     func testHoldingModifiersIsReportedOnceAndPassesThrough() {
         final class Held: @unchecked Sendable { var changes: [KeyShortcut.Modifiers] = [] }
         let held = Held()
-        let tap = ShortcutTap { _ in }
+        let tap = ShortcutTap { _, _ in }
         tap.onModifiers = { held.changes.append($0) }
         func flags(_ value: CGEventFlags) -> CGEvent {
             let event = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_Control), keyDown: true)!
@@ -459,9 +645,23 @@ final class ShortcutTapTests: XCTestCase {
         XCTAssertEqual(held.changes, [[.control], [.control, .option], []])
     }
 
+    func testAKeyHeldDownArrivesAsRepeats() {
+        // A held key repeats, and the strip needs to know: a held arrow stops at the end instead of
+        // looping round.
+        let box = Box()
+        let tap = ShortcutTap { id, isRepeat in box.ids.append(isRepeat ? "\(id) held" : id) }
+        tap.bindings = [StripCommand.focusRight.defaultShortcut: "right"]
+        let repeated = key(kVK_RightArrow, [.maskControl, .maskAlternate])
+        repeated.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
+        XCTAssertNil(tap.handle(type: .keyDown, event: key(kVK_RightArrow, [.maskControl, .maskAlternate])))
+        XCTAssertNil(tap.handle(type: .keyDown, event: repeated))
+        XCTAssertNil(tap.handle(type: .keyUp, event: key(kVK_RightArrow, down: false, [.maskControl, .maskAlternate])))
+        XCTAssertEqual(box.ids, ["right", "right held"])
+    }
+
     func testRecordingAShortcutLetsEveryKeyThrough() {
         let box = Box()
-        let tap = ShortcutTap { box.ids.append($0) }
+        let tap = ShortcutTap { id, _ in box.ids.append(id) }
         tap.bindings = [StripCommand.focusLeft.defaultShortcut: "left"]
         tap.isSuspended = true
         XCTAssertNotNil(tap.handle(type: .keyDown, event: key(kVK_LeftArrow, [.maskControl, .maskAlternate])))

@@ -78,7 +78,7 @@ private struct StripSettings: View {
             } else {
                 LabeledRow(strip.isRunning ? "\(strip.windowCount) \(strip.windowCount == 1 ? "window" : "windows") on the strip" : "Stopped",
                            detail: strip.isRunning
-                               ? "Hold ⌃⌥ and press ← → or scroll to slide along it. Stopping puts every window back on screen."
+                               ? "Hold ⌃⌥ and press ← → or scroll to slide along it; ← → loop round at the ends. Stopping puts every window back on screen."
                                : "Windows are where you left them. Start lays them out again.") {
                     HStack(spacing: 8) {
                         if strip.isRunning {
