@@ -671,21 +671,50 @@ final class ShortcutTapTests: XCTestCase {
 
 /// "Hide the Dock": Tutto hides the Dock while the strip runs and puts back only what it changed.
 final class StripDockTests: XCTestCase {
+    /// `option`: Hide the Dock is on. `wanted`: the strip needs the room now. `tutto`: Tutto hid the
+    /// Dock and noted it. `yours`: the Dock already hid when the option went on. `hides`: the Dock now.
+    private func step(option: Bool = true, wanted: Bool, tutto: Bool, yours: Bool = false, hides: Bool?) -> StripDock.Step {
+        StripDock.step(option: option, wanted: wanted, hidByTutto: tutto, hidByYou: yours, autoHides: hides)
+    }
+
     func testTheStripHidesAShowingDockAndPutsItBack() {
-        XCTAssertEqual(StripDock.step(wanted: true, hidByTutto: false, autoHides: false), .hide)
-        XCTAssertEqual(StripDock.step(wanted: true, hidByTutto: true, autoHides: true), .none)
-        XCTAssertEqual(StripDock.step(wanted: false, hidByTutto: true, autoHides: true), .restore)
-        XCTAssertEqual(StripDock.step(wanted: false, hidByTutto: false, autoHides: false), .none)
+        XCTAssertEqual(step(wanted: true, tutto: false, hides: false), .hide)
+        XCTAssertEqual(step(wanted: true, tutto: true, hides: true), .none)
+        XCTAssertEqual(step(option: false, wanted: false, tutto: true, hides: true), .restore)
+        XCTAssertEqual(step(option: false, wanted: false, tutto: false, hides: false), .none)
+    }
+
+    func testFullWindowsShowsTheDockOnTheDesktop() {
+        // Every window in full screen: the strip doesn't need the room, so the Dock it hid comes
+        // back on the desktop, and hides again when the windows come back to the strip.
+        XCTAssertEqual(step(wanted: false, tutto: true, hides: true), .restore)
+        XCTAssertEqual(step(wanted: true, tutto: false, hides: false), .hide)
+        // Not while windows are still on their way into full screen; at once on the way back.
+        XCTAssertTrue(StripDock.needsRoom(running: true, option: true, fullWindows: true, switching: true))
+        XCTAssertFalse(StripDock.needsRoom(running: true, option: true, fullWindows: true, switching: false))
+        XCTAssertTrue(StripDock.needsRoom(running: true, option: true, fullWindows: false, switching: true))
+        XCTAssertTrue(StripDock.needsRoom(running: true, option: true, fullWindows: false, switching: false))
+        XCTAssertFalse(StripDock.needsRoom(running: true, option: false, fullWindows: false, switching: false))
+        XCTAssertFalse(StripDock.needsRoom(running: false, option: true, fullWindows: false, switching: false))
+    }
+
+    func testAHiddenDockStaysTheStripsWhenItsNoteIsLost() {
+        // Hide the Dock on and the Dock hidden, but Tutto's note of hiding it gone (seen on this
+        // Mac): it's still the strip's to bring back, at once in Full mode, noted again on the strip.
+        XCTAssertEqual(step(wanted: false, tutto: false, hides: true), .restore)
+        XCTAssertEqual(step(wanted: true, tutto: false, hides: true), .adopt)
     }
 
     func testADockYouSetYourselfIsLeftAlone() {
-        // Already hidden by you: nothing to do, and nothing to put back later.
-        XCTAssertEqual(StripDock.step(wanted: true, hidByTutto: false, autoHides: true), .none)
-        XCTAssertEqual(StripDock.step(wanted: false, hidByTutto: false, autoHides: true), .none)
+        // Already hiding when the option went on: yours, never brought back, in Full mode or after.
+        XCTAssertEqual(step(wanted: true, tutto: false, yours: true, hides: true), .none)
+        XCTAssertEqual(step(wanted: false, tutto: false, yours: true, hides: true), .none)
+        // The option off: a hidden Dock Tutto didn't note is yours.
+        XCTAssertEqual(step(option: false, wanted: false, tutto: false, hides: true), .none)
         // Brought back by you while the strip runs: not hidden again behind your back.
-        XCTAssertEqual(StripDock.step(wanted: true, hidByTutto: true, autoHides: false), .none)
+        XCTAssertEqual(step(wanted: true, tutto: true, hides: false), .none)
         // A macOS without the calls: never touched.
-        XCTAssertEqual(StripDock.step(wanted: true, hidByTutto: false, autoHides: nil), .none)
-        XCTAssertEqual(StripDock.step(wanted: false, hidByTutto: true, autoHides: nil), .none)
+        XCTAssertEqual(step(wanted: true, tutto: false, hides: nil), .none)
+        XCTAssertEqual(step(wanted: false, tutto: true, hides: nil), .none)
     }
 }

@@ -167,7 +167,7 @@ private struct StripSettings: View {
             Hairline().opacity(0.6)
             toggle("Hide the Dock", detail: DockAutoHide.isOn == nil
                    ? "This macOS doesn't let Tutto hide it: turn on Automatically hide and show the Dock in Desktop & Dock settings, and windows take the room."
-                   : "While the strip is on, the Dock hides as it does for an app in full screen: windows reach the bottom of the screen, and the Dock slides up when the pointer touches the bottom edge. Turning this or the strip off brings it back.",
+                   : "On the strip, the Dock hides as it does for an app in full screen: windows reach the bottom of the screen, and the Dock slides up when the pointer touches the bottom edge. In Full, the desktop shows it; turning this or the strip off brings it back.",
                    isOn: $strip.hidesDock)
             Hairline().opacity(0.6)
             LabeledRow("Keep the focused window centred", detail: centringDetail) {

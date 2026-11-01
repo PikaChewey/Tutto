@@ -112,7 +112,8 @@ final class StripModule: ModuleController {
     var presets: [Double] { didSet { save(presets, Keys.presets) } }
     var defaultWidth: Double { didSet { save(defaultWidth, Keys.defaultWidth) } }
     /// Full windows: every window on the strip in native full screen, as its green button sends
-    /// it (a Space each), instead of side by side on the strip. New windows go full screen too.
+    /// it (a Space each), instead of side by side on the strip. Windows opened meanwhile open as they
+    /// would, and the desktop shows the Dock even with Hide the Dock on (that's for the strip).
     private(set) var fullWindows: Bool { didSet { save(fullWindows, Keys.fullWindows) } }
     var fullHeight: Bool { didSet { save(fullHeight, Keys.fullHeight); relayoutAll() } }
     var centring: StripCentring { didSet { save(centring.rawValue, Keys.centring); relayoutAll(reveal: true) } }
@@ -134,7 +135,18 @@ final class StripModule: ModuleController {
     /// While the strip runs, the Dock hides the way it does for an app in full screen: windows
     /// reach the bottom of the screen and the Dock slides up when the pointer touches it. Off by
     /// default: it changes a macOS setting (put back when this or the strip goes off).
-    var hidesDock: Bool { didSet { save(hidesDock, Keys.hidesDock); syncDock() } }
+    var hidesDock: Bool {
+        didSet {
+            save(hidesDock, Keys.hidesDock)
+            // A Dock already hiding when the option goes on is yours: the strip never brings it back.
+            if hidesDock, !oldValue, !defaults.bool(forKey: Keys.dockHidden), DockAutoHide.isOn == true {
+                defaults.set(true, forKey: Keys.dockYours)
+            } else if !hidesDock {
+                defaults.removeObject(forKey: Keys.dockYours)
+            }
+            syncDock()
+        }
+    }
 
     enum ArrangeMode: String, CaseIterable { case onCommand, always }
     private var arrangesAlways: Bool { arrangeMode == .always }
@@ -428,7 +440,9 @@ final class StripModule: ModuleController {
         if onlyApps != nil { return }  // test runs leave the Dock alone
         #endif
         let before = StripDisplay.all()
-        switch StripDock.step(wanted: isRunning && hidesDock, hidByTutto: defaults.bool(forKey: Keys.dockHidden), autoHides: DockAutoHide.isOn) {
+        let wanted = StripDock.needsRoom(running: isRunning, option: hidesDock, fullWindows: fullWindows, switching: isSwitchingWindows)
+        switch StripDock.step(option: hidesDock, wanted: wanted, hidByTutto: defaults.bool(forKey: Keys.dockHidden),
+                              hidByYou: defaults.bool(forKey: Keys.dockYours), autoHides: DockAutoHide.isOn) {
         case .hide:
             defaults.set(Dictionary(before.map { ($0.uuid, NSStringFromRect($0.visible)) }, uniquingKeysWith: { a, _ in a }), forKey: Keys.dockAreas)
             defaults.set(true, forKey: Keys.dockHidden)
@@ -441,6 +455,11 @@ final class StripModule: ModuleController {
             defaults.removeObject(forKey: Keys.dockAreas)
             log.notice("Dock back")
             if isRunning { arrangeWhenRoomChanges(from: before) }
+        case .adopt:
+            // Hidden for the strip, but the note of it was lost: noted again, so Full and turning the
+            // option off bring it back.
+            defaults.set(true, forKey: Keys.dockHidden)
+            log.notice("Dock noted as hidden for the strip")
         case .none:
             break
         }
@@ -451,7 +470,8 @@ final class StripModule: ModuleController {
     private func arrangeWhenRoomChanges(from before: [StripDisplay], tries: Int = 14) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, self.isRunning else { return }
+                // Full has no strip to lay out, and a switch under way lays it out when it's done.
+                guard let self, self.isRunning, !self.fullWindows, !self.isSwitchingWindows else { return }
                 if StripDisplay.all().map(\.visible) != before.map(\.visible) || tries <= 1 {
                     self.rebuild(arrange: true)
                 } else {
@@ -785,8 +805,6 @@ final class StripModule: ModuleController {
             }) where !strip.contains(w.id) {
                 let full = self.arrivals.removeValue(forKey: w.id) != nil
                 strip.insert(w.id, width: full ? 1 : initialWidth(w.shown, metrics: metrics), besideFocused: false, focus: false)
-                // Full windows is on: one that opened as the Space changed (not one coming back) goes too.
-                if fullWindows, !full, away[w.id] == nil { sendNewWindowFullScreen(w.id) }
             }
             if let front = incoming.min(by: { $0.1 < $1.1 })?.0, restoring.contains(state.key) { strip.focus(front.id) }
             state.strip = strip
@@ -1006,7 +1024,6 @@ final class StripModule: ModuleController {
         let front = focus ?? (NSWorkspace.shared.frontmostApplication?.processIdentifier == pid)
         let arrival = arrivals.removeValue(forKey: w.id) != nil
         state.strip.insert(w.id, width: arrival ? 1 : defaultWidth, besideFocused: front, focus: front)
-        if fullWindows, !arrival { sendNewWindowFullScreen(w.id) }
         if front { reveal(state) }
         arrangeIfAlways(state)
         windowCount = windows.count
@@ -1501,14 +1518,17 @@ final class StripModule: ModuleController {
                 }
             }
             guard !targets.isEmpty else {
-                return Toast.shared.show("Full windows", detail: "Nothing on the strip right now; new windows will open in full screen.", duration: 3)
+                syncDock()
+                return Toast.shared.show("Full windows", detail: "Nothing on the strip to send right now.", duration: 3)
             }
             switchWindows(targets, fullScreen: true, anchor: anchor)
         } else {
             var back = StripFullScreen.toBringBack(sentFullScreen, existing: StripAX.existingWindowIDs())
             sentFullScreen.removeAll()
+            // Hide the Dock is for the strip: it hides before the windows come back, so they come
+            // back at full height.
+            syncDock()
             guard !back.isEmpty else { return }
-            pendingFullScreen.removeAll()
             // Yours comes back first, in front of you.
             if let anchor, let i = back.firstIndex(where: { $0.window == anchor.id }) { back.insert(back.remove(at: i), at: 0) }
             let display = StripDisplay.all().first?.frame.size ?? NSScreen.main?.frame.size ?? .zero
@@ -1525,8 +1545,6 @@ final class StripModule: ModuleController {
         var display: CGSize
     }
 
-    /// Windows that opened while a round was under way: they go next.
-    @ObservationIgnored private var pendingFullScreen: [SwitchTarget] = []
     /// Full or Strip asked for while a round was under way.
     @ObservationIgnored private var queuedMode: Bool?
     /// Signalled when macOS has finished switching Spaces (each window going into or out of full
@@ -1599,6 +1617,8 @@ final class StripModule: ModuleController {
                     } else {
                         self.rebuild(arrange: true)
                     }
+                    // Every window in full screen now: the desktop shows the Dock (Hide the Dock is for the strip).
+                    self.syncDock()
                     self.refreshSetupChecks()
                     let missed = targets.count - done.count
                     if missed > 0 {
@@ -1609,12 +1629,6 @@ final class StripModule: ModuleController {
                     if let queued = self.queuedMode {
                         self.queuedMode = nil
                         if queued != fullScreen { return self.setFullWindows(queued) }
-                    }
-                    // Windows that opened meanwhile go behind the window you're on.
-                    let pending = self.pendingFullScreen.filter { self.windows[$0.id] != nil }
-                    self.pendingFullScreen.removeAll()
-                    if self.fullWindows, !pending.isEmpty {
-                        self.switchWindows(pending, fullScreen: true, anchor: self.windowYoureOn())
                     }
                 }
             }
@@ -1704,18 +1718,6 @@ final class StripModule: ModuleController {
     }
 
     /// While Full windows is on, a window that opens goes into full screen too, once it's settled.
-    private func sendNewWindowFullScreen(_ id: CGWindowID) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, self.fullWindows, let w = self.windows[id], let state = self.strips[w.key] else { return }
-                let target = SwitchTarget(id: id, pid: w.pid, element: w.element, display: state.display.frame.size)
-                if self.isSwitchingWindows { return self.pendingFullScreen.append(target) }
-                // The window you just opened is the one you're on: it goes in front of you.
-                self.switchWindows([target], fullScreen: true, anchor: target)
-            }
-        }
-    }
-
     private func toggleRunning() {
         if isRunning {
             end()
@@ -2568,6 +2570,8 @@ final class StripModule: ModuleController {
         static let hidesDock = "strip.hidesDock"
         /// Tutto hid the Dock and hasn't put it back yet (kept, so a crash can't leave it hidden).
         static let dockHidden = "strip.dockHidden"
+        /// The Dock already hid when Hide the Dock was turned on: the strip leaves it alone.
+        static let dockYours = "strip.dockYours"
         /// Each display's usable area with the Dock showing, from before Tutto hid it.
         static let dockAreas = "strip.dockAreas"
         static let disabledDisplays = "strip.disabledDisplays"

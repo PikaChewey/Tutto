@@ -70,16 +70,28 @@ public enum StripRules {
 /// "Hide the Dock": while the strip runs, the Dock hides the way it does for an app in full
 /// screen, and windows use the room it leaves.
 public enum StripDock {
-    public enum Step: Equatable, Sendable { case hide, restore, none }
+    /// `adopt`: note the hidden Dock as the strip's (nothing changes on screen).
+    public enum Step: Equatable, Sendable { case hide, restore, adopt, none }
 
-    /// `wanted`: the strip is running with the option on. `hidByTutto`: Tutto turned the Dock's
-    /// auto-hide on and hasn't put it back. `autoHides`: the Dock's setting now (nil when this
-    /// macOS doesn't say). A Dock you hide yourself is left alone, and one you bring back while
-    /// the strip runs isn't hidden again behind your back.
-    public static func step(wanted: Bool, hidByTutto: Bool, autoHides: Bool?) -> Step {
+    /// Whether the strip needs the Dock's room now: running with Hide the Dock on and its windows
+    /// on it. With every window in full screen (Full) it doesn't, and the Dock shows on the desktop,
+    /// but only once they're all there; on the way back it needs the room at once, so the windows
+    /// come back at full height.
+    public static func needsRoom(running: Bool, option: Bool, fullWindows: Bool, switching: Bool) -> Bool {
+        running && option && !(fullWindows && !switching)
+    }
+
+    /// `option`: Hide the Dock is on. `wanted`: the strip needs the room now (`needsRoom`).
+    /// `hidByTutto`: Tutto turned the Dock's auto-hide on and noted it. `hidByYou`: the Dock already
+    /// hid when the option was turned on. `autoHides`: the Dock's setting now (nil when this macOS
+    /// doesn't say). With the option on, a hidden Dock is the strip's to bring back even if Tutto's
+    /// note of hiding it was lost; a Dock you hide yourself is left alone, and one you bring back
+    /// while the strip runs isn't hidden again behind your back.
+    public static func step(option: Bool, wanted: Bool, hidByTutto: Bool, hidByYou: Bool, autoHides: Bool?) -> Step {
         guard let autoHides else { return .none }
-        if wanted { return hidByTutto || autoHides ? .none : .hide }
-        return hidByTutto ? .restore : .none
+        let strips = hidByTutto || (option && autoHides && !hidByYou)
+        if wanted { return strips ? (hidByTutto ? .none : .adopt) : (autoHides ? .none : .hide) }
+        return strips ? .restore : .none
     }
 }
 
