@@ -464,15 +464,19 @@ public enum WindowFocus {
             if psn.withUnsafeMutableBytes({ processForPID(pid, $0.baseAddress!) }) == 0 {
                 // 0x200: user generated, like a click in the Dock.
                 fronted = psn.withUnsafeMutableBytes { setFront($0.baseAddress!, window, 0x200) } == 0
-                // "Make key window": a synthetic mouse-down addressed to the window at a point far
-                // outside it, so nothing inside the window is clicked.
+                // "Make key window": a synthetic click addressed to the window at a point far
+                // outside it, so nothing inside the window is clicked. The mouse-up matters: after
+                // a mouse-down alone the window server waits for the button to come up, and a
+                // full-screen app's menu bar won't slide down until a real click ends it.
                 var bytes = [UInt8](repeating: 0, count: 0x100)
                 bytes[0x04] = 0xF8
-                bytes[0x08] = 0x01
                 bytes[0x3A] = 0x10
                 withUnsafeBytes(of: CGPoint(x: 300_000, y: 300_000)) { for (i, b) in $0.enumerated() { bytes[0x20 + i] = b } }
                 withUnsafeBytes(of: window.littleEndian) { for (i, b) in $0.enumerated() { bytes[0x3C + i] = b } }
-                _ = psn.withUnsafeMutableBytes { p in bytes.withUnsafeMutableBufferPointer { postRecord(p.baseAddress!, $0.baseAddress!) } }
+                for phase: UInt8 in [0x01, 0x02] {  // down, then up
+                    bytes[0x08] = phase
+                    _ = psn.withUnsafeMutableBytes { p in bytes.withUnsafeMutableBufferPointer { postRecord(p.baseAddress!, $0.baseAddress!) } }
+                }
             }
         }
         if let element {
