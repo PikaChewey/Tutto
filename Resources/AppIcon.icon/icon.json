@@ -1,6 +1,6 @@
 {
   "fill" : {
-    "automatic-gradient" : "srgb:0.96500,0.96500,0.97500,1.00000"
+    "solid" : "srgb:0.04314,0.04314,0.04706,1.00000"
   },
   "groups" : [
     {
@@ -24,33 +24,17 @@
       "layers" : [
         {
           "glass" : true,
-          "image-name" : "fills.png",
-          "name" : "fills"
-        }
-      ],
-      "shadow" : {
-        "kind" : "none",
-        "opacity" : 0.5
-      },
-      "translucency" : {
-        "enabled" : false,
-        "value" : 0.5
-      }
-    },
-    {
-      "layers" : [
-        {
-          "glass" : false,
           "image-name" : "tracks.png",
-          "name" : "tracks"
+          "name" : "tracks",
+          "opacity" : 0.24
         }
       ],
       "shadow" : {
-        "kind" : "none",
+        "kind" : "neutral",
         "opacity" : 0.5
       },
       "translucency" : {
-        "enabled" : false,
+        "enabled" : true,
         "value" : 0.5
       }
     }

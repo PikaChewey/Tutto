@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/assets/icon.png" width="112" alt="Tutto icon: three sliders on white glass, the top one blue"></p>
+<p align="center"><img src="docs/assets/icon.png" width="112" alt="Tutto icon: three white slider knobs on dim glass tracks, on black"></p>
 
 <h1 align="center">Tutto</h1>
 

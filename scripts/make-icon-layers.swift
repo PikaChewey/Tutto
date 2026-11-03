@@ -1,15 +1,12 @@
-// Writes Tutto's app icon document (Icon Composer): three layers on full-bleed 1024 canvases plus
+// Writes Tutto's app icon document (Icon Composer): two layers on full-bleed 1024 canvases plus
 // icon.json. macOS applies the shape and the glass. The mark is three sliders, the controls the panel
-// holds, in the GUI's own colours: graphite tracks filled to white knobs on white glass, the top one
-// filled in the system blue (the panel's colour for what's live). The menu bar glyph is the same
-// mark (`MenuBarGlyph`). Check every appearance with Icon Composer's ictool.
+// holds, drawn the way the first Tutto icon was: a near-black field, the tracks in white glass at 24 %
+// (on black they read as outlines) and the knobs in solid white glass, the one lit thing. The menu bar
+// glyph is the same mark (`MenuBarGlyph`). Check every appearance with Icon Composer's ictool.
 // Usage: swift scripts/make-icon-layers.swift Resources/AppIcon.icon
 import AppKit
 
 let out = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "AppIcon.icon")
-let graphite = CGColor(srgbRed: 0.17, green: 0.17, blue: 0.19, alpha: 1)
-let track = CGColor(srgbRed: 0.78, green: 0.78, blue: 0.80, alpha: 1)
-let blue = CGColor(srgbRed: 0.0, green: 0.48, blue: 1.0, alpha: 1)
 let white = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
 
 // Geometry on the 1024 canvas, y down: three rows, tracks from x 188 to 836 (about 63 % of the
@@ -17,47 +14,30 @@ let white = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
 let rows: [CGFloat] = [328, 512, 696]
 let left: CGFloat = 188, right: CGFloat = 836
 let levels: [CGFloat] = [0.70, 0.32, 0.56]
-let trackHeight: CGFloat = 60, knob: CGFloat = 92, ring: CGFloat = 22
+let trackHeight: CGFloat = 52, knob: CGFloat = 78
 
 func knobX(_ row: Int) -> CGFloat { left + (right - left) * levels[row] }
-func capsule(_ ctx: CGContext, from x0: CGFloat, to x1: CGFloat, row: Int) {
-    let r = CGRect(x: x0, y: rows[row] - trackHeight / 2, width: x1 - x0, height: trackHeight)
-    ctx.addPath(CGPath(roundedRect: r, cornerWidth: trackHeight / 2, cornerHeight: trackHeight / 2, transform: nil))
-}
 
 struct Layer {
     let name: String
-    let glass: Bool
-    let shadow: String
+    let opacity: Double?  // nil: solid white glass; otherwise frosted white glass at this opacity
     let draw: (CGContext) -> Void
 }
 
 // Front to back.
 let layers = [
-    // Knobs: white discs with a graphite edge, like a control you'd move.
-    Layer(name: "knobs", glass: true, shadow: "neutral") { ctx in
+    // Knobs: solid white discs.
+    Layer(name: "knobs", opacity: nil) { ctx in
         for row in rows.indices {
-            let c = CGPoint(x: knobX(row), y: rows[row])
-            ctx.setFillColor(graphite)
-            ctx.fillEllipse(in: CGRect(x: c.x - knob, y: c.y - knob, width: knob * 2, height: knob * 2))
-            ctx.setFillColor(white)
-            let inner = knob - ring
-            ctx.fillEllipse(in: CGRect(x: c.x - inner, y: c.y - inner, width: inner * 2, height: inner * 2))
+            ctx.addEllipse(in: CGRect(x: knobX(row) - knob, y: rows[row] - knob, width: knob * 2, height: knob * 2))
         }
     },
-    // Fills up to each knob: the top one blue, the others graphite.
-    Layer(name: "fills", glass: true, shadow: "none") { ctx in
-        for row in rows.indices {
-            ctx.setFillColor(row == 0 ? blue : graphite)
-            capsule(ctx, from: left, to: knobX(row), row: row)
-            ctx.fillPath()
+    // Tracks: full-width capsules behind the knobs.
+    Layer(name: "tracks", opacity: 0.24) { ctx in
+        for y in rows {
+            let r = CGRect(x: left, y: y - trackHeight / 2, width: right - left, height: trackHeight)
+            ctx.addPath(CGPath(roundedRect: r, cornerWidth: trackHeight / 2, cornerHeight: trackHeight / 2, transform: nil))
         }
-    },
-    // Tracks behind, light grey and flat.
-    Layer(name: "tracks", glass: false, shadow: "none") { ctx in
-        ctx.setFillColor(track)
-        for row in rows.indices { capsule(ctx, from: left, to: right, row: row) }
-        ctx.fillPath()
     },
 ]
 
@@ -71,19 +51,23 @@ for layer in layers {
                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     ctx.translateBy(x: 0, y: 1024)
     ctx.scaleBy(x: 1, y: -1)  // top-left coordinates
+    ctx.setFillColor(white)
     layer.draw(ctx)
+    ctx.fillPath()
     let file = "\(layer.name).png"
     try! NSBitmapImageRep(cgImage: ctx.makeImage()!).representation(using: .png, properties: [:])!
         .write(to: assets.appendingPathComponent(file))
+    var entry: [String: Any] = ["glass": true, "image-name": file, "name": layer.name]
+    if let opacity = layer.opacity { entry["opacity"] = NSDecimalNumber(string: "\(opacity)") }  // 0.24, not 0.2399…
     groups.append([
-        "layers": [["glass": layer.glass, "image-name": file, "name": layer.name]],
-        "shadow": ["kind": layer.shadow, "opacity": 0.5],
-        "translucency": ["enabled": false, "value": 0.5],
+        "layers": [entry],
+        "shadow": ["kind": "neutral", "opacity": 0.5],
+        "translucency": ["enabled": layer.opacity != nil, "value": 0.5],
     ])
 }
-// White glass: Icon Composer builds the light gradient from this colour.
+// Near-black, as the first icon was; macOS's dark look lifts it to graphite.
 let json: [String: Any] = [
-    "fill": ["automatic-gradient": "srgb:0.96500,0.96500,0.97500,1.00000"],
+    "fill": ["solid": "srgb:0.04314,0.04314,0.04706,1.00000"],
     "groups": groups,
     "supported-platforms": ["squares": ["macOS"]],
 ]

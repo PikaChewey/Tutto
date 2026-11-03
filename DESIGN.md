@@ -1,11 +1,11 @@
 # DESIGN — Tutto (menu bar panel and identity, v4)
 
 Binding for the menu bar panel, the menu bar glyph and the app icon. Sources:
-- X posts and Hacker News threads, read 2026-10-26 and 2026-10-27 (27 + 18). Dates and engagement were confirmed through api.fxtwitter.com and HN's Algolia API, and the replies were read.
+- X posts and Hacker News threads, read 2026-10-26 and 2026-10-27 (27 + 18), plus five on dark and monochrome icons read 2026-11-02. Dates and engagement were confirmed through api.fxtwitter.com and HN's Algolia API, and the replies were read (for the 2026-11-02 posts, the posts and their pictures only).
 - Apple's HIG on app icons and menu bar extras, plus the Icon Composer documentation.
 - Bryan's house style: Download More RAM's and Grab's `DESIGN.md`. The house style wins where X and the house disagree.
 - Bryan on the panel. Version 1 (716 pt): "very cluttered". Version 3 (475 pt): "a bit too minimalistic … create a new mix of the old GUI and what it is currently". Version 4 is that mix.
-- Bryan on the mark: the "tt" of v3 "genuinely just looks really bad"; of ∀, "i dont even get what it is".
+- Bryan on the mark: the "tt" of v3 "genuinely just looks really bad"; of ∀, "i dont even get what it is". On the sliders in white glass (2026-11-02): "i think id prefer a more minimalistic app icon for tutto. like maybe a more like dark themed colour palette", and "i liked the original tutto one where it was black with a 2x2 grid outline where bottom right was white, its just that that didnt really fit tutto anymore".
 
 Other apps go unnamed here, as everywhere in Tutto.
 
@@ -43,6 +43,11 @@ Other apps go unnamed here, as everywhere in Tutto.
 | I13 | [macOS 27 first-party icons](https://x.com/avstorm/status/2099487935015907628) | 2026-09-14 | 16,693 / 1.58M | Sharper glass and bolder shapes praised as a glow-up; the top reply mourns lost depth. |
 | I14 | [A new radial mark](https://x.com/avstorm/status/2100218395404784058) | 2026-09-16 | 2,511 / 89K | Replies say radial marks read as an AI logo. |
 | I15 | [Archive app icon, simplified](https://x.com/privatetalky/status/2080298458926219283) | 2026-07-23 | 393 / 21K | "Didn't realise it was a zipper until…": an object simplified too far stops reading. |
+| I16 | [A first-party icon goes black and white](https://x.com/zollotech/status/2110079336569090544) | 2026-10-13 | 1,131 / 51K | A music app's coloured icon reduced to one black symbol on white; the reactions split between cleaner and missing the colour it was known by. |
+| I17 | [Same icon, final release](https://x.com/itsdurreadan/status/2114791472834990382) | 2026-10-26 | 1,778 / 114K | Shipped as the final icon with "no Liquid Glass detailing": black and white is now a first-party look. |
+| I18 | [The same rebrand, defended](https://x.com/sabeshbharathi/status/2113263520703975569) | 2026-10-22 | 132 / 10K | A first "this ain't it" turned around once glass carried the look. |
+| I19 | [Why the new icons look flat](https://x.com/OutofGalaxyy/status/2073597296487362890) | 2026-07-05 | 431 / 31K | Icons look most like real glass in the dark tinted look; a solid white glyph on a light field hides the highlights that make glass read. |
+| I20 | [Glass on black, rebuilt in Icon Composer](https://x.com/flyosity/status/2093512419410628940) | 2026-08-29 | 163 / 7.6K | Glass shapes on a black field, rebuilt from a 3D and image-editor workflow in Icon Composer. |
 
 Kept from the house style: posts on one object and one number, a quiet bar, glass that costs time, and counting the animations (Download More RAM's `DESIGN.md`, rows 1, 5, 30, 31).
 
@@ -84,14 +89,15 @@ Kept from the house style: posts on one object and one number, a quiet bar, glas
 
 ## 4. Identity
 
-**Mark.** Three sliders: the controls the panel holds. Graphite tracks filled to white knobs, the top one in the system blue, on white glass. These are the GUI's own colours: ink, grey cards and one blue for what's live, as in the panel's meters and lines. It takes two words to name ("the sliders"), and it says what Tutto is: one place for the Mac's controls. Bryan on ∀, the mark before it: "i dont even get what it is", and "why does it have a maximalist colour theme?? … doesnt match with any of the GUI".
+**Mark.** Three sliders: the controls the panel holds. The app icon draws them the way the first Tutto icon was drawn: a near-black field, the tracks in white glass at 24 % (on black they read as outlines) and the knobs in solid white glass, the one lit thing. Three tones, no colour; the GUI's ink and paper. It takes two words to name ("the sliders"), and it says what Tutto is: one place for the Mac's controls. Bryan asked for it minimal and dark, like the first icon (2026-11-02, quoted above); on ∀, the mark before the sliders: "i dont even get what it is", and "why does it have a maximalist colour theme?? … doesnt match with any of the GUI".
 
-**Chosen by:**
-- **Three concepts in the GUI's palette only** (white glass, graphite, at most one system blue), each rendered in every macOS look, at 16/32/64 px and in the owner's real menu bar:
-  - **Levels** (chosen): three sliders. The only glyph that reads as a system symbol beside volume and Wi-Fi, and the icon shows a control everyone knows.
-  - **Panel:** the panel in miniature, a blue line over two tiles. It reads as a stats app, which Tutto is only in part, and its glyph is busy at 1x.
-  - **Tiles:** four tiles, one blue. It reads as an app launcher, close to the old four-quarter tile, and its glyph turns into four dots at menu bar size.
-- **The blue on the top row:** on the middle row the fill was a stub under the knob, and the one accent should be visible at 16 px.
+**Chosen by** (2026-11-02, Bryan's pick):
+- **Three concepts in the first icon's recipe** (black, white glass at 24 %, one solid white shape), each rendered in every macOS look, at 16/32/64 px, in a Dock on a black desktop and with its menu bar glyph:
+  - **Levels** (chosen): the sliders. The app icon, the menu bar glyph and the panel's mark stay one drawing, and the glyph reads as a system symbol beside volume and Wi-Fi.
+  - **Corner:** the first icon grown to nine tiles, the top-right one lit (where Tutto sits). The closest to the first icon, but its glyph is a dot grid.
+  - **Strip:** three windows side by side, the one you're on lit. Its glyph is three bars, beside the dictation app's waveform.
+- **Variants tried:** heavier knobs (64 px tracks, 88 px knobs) looked bold rather than minimal; one knob lit and two dim stopped reading as sliders at 32 px.
+- **Before** (2026-10-28): the same sliders on white glass, graphite fills with the top one in the system blue, chosen over Panel (the panel in miniature; reads as a stats app) and Tiles (reads as a launcher).
 
 **Menu bar glyph:**
 - An 18 × 16 pt template image drawn like the system's slider symbol: each line stops at its knob, a ring.
@@ -99,18 +105,18 @@ Kept from the house style: posts on one object and one number, a quiet bar, glas
 - A separate 1x drawing: 1 pt lines and 2 pt rings on pixel centres.
 
 **App icon** (`Resources/AppIcon.icon`, Icon Composer):
-- **Fill:** an automatic gradient from near-white (sRGB 0.965 / 0.965 / 0.975), so the glass is white.
-- **Three groups, front to back:**
-  - knobs (glass, neutral shadow): white discs of radius 92 px with a 22 px graphite edge;
-  - fills (glass, no shadow): the top one in the system blue (sRGB 0 / 0.48 / 1.0), the others graphite (0.17 / 0.17 / 0.19);
-  - tracks (flat, no shadow): light grey (0.78 / 0.78 / 0.80).
-- **Geometry on 1024:** rows at y 328, 512 and 696; tracks from x 188 to 836, 60 px high; levels at 70, 32 and 56 %.
+- **Fill:** solid near-black (sRGB 0.043 / 0.043 / 0.047), the first icon's; the dark look lifts it to graphite.
+- **Two groups, front to back, both white glass with a neutral shadow:**
+  - knobs (solid): discs of radius 78 px;
+  - tracks (24 % opacity, translucency 50 %): capsules 52 px high.
+- **Geometry on 1024:** rows at y 328, 512 and 696; tracks from x 188 to 836; levels at 70, 32 and 56 %.
 - `scripts/make-icon-layers.swift` writes the whole document. Checked with `ictool` in the default, dark, tinted and clear looks, and at 16, 32 and 64 px.
 
 **Tried and rejected earlier:**
 - the four-quarter tile (the old mark, from Trackpad Corner);
 - "tt" (lettering);
 - ∀, "for all" (not understood; amber on navy matched nothing in the GUI), and the five concepts that lost to it: overlapping circle and square, a pocket multi-tool, a slit of light, a lit seven-segment 8 and a prism;
+- the sliders on white glass with graphite and blue fills (not minimal enough, and light where Bryan wanted dark);
 - a coloured crossbar;
 - three stacked glass stones;
 - an ampersand.
@@ -149,6 +155,7 @@ Captions are no longer than 5 words.
   - settings in the panel;
   - lettering as a mark ("tt");
   - a mark that needs explaining, in colours the GUI doesn't use (∀ in amber on navy);
+  - a light, many-toned app icon (the sliders on white glass): he wants it minimal and dark;
   - grey hairline lists;
   - a wall of uppercase captions (captions live inside tiles);
   - unreadable icons;
