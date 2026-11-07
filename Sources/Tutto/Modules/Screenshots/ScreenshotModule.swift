@@ -4,8 +4,8 @@
 //
 //  Three capture shortcuts:
 //   ⌘⇧2  select an area → straight to the clipboard (no editor to dismiss)
-//   ⌘⇧1  the whole screen under the pointer → clipboard
-//   ⌘⇧`  select an area → the editor (draw, crop, copy text, pick colors, save)
+//   ⌘⇧`  the whole screen under the pointer → clipboard
+//   ⌘⇧1  select an area → the editor (draw, crop, copy text, pick colors, save)
 //  Nothing runs between captures; the shortcuts wait in the system.
 //
 
@@ -34,7 +34,7 @@ final class ScreenshotModule: ModuleController {
     var saveFolderPath: String { didSet { defaults.set(saveFolderPath, forKey: Keys.folder) } }
     var format: ScreenshotFormat { didSet { defaults.set(format.rawValue, forKey: Keys.format) } }
     var playSound: Bool { didSet { defaults.set(playSound, forKey: Keys.sound) } }
-    /// Also save a file for ⌘⇧1 / ⌘⇧2 captures (off: clipboard only, like the spec asks).
+    /// Also save a file for ⌘⇧` / ⌘⇧2 captures (off: clipboard only, like the spec asks).
     var alsoSaveQuickCaptures: Bool { didSet { defaults.set(alsoSaveQuickCaptures, forKey: Keys.alsoSave) } }
 
     private(set) var isCapturing = false

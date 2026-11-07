@@ -270,7 +270,7 @@ final class SwitcherModule: ModuleController {
     }
 
     /// Tutto's shortcuts that sit on the switcher's keys: its key filter takes them first and
-    /// runs them, so macOS's window cycling can't (⇧⌘` for capture and edit, say).
+    /// runs them, so macOS's window cycling can't (⇧⌘` for capture screen, say).
     private var claimed: Set<KeyShortcut> = []
     private var claimsSuspended = false
 

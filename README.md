@@ -38,8 +38,8 @@ If another app already uses one of the shortcuts below, macOS may deliver the ke
 | `⌘Tab` | Window switcher: every window gets its own card, not just every app (three Firefox windows are three cards, on any Space or in full screen, with a picture of each). Hold `⌘`, press `Tab` to move, let go to switch; a quick tap goes back to the previous window. While it's open: `1`–`9` switch to that card, `W` close, `M` minimize, `Q` quit, `H` hide, `F` fill the screen, `C` centre, `N` next display, `R` rename the window, `/` search, `` ` `` only that app's windows, `Esc` cancel |
 | ``⌘` `` | The front app's windows only (all your Firefox windows) |
 | `⌘⇧2` | Select an area → copied to the clipboard (no editor to dismiss) |
-| `⌘⇧1` | The whole screen under the pointer → clipboard |
-| `` ⌘⇧` `` | Select an area → screenshot editor (it takes these keys from macOS's "back through an app's windows"; ⌘` still goes through them) |
+| `` ⌘⇧` `` | The whole screen under the pointer → clipboard (it takes these keys from macOS's "back through an app's windows"; ⌘` still goes through them) |
+| `⌘⇧1` | Select an area → screenshot editor |
 | `⌃⇧V` | Clipboard history: type to search, double-click or `↩` to paste into the app you were in (your clipboard stays as it was; Clipboard › "Keep pasted items on the clipboard" changes that), `⌘↩` copy, `⇥` filter by type, `⇧⌘P` pin, `⌘⌫` delete |
 | `⌃⇧B` | Window palette: type "left half", "max", "next display"…, `↩` |
 | `⌃⇧C` | Word counter: the cursor is ready, press `⌘V` (or type) to see words, characters (with and without spaces), sentences, paragraphs, reading and speaking time, and the same for a selection. `⌘K` clears, `Esc` closes |

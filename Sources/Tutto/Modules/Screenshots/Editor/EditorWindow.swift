@@ -2,7 +2,7 @@
 //  EditorWindow.swift
 //  Tutto
 //
-//  The screenshot editor (⌘⇧`). Only screenshot things live here: tools, colors,
+//  The screenshot editor (⌘⇧1). Only screenshot things live here: tools, colors,
 //  thickness, copy text, copy, save. Esc copies and closes.
 //
 

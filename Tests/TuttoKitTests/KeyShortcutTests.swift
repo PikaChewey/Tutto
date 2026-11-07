@@ -39,9 +39,10 @@ final class KeyShortcutTests: XCTestCase {
             XCTAssertNil(SystemShortcuts.owner(of: shortcut), shortcut.displayString)
         }
         XCTAssertEqual(Set(defaults).count, defaults.count)
-        // Area to the editor is ⇧⌘` (Bryan's choice), taken from macOS's "back through an app's windows";
-        // ⌘` alone stays macOS's (and the switcher's) way forward through them.
-        XCTAssertEqual(DefaultShortcuts.captureAreaEdit, .cmdShift(kVK_ANSI_Grave))
+        // Full screen is ⇧⌘` and area to the editor ⇧⌘1 (Bryan's choice, swapped 2026-11-06); ⇧⌘` is
+        // taken from macOS's "back through an app's windows", ⌘` alone stays macOS's (and the switcher's).
+        XCTAssertEqual(DefaultShortcuts.captureScreen, .cmdShift(kVK_ANSI_Grave))
+        XCTAssertEqual(DefaultShortcuts.captureAreaEdit, .cmdShift(kVK_ANSI_1))
         XCTAssertEqual(DefaultShortcuts.takenFromMacOS, [.cmdShift(kVK_ANSI_Grave)])
         XCTAssertFalse(defaults.contains(KeyShortcut(keyCode: UInt16(kVK_ANSI_Grave), modifiers: .command)))
     }

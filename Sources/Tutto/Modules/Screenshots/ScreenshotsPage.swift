@@ -74,7 +74,7 @@ private struct ScreenshotSettings: View {
                     InkSegmented(selection: $screenshots.format, options: [(.png, "PNG"), (.jpeg, "JPEG")])
                 }
                 Hairline().opacity(0.6)
-                LabeledRow("Also save quick captures", detail: "Keep a file of every ⌘⇧1 / ⌘⇧2 capture, not just the clipboard copy.") {
+                LabeledRow("Also save quick captures", detail: "Keep a file of every ⌘⇧` / ⌘⇧2 capture, not just the clipboard copy.") {
                     InkSwitch(isOn: $screenshots.alsoSaveQuickCaptures, label: "Also save quick captures")
                 }
                 Hairline().opacity(0.6)
