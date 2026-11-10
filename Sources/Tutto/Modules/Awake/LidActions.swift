@@ -38,6 +38,8 @@ final class LidObserver {
     private var service: io_service_t = 0
     private var notification: io_object_t = 0
     private var pending: DispatchWorkItem?
+    /// A simulated close holds until a simulated open; the real lid is ignored meanwhile.
+    private var simulating = false
 
     /// True = closed, false = open, nil = no lid (a desktop Mac).
     nonisolated static func read() -> Bool? {
@@ -74,6 +76,7 @@ final class LidObserver {
     func stop() {
         pending?.cancel()
         pending = nil
+        simulating = false
         if notification != 0 { IOObjectRelease(notification); notification = 0 }
         if let port { IONotificationPortDestroy(port); self.port = nil }
         if service != 0 { IOObjectRelease(service); service = 0 }
@@ -83,19 +86,20 @@ final class LidObserver {
     func simulate(closed: Bool) {
         pending?.cancel()
         pending = nil
+        simulating = closed
         guard closed != isClosed else { return }
         isClosed = closed
         onChange?(closed)
     }
 
     private func changed() {
-        guard let now = Self.read() else { return }
+        guard !simulating, let now = Self.read() else { return }
         pending?.cancel()
         pending = nil
         guard now != isClosed else { return }
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, Self.read() == now, now != self.isClosed else { return }
+                guard let self, !self.simulating, Self.read() == now, now != self.isClosed else { return }
                 self.isClosed = now
                 awakeLog.notice("lid \(now ? "closed" : "open", privacy: .public)")
                 self.onChange?(now)

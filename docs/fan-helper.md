@@ -1,5 +1,7 @@
 # Fan helper (TuttoHelper)
 
+TuttoHelper also holds sleep off for Stay Awake (helper 1.1.0). See "Stay Awake" at the end.
+
 Fan speeds are SMC writes, and the SMC refuses writes from non-root processes with `kIOReturnNotPrivileged` (0xe00002c1). Tutto therefore ships a small root LaunchDaemon, `TuttoHelper`. The app registers it with `SMAppService` and talks to it over XPC. Reading temperatures and fans needs no helper: use `TemperatureSensors` and `Fans` in TuttoKit.
 
 ## Pieces
@@ -226,3 +228,25 @@ First real-world test to run once the app is built and approved:
 2. Quit the app. Within about 1 s, expect mode `.auto` and target 0.
 3. `sudo launchctl kill TERM system/ca.bryanyao.Tutto.helper` while manual. Expect `.auto`.
 4. Sleep and wake while manual. Expect `.auto`.
+
+## Stay Awake (helper 1.1.0)
+
+Keeping a MacBook on with its lid closed takes `pmset -a disablesleep 1`, which needs root, so the helper does it. The shared code is `Sources/TuttoKit/Awake/AwakeCore.swift` (symlinked into `Shared/` like the fan files). `AwakeController` runs `/usr/bin/pmset` with fixed arguments only.
+
+| Call | What the helper does |
+|---|---|
+| `beginAwake(until:)` | Journals the session, then `pmset -a disablesleep 1` (only if it was off: a SleepDisabled someone else turned on is left alone, now and at the end). Called again, it moves the end. The end is capped at 7 days. |
+| `setAwakeLowPower(_:)` | Reads the battery profile's `lowpowermode` from `pmset -g custom`, journals it, then sets `pmset -b lowpowermode 1`; off puts back exactly what was there. The charger's profile is never touched. |
+| `setAwakePaused(_:)` | The processes the app paused (pid, start time, owner). Only the caller's own processes, alive and with the same start time, are kept. |
+| `endAwake(sleepIfLidClosed:)` | Resumes the paused processes (SIGCONT, after checking each is still the same process), puts Low Power Mode and sleep back, then removes the journal. With `sleepIfLidClosed`, a lid still closed a second later gets `pmset sleepnow`. |
+| `awakeState` | The end (0 = none) and whether Low Power Mode is held. |
+
+Rules:
+
+1. **Journal first.** `/Library/Application Support/Tutto/awake.json` (root, 0600) is written before each change, and an entry leaves it only once that change is undone. A failed restore stays journaled and is retried every 30 s.
+2. **The helper keeps the end.** A wall-clock timer ends the session 60 s after the app's own end, in case the app is hung. Sleep is never held past it.
+3. **The app goes away mid-session** (crash, kill -9): paused processes are resumed at once, and the session runs on to its end, since the lid may be closed with agents working. Unattended, the helper also ends it below 5 % on battery or at critical heat, and puts a closed Mac to sleep on battery.
+4. **The helper itself stops:** the next start finds the journal, resumes what it lists, and keeps the session to its end, or ends it if that has passed. Tutto connects at launch whenever sleep is still disabled, so a stale journal is cleared even after a restart.
+5. While a session runs the helper doesn't exit when idle.
+
+The app keeps a power assertion (`PreventUserIdleSystemSleep`, named "Tutto Stay Awake") for the session as well, so the Mac stays on with the lid open even without the helper.
