@@ -142,13 +142,18 @@ enum Displays {
 /// The built-in display's sleep: what the lid closing asks for first, since it leaves your brightness
 /// alone. Only when an app holds the display awake does Stay Awake dim it instead (`DisplayBrightness`).
 enum DisplayPower {
-    /// Asks the display to sleep now (what `pmset displaysleepnow` does). macOS defers it for a
-    /// while after a wake, and ignores it while an app holds a display assertion (a video playing).
+    /// Puts the display to sleep now, through `pmset displaysleepnow` (no root needed). Setting
+    /// IODisplayWrangler's IORequestIdle from an app does nothing on this Mac (measured: the display
+    /// stayed awake with nothing holding it); pmset slept it within 3 s. macOS may still keep it on
+    /// while an app holds it awake, which is when the dimming fallback steps in. Like closing the
+    /// lid, display sleep locks the screen when a password is required after sleep.
     static func requestSleep() {
-        let wrangler = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/IOResources/IODisplayWrangler")
-        guard wrangler != 0 else { return }
-        defer { IOObjectRelease(wrangler) }
-        IORegistryEntrySetCFProperty(wrangler, "IORequestIdle" as CFString, kCFBooleanTrue)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        process.arguments = ["displaysleepnow"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { awakeLog.error("displaysleepnow: \(error.localizedDescription, privacy: .public)") }
     }
 
     /// Wakes a sleeping display, as a key press would.
