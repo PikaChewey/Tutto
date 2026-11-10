@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import TuttoKit
 
 @main
 struct TuttoApp: App {
@@ -17,9 +18,26 @@ struct TuttoApp: App {
         MenuBarExtra {
             MenuPanel(model: model)
         } label: {
-            Image(nsImage: MenuBarGlyph.image())
+            MenuBarLabel(model: model)
         }
         .menuBarExtraStyle(.window)
+    }
+}
+
+/// The menu bar icon, and while Stay Awake runs, the time left beside it.
+private struct MenuBarLabel: View {
+    var model: AppModel
+
+    var body: some View {
+        if let text = model.awake?.menuBarText {
+            HStack(spacing: 3) {
+                Image(nsImage: MenuBarGlyph.image())
+                Text(text).monospacedDigit()
+            }
+            .accessibilityLabel("Tutto, staying awake, \(text) left")
+        } else {
+            Image(nsImage: MenuBarGlyph.image())
+        }
     }
 }
 
@@ -125,6 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// automation (Shortcuts, scripts, Stream Deck…).
 ///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows switcher strip screenshots archives corner wordCounter sound shortcuts permissions general
 ///   actions: capture-area capture-screen capture-edit clipboard windows word-counter mute-front-app quit
+///            stay-awake?for=2h30 (starts, or adds time)  stay-awake-end
 @MainActor
 enum DeepLinks {
     static func handle(_ url: URL, model: AppModel) {
@@ -143,6 +162,14 @@ enum DeepLinks {
         case "mute-front-app": .muteFrontApp
         default: nil
         }
+        if name == "stay-awake" {
+            let typed = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "for" }?.value
+                ?? url.pathComponents.dropFirst(2).first ?? "1h"
+            if let seconds = AwakeDuration.seconds(from: typed) { model.awake?.start(for: seconds) }
+            return
+        }
+        if name == "stay-awake-end" { return model.awake?.endNow() ?? () }
+        if name == "lid-closed" || name == "lid-open" { return model.awake?.simulateLid(closed: name == "lid-closed") ?? () }
         if name == "quit" {
             NSApp.terminate(nil)  // runs the normal shutdown (fans back to automatic, tap removed)
             return

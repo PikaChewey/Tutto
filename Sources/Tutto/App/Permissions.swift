@@ -28,7 +28,7 @@ enum Permission: String, CaseIterable, Identifiable {
         case .screenRecording: "Screen Recording"
         case .systemAudio: "System Audio Recording"
         case .finderExtension: "Finder extension"
-        case .fanHelper: "Fan control helper"
+        case .fanHelper: "Tutto's helper"
         }
     }
 
@@ -39,7 +39,7 @@ enum Permission: String, CaseIterable, Identifiable {
         case .screenRecording: "Screenshots, color picking, text recognition, and window titles and pictures in the switcher."
         case .systemAudio: "Muting apps in Sound. Tutto holds their sound back; nothing is recorded."
         case .finderExtension: "Extract and Compress in Finder's right-click menu."
-        case .fanHelper: "Setting fan speeds. Reading temperatures and fans doesn't need it."
+        case .fanHelper: "Setting fan speeds, and Stay Awake with the lid closed. Reading temperatures and fans doesn't need it."
         }
     }
 
@@ -49,7 +49,7 @@ enum Permission: String, CaseIterable, Identifiable {
         case .screenRecording: [.screenshots, .switcher]
         case .systemAudio: [.sound]
         case .finderExtension: [.archives]
-        case .fanHelper: [.sensors]
+        case .fanHelper: [.sensors, .awake]
         }
     }
 

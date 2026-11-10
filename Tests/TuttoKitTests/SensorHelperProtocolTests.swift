@@ -28,6 +28,32 @@ private final class FakeHelper: NSObject, TuttoFanHelperProtocol, NSXPCListenerD
         reply(FanStatus.notPrivileged)
     }
 
+    func beginAwake(until deadline: Double, reply: @escaping (Int32, String?) -> Void) {
+        record("beginAwake \(deadline)")
+        reply(FanStatus.success, nil)
+    }
+
+    func endAwake(sleepIfLidClosed: Bool, reply: @escaping (Int32, String?) -> Void) {
+        record("endAwake \(sleepIfLidClosed)")
+        reply(FanStatus.success, nil)
+    }
+
+    func setAwakeLowPower(_ on: Bool, reply: @escaping (Int32, String?) -> Void) {
+        record("setAwakeLowPower \(on)")
+        reply(FanStatus.error, "refused")
+    }
+
+    func setAwakePaused(_ json: Data, reply: @escaping (Int32) -> Void) {
+        let list = (try? JSONDecoder().decode([PausedProcess].self, from: json)) ?? []
+        record("setAwakePaused \(list.map(\.pid))")
+        reply(FanStatus.success)
+    }
+
+    func awakeState(reply: @escaping (Double, Bool) -> Void) {
+        record("awakeState")
+        reply(2_000_000_000, true)
+    }
+
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
         connection.exportedInterface = TuttoFanHelper.makeInterface()
         connection.exportedObject = self
@@ -103,6 +129,40 @@ final class SensorHelperProtocolTests: XCTestCase {
         }
         wait(for: [version, ok, bad, reset], timeout: 5)
         XCTAssertTrue(helper.calls.contains("setFan 0 1 3000.5"))
+
+        // Stay Awake's calls cross the same connection.
+        let begin = expectation(description: "beginAwake")
+        proxy.beginAwake(until: 1_999_999_999.5) { status, _ in
+            XCTAssertEqual(status, FanStatus.success)
+            begin.fulfill()
+        }
+        let lowPower = expectation(description: "lowPower")
+        proxy.setAwakeLowPower(true) { status, message in
+            XCTAssertEqual(status, FanStatus.error)
+            XCTAssertEqual(message, "refused")
+            lowPower.fulfill()
+        }
+        let paused = expectation(description: "paused")
+        let list = [PausedProcess(pid: 42, startTime: 1.5, uid: 501)]
+        proxy.setAwakePaused(try JSONEncoder().encode(list)) { status in
+            XCTAssertEqual(status, FanStatus.success)
+            paused.fulfill()
+        }
+        let state = expectation(description: "state")
+        proxy.awakeState { deadline, claimed in
+            XCTAssertEqual(deadline, 2_000_000_000)
+            XCTAssertTrue(claimed)
+            state.fulfill()
+        }
+        let end = expectation(description: "end")
+        proxy.endAwake(sleepIfLidClosed: true) { status, _ in
+            XCTAssertEqual(status, FanStatus.success)
+            end.fulfill()
+        }
+        wait(for: [begin, lowPower, paused, state, end], timeout: 5)
+        XCTAssertTrue(helper.calls.contains("beginAwake 1999999999.5"))
+        XCTAssertTrue(helper.calls.contains("setAwakePaused [42]"))
+        XCTAssertTrue(helper.calls.contains("endAwake true"))
     }
 
     /// The helper's listener requirement turns away any client that is not Tutto.app, such as this test runner.

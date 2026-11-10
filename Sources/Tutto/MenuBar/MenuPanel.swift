@@ -43,6 +43,9 @@ struct MenuPanel: View {
                 }
                 StatTiles(system: system, sensors: model.sensors)
             }
+            if let awake = model.awake {
+                AwakeCard(awake: awake)
+            }
             if let sensors = model.sensors, sensors.hasFans {
                 FanCard(sensors: sensors)
             }
@@ -551,6 +554,218 @@ private struct StatTile<Graph: View>: View {
         .accessibilityLabel(spokenName)
         .accessibilityValue(spokenValue)
         .accessibilityHint("Shows details")
+    }
+}
+
+// MARK: - Stay Awake
+
+/// Stay Awake: type a time (or pick one) and the Mac stays on, lid closed included. While it runs:
+/// the countdown, when it ends, chips to add time, End, and one line on what the lid does.
+private struct AwakeCard: View {
+    @Bindable var awake: StayAwakeModule
+    @State private var typed = ""
+    @State private var visible = false
+    @State private var shake = 0
+    @FocusState private var focused: Bool
+
+    private var typedSeconds: TimeInterval? { AwakeDuration.seconds(from: typed) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let session = awake.session {
+                running(session)
+            } else {
+                idle
+            }
+            status
+        }
+        .panelCard(vertical: 10)
+        .animation(Motion.snappy, value: awake.isRunning)
+        .background(VisibilityReader { visible = $0 })
+    }
+
+    // Idle: the title, a field and four chips.
+    private var idle: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            CardTitle(title: "Stay awake") {
+                Text(awake.lastEnded ?? "lid can close, agents keep going")
+                    .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                    .foregroundStyle(Color.ink3)
+                    .contentTransition(.opacity)
+            }
+            HStack(spacing: 6) {
+                field(placeholder: "Type a time…")
+                ForEach(AwakeDuration.presets, id: \.self) { seconds in
+                    TimeChip(title: AwakeDuration.label(seconds), help: "Stay awake for \(AwakeDuration.label(seconds))") {
+                        awake.start(for: seconds)
+                    }
+                }
+            }
+        }
+        .transition(.opacity)
+    }
+
+    // Running: the countdown, its end, chips to add time, End.
+    private func running(_ session: StayAwakeModule.Session) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Awake")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Color.ink)
+                Text("until \(session.endsAt.formatted(date: session.endsAt.timeIntervalSinceNow > 20 * 3600 ? .abbreviated : .omitted, time: .shortened))")
+                    .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                    .foregroundStyle(Color.ink3)
+                Spacer(minLength: 8)
+                countdown(session)
+            }
+            .lineLimit(1)
+            HStack(spacing: 6) {
+                ForEach(AwakeDuration.additions, id: \.self) { seconds in
+                    TimeChip(title: "+" + AwakeDuration.label(seconds), help: "Add \(AwakeDuration.label(seconds))") {
+                        awake.start(for: seconds)
+                    }
+                }
+                field(placeholder: "Add time")
+                Button("End") { awake.endNow() }
+                    .buttonStyle(OutlineButtonStyle(compact: true))
+                    .fixedSize()
+                    .help("Let the Mac sleep as usual again")
+            }
+        }
+        .transition(.opacity)
+    }
+
+    @ViewBuilder
+    private func countdown(_ session: StayAwakeModule.Session) -> some View {
+        if visible {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                countdownText(session.endsAt.timeIntervalSince(context.date))
+            }
+        } else {
+            countdownText(session.endsAt.timeIntervalSinceNow)
+        }
+    }
+
+    private func countdownText(_ remaining: TimeInterval) -> some View {
+        let parts = AwakeDuration.countdown(remaining)
+        return (Text(parts.main).foregroundStyle(Color.ink) + Text(parts.seconds).foregroundStyle(Color.ink4))
+            .font(.system(size: 15, weight: .semibold).monospacedDigit())
+            .contentTransition(.numericText(countsDown: true))
+            .accessibilityLabel("\(AwakeDuration.menuBar(remaining)) left")
+    }
+
+    /// The typed time: Enter starts it (or adds it while running); a time it can't read shakes.
+    private func field(placeholder: String) -> some View {
+        TextField(placeholder, text: $typed)
+            .textFieldStyle(.plain)
+            .font(.system(size: 12, weight: .medium).monospacedDigit())
+            .foregroundStyle(Color.ink)
+            .focused($focused)
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(focused ? 0.09 : 0.06)))
+            .overlay(alignment: .trailing) {
+                if typedSeconds != nil {
+                    Text("↩")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.ink3)
+                        .padding(.trailing, 7)
+                        .transition(.opacity)
+                }
+            }
+            .modifier(Shake(count: shake))
+            .onSubmit {
+                guard let seconds = typedSeconds else {
+                    if !typed.isEmpty { withAnimation(.linear(duration: 0.3)) { shake += 1 } }
+                    return
+                }
+                awake.start(for: seconds)
+                typed = ""
+            }
+            .help("Minutes (90), or with units: 2h30, 1.5h, 1d 6h, 45m")
+            .accessibilityLabel(awake.isRunning ? "Add time" : "Stay awake for")
+            .animation(Motion.micro, value: typedSeconds != nil)
+    }
+
+    /// One quiet line: what closing the lid does, why it can't, or what happened.
+    @ViewBuilder
+    private var status: some View {
+        let line = statusLine
+        if let line {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(line)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                if awake.isRunning && !awake.lidSafe && awake.helperStatus != .enabled {
+                    Button("Set Up") { awake.setUpHelper() }
+                        .buttonStyle(OutlineButtonStyle(compact: true))
+                        .fixedSize()
+                }
+            }
+            .transition(.opacity)
+        }
+    }
+
+    private var statusLine: String? {
+        guard awake.isRunning else { return nil }
+        if let notice = awake.notice { return notice }
+        if let hotspot = awake.hotspotStatus { return hotspot }
+        var parts: [String] = []
+        if let closed = awake.lastClosed {
+            var done: [String] = []
+            if closed.brightness != nil { done.append("display off") }
+            if closed.muted { done.append("sound muted") }
+            if !closed.paused.isEmpty || !closed.pausedNames.isEmpty {
+                done.append(closed.pausedNames.count == 1 ? "\(closed.pausedNames[0]) paused" : "\(closed.pausedNames.count) apps paused")
+            }
+            if !done.isEmpty { parts.append("While closed: " + done.joined(separator: ", ") + ".") }
+        }
+        if let reason = awake.lowPowerReason, !awake.lidClosed { parts.append("Low Power Mode on (\(reason)).") }
+        if parts.isEmpty { return awake.lidSafe ? "Close the lid whenever you like. It stays on, easy on the battery." : nil }
+        return parts.joined(separator: " ")
+    }
+}
+
+/// A small time chip: "2h", "+15m".
+private struct TimeChip: View {
+    var title: String
+    var help: String
+    var action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
+                .foregroundStyle(hovering ? Color.ink : Color.ink2)
+                .padding(.horizontal, 8)
+                .frame(height: 24)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(hovering ? 0.12 : 0.07)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .fixedSize()
+        .onHover { hovering = $0 }
+        .animation(Motion.micro, value: hovering)
+        .help(help)
+    }
+}
+
+/// A short side-to-side shake for a time the field can't read.
+private struct Shake: GeometryEffect {
+    var count: Int
+    var animatableData: CGFloat
+
+    init(count: Int) {
+        self.count = count
+        animatableData = CGFloat(count)
+    }
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        ProjectionTransform(CGAffineTransform(translationX: 4 * sin(animatableData * .pi * 4), y: 0))
     }
 }
 

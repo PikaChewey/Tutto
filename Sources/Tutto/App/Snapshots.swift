@@ -30,6 +30,13 @@ enum Snapshots {
         // Let readings and the first `top` samples arrive.
         RunLoop.main.run(until: Date().addingTimeInterval(only.contains("fast") ? 1.5 : 5.5))
         model.corner?.applyPreview(contacts: [Contact(id: 1, x: 0.86, y: 0.14)])
+        // `awake-running` / `awake-closed` / `awake-nohelper`: the Stay Awake card mid-session.
+        if only.contains("awake-running") { model.awake?.previewSession(remaining: 2 * 3600 + 14 * 60 + 7, lidSafe: true) }
+        if only.contains("awake-closed") {
+            model.awake?.previewSession(remaining: 47 * 60 + 12, lidSafe: true,
+                                        lastClosed: .init(brightness: 0.6, mute: .init(deviceUID: "x", wasMuted: false), pausedNames: ["Chat", "Game"]))
+        }
+        if only.contains("awake-nohelper") { model.awake?.previewSession(remaining: 3600, lidSafe: false) }
 
         for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {
             if only.isEmpty || only.contains("panel") {

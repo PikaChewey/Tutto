@@ -30,6 +30,8 @@ let package = Package(
                 .linkedFramework("AppKit"), .linkedFramework("SwiftUI"), .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("Vision"), .linkedFramework("ServiceManagement"), .linkedFramework("Carbon"),
                 .linkedFramework("CoreAudio"), .linkedFramework("AudioToolbox"),
+                .linkedFramework("CoreWLAN"), .linkedFramework("CoreLocation"), .linkedFramework("Network"),
+                .linkedFramework("Security"), .linkedFramework("IOKit"), .linkedFramework("LocalAuthentication"),
             ]
         ),
         // Finder Sync extension: the right-click menu for archives.

@@ -12,7 +12,7 @@ import TuttoKit
 enum MainPage: String, Hashable, CaseIterable, Identifiable {
     case overview
     case battery, cpu, gpu, memory, disk, network, sensors
-    case clipboard, windows, switcher, strip, screenshots, archives, corner, wordCounter, sound
+    case clipboard, windows, switcher, strip, screenshots, archives, corner, wordCounter, sound, awake
     case shortcuts, permissions, general
 
     var id: String { rawValue }
@@ -34,6 +34,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .corner: "Trackpad Corner"
         case .wordCounter: "Word Counter"
         case .sound: "Sound"
+        case .awake: "Stay Awake"
         case .switcher: "Window Switcher"
         case .strip: "Scrolling Strip"
         case .shortcuts: "Shortcuts"
@@ -59,6 +60,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .corner: ModuleID.corner.symbol
         case .wordCounter: ModuleID.wordCounter.symbol
         case .sound: ModuleID.sound.symbol
+        case .awake: ModuleID.awake.symbol
         case .switcher: ModuleID.switcher.symbol
         case .strip: ModuleID.strip.symbol
         case .shortcuts: "command"
@@ -78,6 +80,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .corner: .corner
         case .wordCounter: .wordCounter
         case .sound: .sound
+        case .awake: .awake
         case .switcher: .switcher
         case .strip: .strip
         case .overview, .shortcuts, .permissions, .general: nil
@@ -85,7 +88,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
     }
 
     static let systemPages: [MainPage] = [.battery, .cpu, .gpu, .memory, .disk, .network, .sensors]
-    static let toolPages: [MainPage] = [.clipboard, .windows, .switcher, .strip, .screenshots, .archives, .corner, .wordCounter, .sound]
+    static let toolPages: [MainPage] = [.awake, .clipboard, .windows, .switcher, .strip, .screenshots, .archives, .corner, .wordCounter, .sound]
     static let settingsPages: [MainPage] = [.shortcuts, .permissions, .general]
 }
 
@@ -161,6 +164,7 @@ struct MainView: View {
         case .corner: CornerPage(model: model)
         case .wordCounter: WordCounterPage(model: model)
         case .sound: SoundPage(model: model)
+        case .awake: StayAwakePage(model: model)
         case .switcher: SwitcherPage(model: model)
         case .strip: StripPage(model: model)
         case .shortcuts: ShortcutsPage(model: model)

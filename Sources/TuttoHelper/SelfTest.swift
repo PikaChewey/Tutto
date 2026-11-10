@@ -91,7 +91,7 @@ enum SelfTest {
 
     /// Connects this process to an anonymous listener configured exactly like the daemon's.
     static func roundTrip(requirement: String?) -> Outcome {
-        let service = HelperService(smc: WriteBlockingSMC(SMCDevice.shared), requirement: requirement, exitsWhenIdle: false)
+        let service = HelperService(smc: WriteBlockingSMC(SMCDevice.shared), requirement: requirement, exitsWhenIdle: false, awakeJournal: nil)
         let listener = NSXPCListener.anonymous()
         service.attach(to: listener)
         listener.resume()

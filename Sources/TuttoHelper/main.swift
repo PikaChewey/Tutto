@@ -3,9 +3,10 @@
 //  TuttoHelper
 //
 //  Root LaunchDaemon (registered by Tutto.app through SMAppService) that writes fan
-//  speeds to the SMC. launchd starts it on demand when the app connects to the
-//  `ca.bryanyao.Tutto.helper` Mach service. It exits about 15 s after the last client
-//  leaves, with every fan back on automatic. See docs/fan-helper.md.
+//  speeds to the SMC and keeps the Mac awake for Stay Awake. launchd starts it on demand
+//  when the app connects to the `ca.bryanyao.Tutto.helper` Mach service. It exits about
+//  15 s after the last client leaves, with every fan back on automatic and no session
+//  running. See docs/fan-helper.md.
 //
 //  Shared sources (protocol, SMC encoding, write sequence) are symlinked from
 //  Sources/TuttoKit/Sensors into Shared/, so this binary links only Foundation, IOKit

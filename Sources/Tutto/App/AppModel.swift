@@ -32,6 +32,7 @@ final class AppModel {
     private(set) var sound: SoundModule?
     private(set) var switcher: SwitcherModule?
     private(set) var strip: StripModule?
+    private(set) var awake: StayAwakeModule?
 
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
     /// On notched MacBooks a crowded menu bar puts new icons behind the notch, where they can't be clicked.
@@ -146,6 +147,7 @@ final class AppModel {
             case .corner: if corner == nil { corner = CornerModule() }
             case .wordCounter: if wordCounter == nil { wordCounter = WordCounterModule() }
             case .sound: if sound == nil { sound = SoundModule() }
+            case .awake: if awake == nil { awake = StayAwakeModule() }
             case .switcher, .strip, .system, .sensors: break
             }
             return
@@ -183,6 +185,9 @@ final class AppModel {
         case .strip:
             if strip == nil { strip = StripModule(model: self) }
             strip?.start()
+        case .awake:
+            if awake == nil { awake = StayAwakeModule() }
+            awake?.start()
         }
     }
 
@@ -224,6 +229,9 @@ final class AppModel {
         case .corner:
             corner?.stop()
             corner = nil
+        case .awake:
+            awake?.stop()
+            awake = nil
         }
     }
 
