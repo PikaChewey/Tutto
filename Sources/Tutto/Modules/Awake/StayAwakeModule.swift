@@ -7,7 +7,8 @@
 //
 //  Sleep itself is held by TuttoHelper (`pmset disablesleep`), which also keeps the session's end:
 //  a hung or crashed Tutto can't keep the Mac awake past it. Everything else is done here and undone
-//  when the lid opens or the session ends: display and keyboard light, sound, paused apps. Low Power
+//  when the lid opens or the session ends: the display (put to sleep, never dimmed: writing the
+//  brightness fights auto-brightness and can leave the screen at another level), sound, paused apps. Low Power
 //  Mode goes through the helper. Without the helper, a power assertion keeps the Mac awake while
 //  the lid is open, and the card says closing it will still sleep the Mac.
 //
@@ -32,8 +33,8 @@ final class StayAwakeModule: ModuleController {
 
     /// What the lid closing changed, to undo when it opens (kept on disk, so a relaunch can too).
     struct LidRecord: Codable, Equatable {
-        var brightness: Float?
-        var keyboard: Float?
+        /// The display was put to sleep (its brightness is never touched).
+        var darkened = false
         var mute: OutputMute.Saved?
         var paused: [PausedProcess] = []
         var pausedNames: [String] = []
@@ -97,11 +98,13 @@ final class StayAwakeModule: ModuleController {
     @ObservationIgnored private var thermal: NSObjectProtocol?
     @ObservationIgnored private var hotspot: HotspotWatcher?
     @ObservationIgnored private var location: LocationAccess?
-    /// Brightness sampled while the lid was open and you were at the Mac (by the time the lid
-    /// is shut, auto-brightness has already dimmed the panel under it).
-    @ObservationIgnored private var sampledBrightness: Float?
-    @ObservationIgnored private var sampledKeyboard: Float?
+    /// Asks the display to sleep again while the lid stays closed (macOS defers a request made
+    /// soon after a wake).
+    @ObservationIgnored private var darkTimer: DispatchSourceTimer?
     @ObservationIgnored private var lowPowerOn = false
+    @ObservationIgnored private var reconnects = 0
+    @ObservationIgnored private var watchingDisplays = false
+    @ObservationIgnored private var displayWork: DispatchWorkItem?
     @ObservationIgnored private var quitting = false
 
     init() {
@@ -152,12 +155,12 @@ final class StayAwakeModule: ModuleController {
         lastEnded = nil
         lastClosed = nil
         notice = nil
+        reconnects = 0
         if assertion == 0 {
             IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
                                         IOPMAssertionLevel(kIOPMAssertionLevelOn), "Tutto Stay Awake" as CFString, &assertion)
         }
         awakeLog.notice("session started for \(Int(seconds / 60)) min")
-        sampleBrightness()
         beginWatching()
         holdSleep(until: ends)
     }
@@ -175,11 +178,15 @@ final class StayAwakeModule: ModuleController {
 
     func endNow() { end("Ended") }
 
-    /// Ends the session. Paused apps resume at once; the display, keyboard light and sound wait
+    /// Ends the session. Paused apps resume at once; the display and sound wait
     /// for the lid to open if it's closed. A Mac whose lid is closed with no other display goes
     /// to sleep (unless that's switched off).
     private func end(_ reason: String, waitForHelper: Bool = false) {
         guard session != nil else { return }
+        if lid.isSimulating {
+            lid.endSimulation()
+            lidClosed = lid.isClosed
+        }
         let closedAlone = lidClosed && !Displays.externalIsActive()
         session = nil
         defaults.removeObject(forKey: Keys.session)
@@ -188,6 +195,7 @@ final class StayAwakeModule: ModuleController {
         stopMinuteTick()
         menuBarText = nil
         power = nil
+        watchDisplays(false)
         if let thermal { NotificationCenter.default.removeObserver(thermal) }
         thermal = nil
         hotspot?.stop()
@@ -215,7 +223,10 @@ final class StayAwakeModule: ModuleController {
         // Also when the helper hasn't answered yet: it ends only a session it holds.
         if lidSafe || helperStatus == .enabled {
             if waitForHelper {
-                (helperProxy(synchronous: true) { _ in })?.endAwake(sleepIfLidClosed: sleep) { _, _ in }
+                // Quitting: wait for the helper's answer, but never more than 3 s.
+                let done = DispatchSemaphore(value: 0)
+                helperProxy { _ in }?.endAwake(sleepIfLidClosed: sleep) { _, _ in done.signal() }
+                _ = done.wait(timeout: .now() + 3)
             } else {
                 helperProxy { _ in }?.endAwake(sleepIfLidClosed: sleep) { [weak self] _, message in
                     DispatchQueue.main.async {
@@ -255,12 +266,14 @@ final class StayAwakeModule: ModuleController {
             helperProxy { _ in }?.awakeState { [weak self] deadline, _ in
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
-                        guard let self else { return }
+                        // A session started meanwhile owns the helper now.
+                        guard let self, self.session == nil else { return }
                         if deadline > Date().timeIntervalSince1970 + 30 {
                             self.session = Session(startedAt: Date(), endsAt: Date(timeIntervalSince1970: deadline))
                             self.save(self.session, Keys.session)
-                            self.beginWatching()
                             self.lidSafe = true
+                            self.beginWatching()
+                            self.resendState()
                         } else if deadline > 0 {
                             self.helperProxy { _ in }?.endAwake(sleepIfLidClosed: false) { _, _ in }
                         } else {
@@ -284,6 +297,8 @@ final class StayAwakeModule: ModuleController {
     }
 
     private func holdSleep(until end: Date) {
+        // `evaluate` can end a session as it starts (battery already below the floor).
+        guard session != nil else { return }
         refreshHelperStatus()
         guard helperStatus == .enabled else {
             lidSafe = false
@@ -302,6 +317,7 @@ final class StayAwakeModule: ModuleController {
                     if status == 0 {
                         let wasSafe = self.lidSafe
                         self.lidSafe = true
+                        self.reconnects = 0
                         self.notice = nil
                         if !wasSafe { self.resendState() }
                     } else {
@@ -315,8 +331,7 @@ final class StayAwakeModule: ModuleController {
 
     /// After (re)connecting: Low Power Mode and paused apps, as they are now.
     private func resendState() {
-        lowPowerOn = false
-        evaluate()
+        evaluate(force: true)
         if let record = lidRecord, !record.paused.isEmpty { sendPaused(record.paused) }
     }
 
@@ -325,7 +340,7 @@ final class StayAwakeModule: ModuleController {
         helperProxy { _ in }?.setAwakePaused(data) { _ in }
     }
 
-    private func helperProxy(synchronous: Bool = false, _ onError: @escaping @MainActor (Error) -> Void) -> TuttoFanHelperProtocol? {
+    private func helperProxy(_ onError: @escaping @MainActor (Error) -> Void) -> TuttoFanHelperProtocol? {
         if connection == nil {
             let connection = NSXPCConnection(machServiceName: TuttoFanHelper.machServiceName, options: .privileged)
             connection.remoteObjectInterface = TuttoFanHelper.makeInterface()
@@ -343,10 +358,7 @@ final class StayAwakeModule: ModuleController {
             awakeLog.error("helper: \(error.localizedDescription, privacy: .public)")
             DispatchQueue.main.async { MainActor.assumeIsolated { onError(error) } }
         }
-        let proxy = synchronous
-            ? connection?.synchronousRemoteObjectProxyWithErrorHandler(handler)
-            : connection?.remoteObjectProxyWithErrorHandler(handler)
-        return proxy as? TuttoFanHelperProtocol
+        return connection?.remoteObjectProxyWithErrorHandler(handler) as? TuttoFanHelperProtocol
     }
 
     private func closeConnection() {
@@ -360,9 +372,56 @@ final class StayAwakeModule: ModuleController {
     /// session back up.
     private func connectionEnded() {
         connection = nil
-        guard let session, !quitting else { return }
+        guard session != nil, !quitting else { return }
         lidSafe = false
-        holdSleep(until: session.endsAt)
+        reconnects += 1
+        guard reconnects <= 5 else {
+            notice = "Lost touch with Tutto's helper, so closing the lid would sleep the Mac. End and start again to retry."
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + pow(2, Double(reconnects - 1))) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, let session = self.session, self.connection == nil else { return }
+                self.holdSleep(until: session.endsAt)
+            }
+        }
+    }
+
+    // MARK: Displays
+
+    /// A display plugged in or out while the lid is closed: docking puts everything back (a desk
+    /// set-up), undocking applies the closed-lid actions.
+    private func watchDisplays(_ on: Bool) {
+        let me = Unmanaged.passUnretained(self).toOpaque()
+        if on, !watchingDisplays {
+            watchingDisplays = CGDisplayRegisterReconfigurationCallback(Self.displayCallback, me) == .success
+        } else if !on, watchingDisplays {
+            CGDisplayRemoveReconfigurationCallback(Self.displayCallback, me)
+            watchingDisplays = false
+        }
+    }
+
+    private static let displayCallback: CGDisplayReconfigurationCallBack = { _, flags, me in
+        guard !flags.contains(.beginConfigurationFlag), let me else { return }
+        let module = Unmanaged<StayAwakeModule>.fromOpaque(me).takeUnretainedValue()
+        DispatchQueue.main.async { MainActor.assumeIsolated { module.displaysChangedSoon() } }
+    }
+
+    private func displaysChangedSoon() {
+        displayWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.displaysChanged() } }
+        displayWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
+    }
+
+    private func displaysChanged() {
+        guard session != nil, lidClosed else { return }
+        if Displays.externalIsActive() {
+            if lidRecord != nil { restoreLid() }
+        } else if lidRecord == nil {
+            applyClosed()
+        }
+        evaluate()
     }
 
     // MARK: While a session runs
@@ -378,6 +437,7 @@ final class StayAwakeModule: ModuleController {
                 MainActor.assumeIsolated { self?.evaluate() }
             }
         }
+        watchDisplays(true)
         restartHotspot()
         evaluate()
     }
@@ -404,7 +464,6 @@ final class StayAwakeModule: ModuleController {
         timer.setEventHandler { [weak self] in
             MainActor.assumeIsolated {
                 self?.updateMenuBarText()
-                self?.sampleBrightness()
             }
         }
         timer.resume()
@@ -420,15 +479,6 @@ final class StayAwakeModule: ModuleController {
         guard let session, policy.showTimeInMenuBar else { return menuBarText = nil }
         let text = AwakeDuration.menuBar(session.endsAt.timeIntervalSinceNow)
         if text != menuBarText { menuBarText = text }
-    }
-
-    /// The display's and keyboard's brightness, while you're at the Mac with the lid open.
-    private func sampleBrightness() {
-        guard policy.darkenWhenClosed, !lidClosed, !DisplayBrightness.isAsleep else { return }
-        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-        guard idle < 30 else { return }  // idle-dimmed, not your setting
-        if let value = DisplayBrightness.read() { sampledBrightness = value }
-        if let value = KeyboardLight.read() { sampledKeyboard = value }
     }
 
     // MARK: The lid
@@ -454,21 +504,14 @@ final class StayAwakeModule: ModuleController {
         evaluate()
     }
 
-    /// Lid closed with no other display: display and keyboard light off, sound muted, the chosen
-    /// apps paused. Low Power Mode follows in `evaluate`.
+    /// Lid closed with no other display: the display asleep (its keyboard light goes with it), sound
+    /// muted, the chosen apps paused. Low Power Mode follows in `evaluate`.
     private func applyClosed() {
         guard lidSafe, !Displays.externalIsActive(), lidRecord == nil else { return }
         var record = LidRecord()
         if policy.darkenWhenClosed {
-            if DisplayBrightness.refusal == nil, let level = sampledBrightness ?? DisplayBrightness.read() {
-                record.brightness = level
-                DisplayBrightness.set(0)
-            }
-            if KeyboardLight.refusal == nil, let level = sampledKeyboard ?? KeyboardLight.read() {
-                record.keyboard = level
-                KeyboardLight.set(0)
-            }
-            DisplayBrightness.requestSleep()
+            record.darkened = true
+            darkenUntilOpen()
         }
         if policy.muteWhenClosed { record.mute = OutputMute.mute() }
         if policy.pauseAppsWhenClosed {
@@ -479,7 +522,31 @@ final class StayAwakeModule: ModuleController {
         }
         lidRecord = record
         save(record, Keys.lidRecord)
-        awakeLog.notice("lid closed: display \(record.brightness != nil), keys \(record.keyboard != nil), muted \(record.muted), paused \(record.paused.count)")
+        awakeLog.notice("lid closed: display asleep \(record.darkened), muted \(record.muted), paused \(record.paused.count)")
+    }
+
+    /// Display sleep now, and again every 30 s (six times at most) while the lid is closed and the
+    /// display is still awake.
+    private func darkenUntilOpen() {
+        darkTimer?.cancel()
+        DisplayPower.requestSleep()
+        var tries = 0
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 30, repeating: 30, leeway: .seconds(2))
+        timer.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                tries += 1
+                guard self.lidClosed, self.lidRecord?.darkened == true, tries <= 6, !DisplayPower.isAsleep else {
+                    self.darkTimer?.cancel()
+                    self.darkTimer = nil
+                    return
+                }
+                DisplayPower.requestSleep()
+            }
+        }
+        timer.resume()
+        darkTimer = timer
     }
 
     private func restoreLid() {
@@ -489,22 +556,12 @@ final class StayAwakeModule: ModuleController {
             if session != nil { sendPaused([]) }
         }
         if let mute = record.mute { OutputMute.restore(mute) }
-        if record.brightness != nil || record.keyboard != nil {
-            DisplayBrightness.wake()
-            put(record)
-            // Waking can run the panel's own fade-in over what was set; set it once more after.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { Self.put(record) } }
-        }
+        darkTimer?.cancel()
+        darkTimer = nil
+        if record.darkened { DisplayPower.wake() }
         lidRecord = nil
         defaults.removeObject(forKey: Keys.lidRecord)
         awakeLog.notice("lid open: put back")
-    }
-
-    private func put(_ record: LidRecord) { Self.put(record) }
-
-    private static func put(_ record: LidRecord) {
-        if let level = record.brightness { DisplayBrightness.set(level) }
-        if let level = record.keyboard { KeyboardLight.set(level) }
     }
 
     /// `tutto://do/lid-closed` / `lid-open`: runs the lid actions without moving the lid. Only with
@@ -524,7 +581,7 @@ final class StayAwakeModule: ModuleController {
                                lidClosed: lidClosed, externalDisplay: lidClosed && Displays.externalIsActive())
     }
 
-    private func evaluate() {
+    private func evaluate(force: Bool = false) {
         guard session != nil else { return }
         let now = conditions()
         if let reason = AwakeRules.endReason(policy, now) {
@@ -533,7 +590,7 @@ final class StayAwakeModule: ModuleController {
         let reason = lidSafe ? AwakeRules.lowPowerReason(policy, now) : nil
         lowPowerReason = reason
         let wanted = reason != nil
-        guard wanted != lowPowerOn, lidSafe else { return }
+        guard wanted != lowPowerOn || force, lidSafe else { return }
         lowPowerOn = wanted
         helperProxy { _ in }?.setAwakeLowPower(wanted) { status, message in
             if status != 0 { awakeLog.error("low power \(wanted): \(message ?? "", privacy: .public)") }

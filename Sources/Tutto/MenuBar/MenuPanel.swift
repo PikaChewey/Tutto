@@ -716,7 +716,7 @@ private struct AwakeCard: View {
         var parts: [String] = []
         if let closed = awake.lastClosed {
             var done: [String] = []
-            if closed.brightness != nil { done.append("display off") }
+            if closed.darkened { done.append("display off") }
             if closed.muted { done.append("sound muted") }
             if !closed.paused.isEmpty || !closed.pausedNames.isEmpty {
                 done.append(closed.pausedNames.count == 1 ? "\(closed.pausedNames[0]) paused" : "\(closed.pausedNames.count) apps paused")

@@ -88,8 +88,7 @@ private struct StayAwakeSettings: View {
                 }
             }
             Hairline().opacity(0.6)
-            toggle("Turn off the display and keyboard light", detail: DisplayBrightness.refusal ?? KeyboardLight.refusal
-                       ?? "With sleep off, macOS leaves them lit under the lid. Both come back as they were.", \.darkenWhenClosed)
+            toggle("Turn off the display", detail: "With sleep off, macOS would leave it lit under the lid until it idles. It's put to sleep instead (the keyboard light goes with it) and wakes when the lid opens; your brightness is never changed.", \.darkenWhenClosed)
             Hairline().opacity(0.6)
             toggle("Low Power Mode", detail: "Slower when busy, much easier on the battery; agents mostly wait on the network. Back as it was when the lid opens.", \.lowPowerWhenClosed)
             Hairline().opacity(0.6)

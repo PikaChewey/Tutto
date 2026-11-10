@@ -99,6 +99,8 @@ struct AwakeJournal: Codable, Equatable {
     var lowPowerBefore: Int?
     /// Processes the app paused, so the helper can resume them if the app goes away.
     var paused: [PausedProcess]
+    /// An end was asked for and hasn't finished (a restore failed): retried until it does.
+    var ending: Bool? = nil
 }
 
 public struct AwakeResult: Equatable, Sendable {
@@ -134,6 +136,8 @@ final class AwakeController {
     }
 
     var isActive: Bool { journal != nil }
+    /// An end is under way and still owes a restore.
+    var isEnding: Bool { journal?.ending == true }
     var deadline: Date? { journal?.deadline }
     var lowPowerClaimed: Bool { journal?.lowPowerBefore != nil }
 
@@ -143,6 +147,7 @@ final class AwakeController {
         guard deadline > now() else { return .failed("That end time has already passed.", FanStatus.badArgument) }
         if var journal {
             journal.deadline = deadline
+            journal.ending = nil  // a new session takes over one still being ended
             return save(journal)
         }
         let state = commands.pmset(["-g"])
@@ -223,7 +228,11 @@ final class AwakeController {
     /// Ends the session: paused processes resumed, Low Power Mode and sleep put back. The journal
     /// goes once all of it has; on a failure what's left stays journaled for the next try.
     func end() -> AwakeResult {
-        guard journal != nil else { return .ok }
+        guard var ending = journal else { return .ok }
+        if ending.ending != true {
+            ending.ending = true
+            _ = save(ending)
+        }
         resumePaused()
         let lowPower = setLowPower(false)
         guard var journal else { return lowPower }
@@ -284,15 +293,27 @@ final class SystemPMSet: PowerCommands {
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
-        do { try process.run() } catch { return (-1, error.localizedDescription) }
+        // Both set up before the run: a pmset that exits at once must still be seen, and the
+        // output is read on its own so a hung pmset can't block the timeout.
         let finished = DispatchSemaphore(value: 0)
         process.terminationHandler = { _ in finished.signal() }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = OutputBox()
+        let read = DispatchSemaphore(value: 0)
+        do { try process.run() } catch { return (-1, error.localizedDescription) }
+        DispatchQueue.global(qos: .utility).async {
+            output.data = pipe.fileHandleForReading.readDataToEndOfFile()
+            read.signal()
+        }
         if finished.wait(timeout: .now() + timeout) == .timedOut {
             process.terminate()
             return (-2, "pmset timed out")
         }
-        return (process.terminationStatus, String(decoding: data, as: UTF8.self))
+        _ = read.wait(timeout: .now() + 2)
+        return (process.terminationStatus, String(decoding: output.data, as: UTF8.self))
+    }
+
+    private final class OutputBox: @unchecked Sendable {
+        var data = Data()
     }
 }
 

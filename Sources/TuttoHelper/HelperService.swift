@@ -63,7 +63,10 @@ final class HelperService: NSObject, NSXPCListenerDelegate, TuttoFanHelperProtoc
             let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: queue)
             source.setEventHandler { [unowned self] in
                 let status = self.controller.resetAll()
-                log.notice("signal \(signalNumber, privacy: .public): fans to automatic (\(FanStatus.describe(status), privacy: .public)); exiting")
+                // Stopped from outside (Tutto switched off in Login Items, removed, shutdown):
+                // nothing would start the helper again to finish a session, so end it now.
+                let awake = self.awake.map { $0.isActive ? $0.end() : .ok }
+                log.notice("signal \(signalNumber, privacy: .public): fans to automatic (\(FanStatus.describe(status), privacy: .public)), session \(awake?.message ?? "none or ended", privacy: .public); exiting")
                 exit(0)
             }
             source.resume()
@@ -222,10 +225,14 @@ final class HelperService: NSObject, NSXPCListenerDelegate, TuttoFanHelperProtoc
 
     private func checkAwake() {
         guard let awake, awake.isActive else { return armAwakeTimer() }
+        if awake.isEnding {
+            endAwakeSession(reason: "retrying the end", sleepIfLidClosed: false)
+            return
+        }
         if awake.isOverdue() {
-            // Unattended, it can't know whether a display is plugged in; on battery it's a laptop
-            // on its own, which should sleep.
-            endAwakeSession(reason: "time is up", sleepIfLidClosed: clients.isEmpty ? Self.onBattery() : true)
+            // The app didn't end it (gone or hung), so the helper can't know whether a display is
+            // plugged in; on battery it's a laptop on its own, which should sleep.
+            endAwakeSession(reason: "time is up", sleepIfLidClosed: Self.onBattery())
             return
         }
         guard clients.isEmpty else { return armAwakeTimer() }

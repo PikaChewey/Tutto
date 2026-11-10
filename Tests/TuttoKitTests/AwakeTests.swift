@@ -342,3 +342,43 @@ final class AwakeControllerTests: XCTestCase {
         XCTAssertNil(PMSetOutput.sleepDisabled("nothing here"))
     }
 }
+
+final class AwakeControllerEndingTests: XCTestCase {
+    func testAFailedEndIsMarkedAndANewSessionTakesOver() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("awake-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let pmset = FakePMSetForEnding()
+        let clock = Date(timeIntervalSince1970: 2_000_000_000)
+        let awake = AwakeController(commands: pmset, processes: NoProcesses(), journalURL: directory.appendingPathComponent("a.json"), now: { clock })
+        _ = awake.begin(until: clock.addingTimeInterval(3600))
+        pmset.refuseRestore = true
+        XCTAssertFalse(awake.end().succeeded)
+        XCTAssertTrue(awake.isEnding, "the helper retries until it's done, not until the old deadline")
+        XCTAssertTrue(awake.begin(until: clock.addingTimeInterval(600)).succeeded)
+        XCTAssertFalse(awake.isEnding, "starting again takes over the session still being ended")
+        pmset.refuseRestore = false
+        XCTAssertTrue(awake.end().succeeded)
+        XCTAssertFalse(pmset.sleepDisabled)
+    }
+}
+
+private final class FakePMSetForEnding: PowerCommands {
+    var sleepDisabled = false
+    var refuseRestore = false
+    func pmset(_ arguments: [String]) -> (status: Int32, output: String) {
+        switch arguments {
+        case ["-g"]: return (0, "System-wide power settings:\n SleepDisabled\t\t\(sleepDisabled ? 1 : 0)\n")
+        case ["-a", "disablesleep", "1"]: sleepDisabled = true
+        case ["-a", "disablesleep", "0"]:
+            if refuseRestore { return (1, "refused") }
+            sleepDisabled = false
+        default: return (1, "unexpected")
+        }
+        return (0, "")
+    }
+}
+
+private final class NoProcesses: ProcessSignals {
+    func identity(of pid: Int32) -> (startTime: Double, uid: UInt32)? { nil }
+    func send(_ signal: Int32, to pid: Int32) -> Bool { false }
+}
