@@ -7,8 +7,8 @@
 //
 //  Sleep itself is held by TuttoHelper (`pmset disablesleep`), which also keeps the session's end:
 //  a hung or crashed Tutto can't keep the Mac awake past it. Everything else is done here and undone
-//  when the lid opens or the session ends: the display (put to sleep, never dimmed: writing the
-//  brightness fights auto-brightness and can leave the screen at another level), sound, paused apps. Low Power
+//  when the lid opens or the session ends: the display (put to sleep; dimmed to 0 only when an app
+//  holds it awake, then put back to the level sampled while the lid was open), sound, paused apps. Low Power
 //  Mode goes through the helper. Without the helper, a power assertion keeps the Mac awake while
 //  the lid is open, and the card says closing it will still sleep the Mac.
 //
@@ -33,8 +33,11 @@ final class StayAwakeModule: ModuleController {
 
     /// What the lid closing changed, to undo when it opens (kept on disk, so a relaunch can too).
     struct LidRecord: Codable, Equatable {
-        /// The display was put to sleep (its brightness is never touched).
+        /// The display was put to sleep.
         var darkened = false
+        /// Set when the display wouldn't sleep and was dimmed instead: the levels to put back.
+        var brightness: Float? = nil
+        var keyboard: Float? = nil
         var mute: OutputMute.Saved?
         var paused: [PausedProcess] = []
         var pausedNames: [String] = []
@@ -101,6 +104,10 @@ final class StayAwakeModule: ModuleController {
     /// Asks the display to sleep again while the lid stays closed (macOS defers a request made
     /// soon after a wake).
     @ObservationIgnored private var darkTimer: DispatchSourceTimer?
+    /// Brightness sampled while the lid was open and you were at the Mac (by the time the lid is
+    /// shut, auto-brightness has dimmed the panel under it), for the fallback.
+    @ObservationIgnored private var sampledBrightness: Float?
+    @ObservationIgnored private var sampledKeyboard: Float?
     @ObservationIgnored private var lowPowerOn = false
     @ObservationIgnored private var reconnects = 0
     @ObservationIgnored private var watchingDisplays = false
@@ -161,6 +168,7 @@ final class StayAwakeModule: ModuleController {
                                         IOPMAssertionLevel(kIOPMAssertionLevelOn), "Tutto Stay Awake" as CFString, &assertion)
         }
         awakeLog.notice("session started for \(Int(seconds / 60)) min")
+        sampleBrightness()
         beginWatching()
         holdSleep(until: ends)
     }
@@ -464,6 +472,7 @@ final class StayAwakeModule: ModuleController {
         timer.setEventHandler { [weak self] in
             MainActor.assumeIsolated {
                 self?.updateMenuBarText()
+                self?.sampleBrightness()
             }
         }
         timer.resume()
@@ -479,6 +488,16 @@ final class StayAwakeModule: ModuleController {
         guard let session, policy.showTimeInMenuBar else { return menuBarText = nil }
         let text = AwakeDuration.menuBar(session.endsAt.timeIntervalSinceNow)
         if text != menuBarText { menuBarText = text }
+    }
+
+    /// The display's and keyboard's levels, while you're at the Mac with the lid open (a reading
+    /// only, never a write).
+    private func sampleBrightness() {
+        guard policy.darkenWhenClosed, !lidClosed, !DisplayPower.isAsleep else { return }
+        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+        guard idle < 30 else { return }  // idle-dimmed, not your setting
+        if let value = DisplayBrightness.read() { sampledBrightness = value }
+        if let value = KeyboardLight.read() { sampledKeyboard = value }
     }
 
     // MARK: The lid
@@ -526,7 +545,8 @@ final class StayAwakeModule: ModuleController {
     }
 
     /// Display sleep now, and again every 30 s (six times at most) while the lid is closed and the
-    /// display is still awake.
+    /// display is still awake. Still awake after the first 30 s means something holds it on (a sound
+    /// playing, a video): then it's dimmed to 0 as well, and put back when the lid opens.
     private func darkenUntilOpen() {
         darkTimer?.cancel()
         DisplayPower.requestSleep()
@@ -543,10 +563,28 @@ final class StayAwakeModule: ModuleController {
                     return
                 }
                 DisplayPower.requestSleep()
+                self.dimAsFallback()
             }
         }
         timer.resume()
         darkTimer = timer
+    }
+
+    /// The display wouldn't sleep: dim it and the keyboard light to 0, keeping the levels sampled
+    /// while the lid was open.
+    private func dimAsFallback() {
+        guard var record = lidRecord, record.brightness == nil, record.keyboard == nil else { return }
+        if DisplayBrightness.refusal == nil, let level = sampledBrightness ?? DisplayBrightness.read(), level > 0 {
+            record.brightness = level
+            DisplayBrightness.set(0)
+        }
+        if KeyboardLight.refusal == nil, let level = sampledKeyboard ?? KeyboardLight.read(), level > 0 {
+            record.keyboard = level
+            KeyboardLight.set(0)
+        }
+        lidRecord = record
+        save(record, Keys.lidRecord)
+        awakeLog.notice("display held awake under the lid: dimmed (display \(record.brightness ?? -1), keys \(record.keyboard ?? -1))")
     }
 
     private func restoreLid() {
@@ -559,9 +597,19 @@ final class StayAwakeModule: ModuleController {
         darkTimer?.cancel()
         darkTimer = nil
         if record.darkened { DisplayPower.wake() }
+        if record.brightness != nil || record.keyboard != nil {
+            Self.putLevels(record)
+            // Waking runs the panel's own fade-in over what was set; set it once more after.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { Self.putLevels(record) } }
+        }
         lidRecord = nil
         defaults.removeObject(forKey: Keys.lidRecord)
         awakeLog.notice("lid open: put back")
+    }
+
+    private static func putLevels(_ record: LidRecord) {
+        if let level = record.brightness { DisplayBrightness.set(level) }
+        if let level = record.keyboard { KeyboardLight.set(level) }
     }
 
     /// `tutto://do/lid-closed` / `lid-open`: runs the lid actions without moving the lid. Only with

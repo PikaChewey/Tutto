@@ -4,14 +4,20 @@
 //
 //  What Stay Awake does to the Mac while the lid is closed, and undoes when it opens: the
 //  built-in display asleep (with sleep disabled macOS no longer does this itself; the keyboard
-//  light goes out with it), the sound muted, and the apps you chose paused. Plus the lid itself:
+//  light goes out with it), or dimmed to 0 if an app holds it awake, the sound muted, and the
+//  apps you chose paused. Plus the lid itself:
 //  an IOKit notification from the power manager, so nothing runs between lid changes.
+//
+//  The brightness fallback goes through private frameworks (DisplayServices, CoreBrightness) with no
+//  contract, so each is checked before its first use: DisplayServices only on the macOS versions it
+//  was measured on, the keyboard client only while its methods have the types measured on macOS 26.
 //
 
 import AppKit
 import CoreAudio
 import IOKit
 import IOKit.pwr_mgt
+import ObjectiveC.runtime
 import os
 import TuttoKit
 
@@ -133,8 +139,8 @@ enum Displays {
 
 // MARK: - Display
 
-/// The built-in display's sleep. Stay Awake never writes the brightness: with auto-brightness on,
-/// a written level is taken as your preference and the screen can come back at another level.
+/// The built-in display's sleep: what the lid closing asks for first, since it leaves your brightness
+/// alone. Only when an app holds the display awake does Stay Awake dim it instead (`DisplayBrightness`).
 enum DisplayPower {
     /// Asks the display to sleep now (what `pmset displaysleepnow` does). macOS defers it for a
     /// while after a wake, and ignores it while an app holds a display assertion (a video playing).
@@ -152,6 +158,97 @@ enum DisplayPower {
     }
 
     static var isAsleep: Bool { Displays.builtIn().map { CGDisplayIsAsleep($0) != 0 } ?? false }
+}
+
+/// The built-in display's brightness, through DisplayServices: the fallback when the display
+/// can't be put to sleep (an app holds it awake, a sound playing for one).
+enum DisplayBrightness {
+    /// macOS versions the DisplayServices calls were measured on. A C symbol carries no types, so
+    /// on any other version the display is left alone.
+    static let measuredMajors: Set<Int> = [26]
+
+    private typealias Get = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
+    private typealias Set_ = @convention(c) (CGDirectDisplayID, Float) -> Int32
+
+    private static let symbols: (get: Get, set: Set_)? = {
+        guard measuredMajors.contains(ProcessInfo.processInfo.operatingSystemVersion.majorVersion),
+              let handle = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_LAZY),
+              let get = dlsym(handle, "DisplayServicesGetBrightness"),
+              let set = dlsym(handle, "DisplayServicesSetBrightness") else { return nil }
+        return (unsafeBitCast(get, to: Get.self), unsafeBitCast(set, to: Set_.self))
+    }()
+
+    /// Why the display is left alone, or nil.
+    static var refusal: String? {
+        guard symbols == nil else { return nil }
+        let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        return measuredMajors.contains(major) ? "macOS's brightness controls couldn't be loaded." : "Not yet checked on macOS \(major), so the display is left on."
+    }
+
+    static func read() -> Float? {
+        guard let symbols, let display = Displays.builtIn() else { return nil }
+        var value: Float = 0
+        return symbols.get(display, &value) == 0 ? value : nil
+    }
+
+    @discardableResult
+    static func set(_ value: Float) -> Bool {
+        guard let symbols, let display = Displays.builtIn() else { return false }
+        return symbols.set(display, min(max(value, 0), 1)) == 0
+    }
+}
+
+/// The built-in keyboard's backlight, through CoreBrightness's KeyboardBrightnessClient.
+enum KeyboardLight {
+    /// Type encodings measured on macOS 26 (offsets removed). A changed one refuses the client.
+    static let measured: [String: String] = [
+        "copyKeyboardBacklightIDs": "@@:",
+        "isKeyboardBuiltIn:": "B@:Q",
+        "brightnessForKeyboard:": "f@:Q",
+        "setBrightness:forKeyboard:": "B@:fQ",
+    ]
+
+    private static let client: (object: NSObject, cls: AnyClass)? = {
+        guard dlopen("/System/Library/PrivateFrameworks/CoreBrightness.framework/CoreBrightness", RTLD_LAZY) != nil,
+              let cls = NSClassFromString("KeyboardBrightnessClient") as? NSObject.Type else { return nil }
+        for (name, encoding) in measured {
+            guard let method = class_getInstanceMethod(cls, NSSelectorFromString(name)),
+                  let raw = method_getTypeEncoding(method) else { return nil }
+            guard String(cString: raw).filter({ !$0.isNumber }) == encoding else { return nil }
+        }
+        return (cls.init(), cls)
+    }()
+
+    static var refusal: String? { client == nil ? "macOS's keyboard light controls didn't look as expected, so it's left on." : nil }
+
+    private static func imp<T>(_ name: String, as type: T.Type) -> T? {
+        guard let client, let method = class_getInstanceMethod(client.cls, NSSelectorFromString(name)) else { return nil }
+        return unsafeBitCast(method_getImplementation(method), to: type)
+    }
+
+    private static func builtInIDs() -> [UInt64] {
+        typealias Copy = @convention(c) (NSObject, Selector) -> Unmanaged<NSArray>?
+        typealias BuiltIn = @convention(c) (NSObject, Selector, UInt64) -> Bool
+        guard let client, let copy = imp("copyKeyboardBacklightIDs", as: Copy.self),
+              let isBuiltIn = imp("isKeyboardBuiltIn:", as: BuiltIn.self),
+              let ids = copy(client.object, NSSelectorFromString("copyKeyboardBacklightIDs"))?.takeRetainedValue() as? [NSNumber]
+        else { return [] }
+        return ids.map(\.uint64Value).filter { isBuiltIn(client.object, NSSelectorFromString("isKeyboardBuiltIn:"), $0) }
+    }
+
+    static func read() -> Float? {
+        typealias Get = @convention(c) (NSObject, Selector, UInt64) -> Float
+        guard let client, let id = builtInIDs().first, let get = imp("brightnessForKeyboard:", as: Get.self) else { return nil }
+        return get(client.object, NSSelectorFromString("brightnessForKeyboard:"), id)
+    }
+
+    @discardableResult
+    static func set(_ value: Float) -> Bool {
+        typealias Set_ = @convention(c) (NSObject, Selector, Float, UInt64) -> Bool
+        guard let client, let set = imp("setBrightness:forKeyboard:", as: Set_.self) else { return false }
+        let ids = builtInIDs()
+        return !ids.isEmpty && ids.allSatisfy { set(client.object, NSSelectorFromString("setBrightness:forKeyboard:"), min(max(value, 0), 1), $0) }
+    }
 }
 
 // MARK: - Sound
