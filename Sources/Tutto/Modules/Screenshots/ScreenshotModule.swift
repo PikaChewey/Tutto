@@ -32,6 +32,12 @@ enum ScreenshotFormat: String, CaseIterable {
 final class ScreenshotModule: ModuleController {
     /// Where ⌘S saves. Downloads unless the user picks another folder.
     var saveFolderPath: String { didSet { defaults.set(saveFolderPath, forKey: Keys.folder) } }
+    /// ⌘S and Save open the save window (folder, name, tags, format) instead of saving straight to
+    /// the folder (Bryan, 2026-11-10: "give me the option where it ... i can choose where the
+    /// screenshot is saved and i can rename the screenshot ... something i can turn off in settings").
+    var askWhereToSave: Bool { didSet { defaults.set(askWhereToSave, forKey: Keys.ask) } }
+    /// Where the save window opens: the folder last saved to through it.
+    var lastAskedFolderPath: String? { didSet { defaults.set(lastAskedFolderPath, forKey: Keys.lastAsked) } }
     var format: ScreenshotFormat { didSet { defaults.set(format.rawValue, forKey: Keys.format) } }
     var playSound: Bool { didSet { defaults.set(playSound, forKey: Keys.sound) } }
     /// Also save a file for ⌘⇧` / ⌘⇧2 captures (off: clipboard only, like the spec asks).
@@ -52,9 +58,19 @@ final class ScreenshotModule: ModuleController {
         format = ScreenshotFormat(rawValue: defaults.string(forKey: Keys.format) ?? "") ?? .png
         playSound = defaults.bool(forKey: Keys.sound)
         alsoSaveQuickCaptures = defaults.bool(forKey: Keys.alsoSave)
+        askWhereToSave = defaults.object(forKey: Keys.ask) as? Bool ?? true
+        lastAskedFolderPath = defaults.string(forKey: Keys.lastAsked)
     }
 
     var saveFolder: URL { URL(fileURLWithPath: saveFolderPath, isDirectory: true) }
+
+    /// The save window's starting folder: the last one used there, if it's still around.
+    var askFolder: URL {
+        if let path = lastAskedFolderPath, FileManager.default.fileExists(atPath: path) {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        return saveFolder
+    }
 
     func start() {}
 
@@ -167,23 +183,23 @@ final class ScreenshotModule: ModuleController {
     @discardableResult
     func save(_ image: CGImage, to folder: URL? = nil) -> URL? {
         let folder = folder ?? saveFolder
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-        let base = "Screenshot \(formatter.string(from: Date()))"
-        var url = folder.appendingPathComponent(base).appendingPathExtension(format.fileExtension)
-        var counter = 2
-        while FileManager.default.fileExists(atPath: url.path) {
-            url = folder.appendingPathComponent("\(base) \(counter)").appendingPathExtension(format.fileExtension)
-            counter += 1
+        let url = ScreenshotNames.unique(ScreenshotNames.base(at: Date()), ext: format.fileExtension, in: folder) {
+            FileManager.default.fileExists(atPath: $0.path)
         }
-        guard let data = format == .png ? image.pngData : image.jpegData() else { return nil }
+        return write(image, to: url, as: format) ? url : nil
+    }
+
+    /// Writes the image to exactly this file (the save window already asked about replacing one).
+    @discardableResult
+    func write(_ image: CGImage, to url: URL, as format: ScreenshotFormat) -> Bool {
+        guard let data = format == .png ? image.pngData : image.jpegData() else { return false }
         do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: url, options: .atomic)
-            return url
+            return true
         } catch {
             Toast.shared.show("Couldn't save", detail: error.localizedDescription, duration: 3)
-            return nil
+            return false
         }
     }
 
@@ -197,5 +213,7 @@ final class ScreenshotModule: ModuleController {
         static let format = "screenshots.format"
         static let sound = "screenshots.sound"
         static let alsoSave = "screenshots.alsoSaveQuick"
+        static let ask = "screenshots.askWhereToSave"
+        static let lastAsked = "screenshots.lastAskedFolder"
     }
 }

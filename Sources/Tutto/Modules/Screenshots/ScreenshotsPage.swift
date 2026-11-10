@@ -53,7 +53,7 @@ private struct ScreenshotSettings: View {
                     ShortcutRecorder(action: .captureScreen, model: model)
                 }
                 Hairline().opacity(0.6)
-                LabeledRow("Area to editor", detail: "Draw, crop, copy text (T), pick a color (Tab), save (⌘S). Esc copies and closes.") {
+                LabeledRow("Area to editor", detail: "Draw, crop, copy text (T), pick a color (Tab), save (⌘S, where you choose below). Esc copies and closes.") {
                     ShortcutRecorder(action: .captureAreaEdit, model: model)
                 }
             }
@@ -65,7 +65,17 @@ private struct ScreenshotSettings: View {
                 tip("Esc", "cancels")
             }
             InkGroup("Saving") {
-                LabeledRow("Save to", detail: screenshots.saveFolderPath.replacingOccurrences(of: NSHomeDirectory(), with: "~")) {
+                LabeledRow("When you save in the editor",
+                           detail: screenshots.askWhereToSave
+                               ? "⌘S and Save open the save window: pick the folder, rename it, add tags, PNG or JPEG. ⇧⌘S saves straight to the folder below."
+                               : "⌘S and Save put it in the folder below, named with the date and time. ⇧⌘S opens the save window.") {
+                    InkSegmented(selection: $screenshots.askWhereToSave, options: [(true, "Ask where"), (false, "Save to folder")])
+                        .fixedSize()
+                }
+                Hairline().opacity(0.6)
+                LabeledRow(screenshots.askWhereToSave ? "Folder" : "Save to",
+                           detail: screenshots.saveFolderPath.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+                               + (screenshots.askWhereToSave ? " · for ⇧⌘S and quick captures; the save window opens where you last saved" : "")) {
                     Button("Choose…") { chooseFolder() }
                         .buttonStyle(OutlineButtonStyle(compact: true))
                 }
@@ -74,7 +84,7 @@ private struct ScreenshotSettings: View {
                     InkSegmented(selection: $screenshots.format, options: [(.png, "PNG"), (.jpeg, "JPEG")])
                 }
                 Hairline().opacity(0.6)
-                LabeledRow("Also save quick captures", detail: "Keep a file of every ⌘⇧` / ⌘⇧2 capture, not just the clipboard copy.") {
+                LabeledRow("Also save quick captures", detail: "Keep a file of every ⌘⇧` / ⌘⇧2 capture in the folder above (never asks), not just the clipboard copy.") {
                     InkSwitch(isOn: $screenshots.alsoSaveQuickCaptures, label: "Also save quick captures")
                 }
                 Hairline().opacity(0.6)

@@ -7,13 +7,14 @@
 //
 
 import AppKit
+import TuttoKit
 import SwiftUI
 import UniformTypeIdentifiers
 
 @MainActor
 final class EditorWindowController: NSObject, NSWindowDelegate {
     let document: EditorDocument
-    private weak var module: ScreenshotModule?
+    private(set) weak var module: ScreenshotModule?
     private var window: NSPanel?
     private let canvas: EditorCanvas
 
@@ -24,7 +25,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         super.init()
         canvas.onEscape = { [weak self] in self?.copyAndClose() }
         canvas.onCopy = { [weak self] in self?.copy() }
-        canvas.onSave = { [weak self] choose in self?.save(choosingLocation: choose) }
+        canvas.onSave = { [weak self] shift in self?.save(otherWay: shift) }
         canvas.onRecognizeText = { [weak self] in self?.recognizeText() }
         canvas.onCopyColor = { [weak self] in self?.copyColor() }
         canvas.onClose = { [weak self] in self?.close() }
@@ -105,29 +106,53 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         Toast.shared.show("Copied", detail: "\(image.width) × \(image.height)\(document.selection == nil ? "" : " selection")")
     }
 
-    func save(choosingLocation: Bool) {
+    /// ⌘S and Save: the save window when "Ask where to save" is on, else straight into the folder.
+    /// ⇧⌘S (`otherWay`) does the other.
+    func save(otherWay: Bool) {
         guard let image = document.render(), let module else { return }
-        if choosingLocation {
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [module.format == .png ? .png : .jpeg]
-            panel.directoryURL = module.saveFolder
-            panel.nameFieldStringValue = "Screenshot.\(module.format.fileExtension)"
-            guard let window else { return }
-            panel.beginSheetModal(for: window) { response in
-                guard response == .OK, let url = panel.url else { return }
-                MainActor.assumeIsolated {
-                    if let saved = module.save(image, to: url.deletingLastPathComponent()) {
-                        try? FileManager.default.moveItem(at: saved, to: url)
-                        Toast.shared.show("Saved", detail: url.lastPathComponent)
-                    }
-                }
-            }
-            return
+        if module.askWhereToSave != otherWay {
+            return askWhereToSave(image, module: module)
         }
         if let url = module.save(image) {
             Toast.shared.show("Saved to \(url.deletingLastPathComponent().lastPathComponent)", detail: url.lastPathComponent,
                               image: NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))) {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
+            }
+        }
+    }
+
+    /// macOS's own save window, as a sheet on the editor: the folder (the last one used here), the
+    /// name ready to type over, tags, and PNG or JPEG.
+    private func askWhereToSave(_ image: CGImage, module: ScreenshotModule) {
+        guard let window else { return }
+        let panel = NSSavePanel()
+        let picker = FormatPicker(panel: panel, format: module.format)
+        panel.title = "Save Screenshot"
+        panel.nameFieldLabel = "Save As:"
+        panel.nameFieldStringValue = ScreenshotNames.base(at: Date()) + "." + module.format.fileExtension
+        panel.directoryURL = module.askFolder
+        panel.allowedContentTypes = [picker.format.contentType]
+        panel.canCreateDirectories = true
+        panel.showsTagField = true
+        panel.isExtensionHidden = false
+        panel.accessoryView = picker.view
+        panel.beginSheetModal(for: window) { [weak self] response in
+            MainActor.assumeIsolated {
+                withExtendedLifetime(picker) {}
+                self?.focusCanvas()
+                guard response == .OK, let chosen = panel.url else { return }
+                let format = picker.format
+                let url = ScreenshotNames.withExtension(chosen, ext: format.fileExtension)
+                guard module.write(image, to: url, as: format) else { return }
+                if let tags = panel.tagNames, !tags.isEmpty {
+                    try? (url as NSURL).setResourceValue(tags, forKey: .tagNamesKey)
+                }
+                module.lastAskedFolderPath = url.deletingLastPathComponent().path
+                module.format = format
+                Toast.shared.show("Saved to \(url.deletingLastPathComponent().lastPathComponent)", detail: url.lastPathComponent,
+                                  image: NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))) {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
             }
         }
     }
@@ -289,11 +314,13 @@ private struct EditorToolbar: View {
                     .help("Image size in pixels")
                     .transition(.opacity)
             }
-            Button("Save") { actions.save(choosingLocation: false) }
+            Button(actions.module?.askWhereToSave == false ? "Save" : "Save…") { actions.save(otherWay: false) }
                 .buttonStyle(OutlineButtonStyle(compact: true))
                 .fixedSize()
                 .focusable(false)
-                .help("Save to your screenshot folder (⌘S) · ⇧⌘S to choose")
+                .help(actions.module?.askWhereToSave == false
+                      ? "Save to your screenshot folder (⌘S) · ⇧⌘S to choose where and the name"
+                      : "Choose where and the name (⌘S) · ⇧⌘S saves straight to your screenshot folder")
             Button("Copy") { actions.copy() }
                 .buttonStyle(InkButtonStyle(compact: true))
                 .fixedSize()
@@ -442,4 +469,42 @@ extension Color {
     static let canvasBackdrop = Color(nsColor: NSColor(name: "canvasBackdrop") { appearance in
         appearance.isDark ? NSColor(white: 0.07, alpha: 1) : NSColor(white: 0.90, alpha: 1)
     })
+}
+
+/// The save window's Format row: PNG or JPEG. Switching it changes the extension in the name.
+@MainActor
+private final class FormatPicker: NSObject {
+    private(set) var format: ScreenshotFormat
+    let view: NSView
+    private weak var panel: NSSavePanel?
+    private let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+
+    init(panel: NSSavePanel, format: ScreenshotFormat) {
+        self.format = format
+        self.panel = panel
+        let label = NSTextField(labelWithString: "Format:")
+        label.alignment = .right
+        popup.addItems(withTitles: ["PNG", "JPEG"])
+        popup.selectItem(at: format == .png ? 0 : 1)
+        let row = NSStackView(views: [label, popup])
+        row.orientation = .horizontal
+        row.spacing = 8
+        row.edgeInsets = NSEdgeInsets(top: 10, left: 20, bottom: 10, right: 20)
+        view = row
+        super.init()
+        popup.target = self
+        popup.action = #selector(changed)
+    }
+
+    @objc private func changed() {
+        format = popup.indexOfSelectedItem == 0 ? .png : .jpeg
+        guard let panel else { return }
+        panel.allowedContentTypes = [format.contentType]
+        let typed = URL(fileURLWithPath: panel.nameFieldStringValue)
+        panel.nameFieldStringValue = ScreenshotNames.withExtension(typed, ext: format.fileExtension).lastPathComponent
+    }
+}
+
+extension ScreenshotFormat {
+    var contentType: UTType { self == .png ? .png : .jpeg }
 }
