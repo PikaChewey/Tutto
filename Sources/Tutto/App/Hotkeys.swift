@@ -25,6 +25,8 @@ enum ShortcutAction: Hashable, Identifiable {
     case toggleCorner
     case toggleClicker
     case window(WindowAction)
+    /// One of your plugins (Plugins page).
+    case plugin(UUID)
     case strip(StripCommand)
 
     var id: String {
@@ -39,6 +41,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .openTutto: "app.open"
         case .toggleCorner: "corner.toggle"
         case .toggleClicker: "clicker.toggle"
+        case .plugin(let id): "plugin.\(id.uuidString)"
         case .window(let action): "windows.\(action.rawValue)"
         case .strip(let command): command.id
         }
@@ -56,6 +59,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .openTutto: "Open Tutto"
         case .toggleCorner: "Pause or resume Trackpad Corner"
         case .toggleClicker: "Start or stop the auto clicker"
+        case .plugin(let id): PluginShortcuts.names[id] ?? "Plugin"
         case .window(let action): action.title
         case .strip(let command): command.title
         }
@@ -70,6 +74,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .muteFrontApp: .sound
         case .toggleCorner: .corner
         case .toggleClicker: .clicker
+        case .plugin: nil
         case .strip: .strip
         case .openTutto: nil
         }
@@ -86,7 +91,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .wordCounter: DefaultShortcuts.wordCounter
         case .toggleClicker: DefaultShortcuts.toggleClicker
         case .strip(let command): command.defaultShortcut
-        case .openTutto, .toggleCorner, .muteFrontApp, .window: nil
+        case .openTutto, .toggleCorner, .muteFrontApp, .window, .plugin: nil
         }
     }
 
@@ -96,6 +101,18 @@ enum ShortcutAction: Hashable, Identifiable {
 
     static var all: [ShortcutAction] {
         fixed + WindowAction.allCases.map { .window($0) } + StripCommand.allCases.map { .strip($0) }
+            + PluginShortcuts.ids.map { .plugin($0) }
+    }
+
+    var isPlugin: Bool {
+        if case .plugin = self { return true }
+        return false
+    }
+
+    /// Whether its shortcut is live: its tool is on (a plugin: it's switched on).
+    func isActive(_ enabled: Set<ModuleID>) -> Bool {
+        if case .plugin(let id) = self { return PluginShortcuts.enabled.contains(id) }
+        return module.map { enabled.contains($0) } ?? true
     }
 }
 

@@ -13,7 +13,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
     case overview
     case battery, cpu, gpu, memory, disk, network, sensors
     case clipboard, windows, switcher, strip, screenshots, archives, corner, wordCounter, sound, awake, clicker
-    case shortcuts, permissions, general
+    case customize, plugins, shortcuts, permissions, general
 
     var id: String { rawValue }
 
@@ -38,6 +38,8 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .clicker: "Auto Clicker"
         case .switcher: "Window Switcher"
         case .strip: "Scrolling Strip"
+        case .customize: "Customize"
+        case .plugins: "Plugins"
         case .shortcuts: "Shortcuts"
         case .permissions: "Permissions"
         case .general: "General"
@@ -65,6 +67,8 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .clicker: ModuleID.clicker.symbol
         case .switcher: ModuleID.switcher.symbol
         case .strip: ModuleID.strip.symbol
+        case .customize: "slider.horizontal.3"
+        case .plugins: "puzzlepiece.extension"
         case .shortcuts: "command"
         case .permissions: "lock.shield"
         case .general: "gearshape"
@@ -86,13 +90,13 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .clicker: .clicker
         case .switcher: .switcher
         case .strip: .strip
-        case .overview, .shortcuts, .permissions, .general: nil
+        case .overview, .customize, .plugins, .shortcuts, .permissions, .general: nil
         }
     }
 
     static let systemPages: [MainPage] = [.battery, .cpu, .gpu, .memory, .disk, .network, .sensors]
     static let toolPages: [MainPage] = [.awake, .clicker, .clipboard, .windows, .switcher, .strip, .screenshots, .archives, .corner, .wordCounter, .sound]
-    static let settingsPages: [MainPage] = [.shortcuts, .permissions, .general]
+    static let settingsPages: [MainPage] = [.customize, .plugins, .shortcuts, .permissions, .general]
 }
 
 struct MainView: View {
@@ -171,6 +175,8 @@ struct MainView: View {
         case .clicker: ClickerPage(model: model)
         case .switcher: SwitcherPage(model: model)
         case .strip: StripPage(model: model)
+        case .customize: CustomizePage(model: model)
+        case .plugins: PluginsPage(model: model)
         case .shortcuts: ShortcutsPage(model: model)
         case .permissions: PermissionsPage(model: model)
         case .general: GeneralPage(model: model)
@@ -256,5 +262,26 @@ struct ModuleOffView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.wash, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.hairline))
+    }
+}
+
+extension ModuleID {
+    /// The page where this tool is set up.
+    var page: MainPage {
+        switch self {
+        case .system: .cpu
+        case .sensors: .sensors
+        case .clipboard: .clipboard
+        case .windows: .windows
+        case .screenshots: .screenshots
+        case .archives: .archives
+        case .corner: .corner
+        case .wordCounter: .wordCounter
+        case .sound: .sound
+        case .switcher: .switcher
+        case .strip: .strip
+        case .awake: .awake
+        case .clicker: .clicker
+        }
     }
 }

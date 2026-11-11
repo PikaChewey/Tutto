@@ -31,30 +31,15 @@ private enum PanelGrid {
 
 struct MenuPanel: View {
     @Bindable var model: AppModel
+    /// Drawn on the Customize page: shown, not used (and not the menu bar's own window).
+    var preview = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: PanelGrid.gap) {
             PanelHeader(model: model)
-            if let system = model.system {
-                if model.panel.shows(.battery) {
-                    if let battery = system.battery {
-                        BatteryCard(battery: battery, system: system)
-                    } else {
-                        BusyAppsList(apps: system.busyApps, measured: system.busyAppsMeasured).panelCard()
-                    }
-                }
-                if model.panel.shows(.readings) {
-                    StatTiles(system: system, sensors: model.sensors)
-                }
-            }
-            if model.panel.shows(.controls), model.awake != nil || model.clicker != nil || model.sensors?.hasFans == true {
-                ControlsCard(model: model)
-            }
-            if model.panel.shows(.sound), let sound = model.sound, SoundModule.isSupported {
-                SoundCard(sound: sound)
-            }
-            if model.panel.shows(.tools), !ShortcutRows.rows(model).isEmpty {
-                ToolsCard(model: model)
+            // Its parts in the order set on the Customize page.
+            ForEach(model.layout.sections()) { section in
+                part(section)
             }
             Notices(model: model)
             PanelFooter(model: model)
@@ -65,7 +50,37 @@ struct MenuPanel: View {
         .frame(width: PanelGrid.width)
         .fixedSize(horizontal: false, vertical: true)
         .watching(model.system, model.system?.panelFeeds ?? [])
-        .background(PanelWindowReader())
+        .background { if !preview { PanelWindowReader() } }
+    }
+
+    @ViewBuilder
+    private func part(_ section: PanelLayoutStore.Section) -> some View {
+        switch section {
+        case .battery:
+            if let system = model.system {
+                if let battery = system.battery {
+                    BatteryCard(battery: battery, system: system)
+                } else {
+                    BusyAppsList(apps: system.busyApps, measured: system.busyAppsMeasured).panelCard()
+                }
+            }
+        case .readings:
+            if let system = model.system {
+                StatTiles(system: system, sensors: model.sensors, layout: model.layout)
+            }
+        case .controls:
+            if !ControlsCard.rows(model).isEmpty {
+                ControlsCard(model: model)
+            }
+        case .sound:
+            if let sound = model.sound, SoundModule.isSupported {
+                SoundCard(sound: sound)
+            }
+        case .tools:
+            if !ShortcutRows.visible(model).isEmpty {
+                ToolsCard(model: model)
+            }
+        }
     }
 }
 
@@ -382,71 +397,88 @@ private struct BusyAppRow: View {
 
 /// Six tiles in two columns: CPU, memory, GPU, disk, network and temperature, each a number,
 /// an engraved caption, a detail and the last minute as a line (or a meter). Each opens its page.
-/// With Sensors & Fans off there's no temperature, and the network tile takes the row.
+/// The Customize page sets which show and in what order; an odd one out takes the whole last row.
+/// With Sensors & Fans off there's no temperature tile.
 private struct StatTiles: View {
     var system: SystemMonitor
     var sensors: SensorsModule?
+    var layout: PanelLayoutStore
 
     var body: some View {
+        let tiles = layout.readings(available: PanelLayoutStore.Reading.allCases.filter { $0 != .temperature || sensors != nil })
+        let lines = PanelLayout.rows(tiles, perRow: 2)
         VStack(spacing: PanelGrid.gap) {
-            HStack(spacing: PanelGrid.gap) {
-                StatTile(caption: "CPU", value: Format.percent(system.cpu.total), unit: "%", detail: loadText,
-                         page: .cpu, help: "Processor load · load average \(loadValue)",
-                         spokenName: "CPU", spokenValue: "\(Format.percent(system.cpu.total)) percent, load average \(loadValue)") {
-                    Sparkline(values: system.cpuHistory, color: .accentColor, stretch: true)
-                }
-                StatTile(caption: "Memory", value: Format.percent(system.memory?.usedFraction ?? 0), unit: "%", detail: memoryUsed,
-                         alert: system.memory?.pressure == .critical, page: .memory,
-                         help: "Memory used · pressure \(system.memory?.pressure.label.lowercased() ?? "unknown")",
-                         spokenName: "Memory", spokenValue: "\(Format.percent(system.memory?.usedFraction ?? 0)) percent, \(memoryUsed) used") {
-                    Sparkline(values: system.memoryHistory, color: .accentColor, stretch: true)
-                }
-            }
-            HStack(spacing: PanelGrid.gap) {
-                StatTile(caption: "GPU", value: Format.percent(system.gpu?.utilization ?? 0), unit: "%", detail: gpuMemory,
-                         page: .gpu, help: "Graphics load",
-                         spokenName: "GPU", spokenValue: "\(Format.percent(system.gpu?.utilization ?? 0)) percent") {
-                    Sparkline(values: system.gpuHistory, color: .accentColor, stretch: true)
-                }
-                let disk = system.rootVolume.map { Format.diskParts($0.available) } ?? ("—", "")
-                let full = (system.rootVolume?.usedFraction ?? 0) >= 0.95
-                StatTile(caption: "Disk", value: disk.0, unit: disk.1, detail: "free", alert: full, page: .disk,
-                         help: "Free space on \(system.rootVolume?.name ?? "the startup disk")",
-                         spokenName: "Disk", spokenValue: system.rootVolume == nil ? "unavailable" : "\(disk.0) \(disk.1) free") {
-                    Meter(value: system.rootVolume?.usedFraction ?? 0, height: 4, alert: full, fill: .accentColor, track: Color.primary.opacity(0.1))
-                        .frame(height: 4)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-                        .padding(.bottom, 4)
-                }
-            }
-            HStack(spacing: PanelGrid.gap) {
-                let down = Format.rateParts(system.networkIn)
-                StatTile(caption: "Network", value: down.0, unit: down.1, detail: "↑ " + Format.rate(system.networkOut),
-                         prefix: "↓", page: .network, help: "Downloading and uploading",
-                         spokenName: "Network",
-                         spokenValue: "download \(Format.spokenRate(system.networkIn)), upload \(Format.spokenRate(system.networkOut))",
-                         wide: sensors == nil) {
-                    Sparkline(values: system.networkHistory, color: .accentColor, stretch: true)
-                }
-                // Temperature belongs to Sensors & Fans: with that off, there's no tile.
-                if sensors != nil {
-                    let hot = (temperature ?? 0) >= 95
-                    StatTile(caption: "Temp", value: temperature.map { "\(Int($0.rounded()))" } ?? "—", unit: temperature == nil ? "" : "°C",
-                             detail: fanText, alert: hot, page: .sensors, help: temperatureHelp,
-                             spokenName: "Temperature",
-                             spokenValue: temperature.map { "\(Int($0.rounded())) degrees Celsius" + ((sensors?.summary?.gpuAverage).map { ", graphics \(Int($0.rounded())) degrees" } ?? "") } ?? "unavailable") {
-                        Meter(value: ((temperature ?? 30) - 30) / 70, height: 4, alert: hot, fill: .accentColor, track: Color.primary.opacity(0.1))
-                            .frame(height: 4)
-                            .frame(maxHeight: .infinity, alignment: .bottom)
-                            .padding(.bottom, 4)
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                HStack(spacing: PanelGrid.gap) {
+                    ForEach(line) { reading in
+                        tile(reading, wide: line.count == 1)
                     }
                 }
             }
         }
         .background(VisibilityReader { visible in
-            guard let sensors else { return }
+            // Temperatures are read only while their tile shows.
+            guard let sensors, tiles.contains(.temperature) else { return }
             visible ? sensors.begin() : sensors.end()
         })
+    }
+
+    @ViewBuilder
+    private func tile(_ reading: PanelLayoutStore.Reading, wide: Bool) -> some View {
+        switch reading {
+        case .cpu:
+            StatTile(caption: "CPU", value: Format.percent(system.cpu.total), unit: "%", detail: loadText,
+                     page: .cpu, help: "Processor load · load average \(loadValue)",
+                     spokenName: "CPU", spokenValue: "\(Format.percent(system.cpu.total)) percent, load average \(loadValue)", wide: wide) {
+                Sparkline(values: system.cpuHistory, color: .accentColor, stretch: true)
+            }
+        case .memory:
+            StatTile(caption: "Memory", value: Format.percent(system.memory?.usedFraction ?? 0), unit: "%", detail: memoryUsed,
+                     alert: system.memory?.pressure == .critical, page: .memory,
+                     help: "Memory used · pressure \(system.memory?.pressure.label.lowercased() ?? "unknown")",
+                     spokenName: "Memory", spokenValue: "\(Format.percent(system.memory?.usedFraction ?? 0)) percent, \(memoryUsed) used",
+                     wide: wide) {
+                Sparkline(values: system.memoryHistory, color: .accentColor, stretch: true)
+            }
+        case .gpu:
+            StatTile(caption: "GPU", value: Format.percent(system.gpu?.utilization ?? 0), unit: "%", detail: gpuMemory,
+                     page: .gpu, help: "Graphics load",
+                     spokenName: "GPU", spokenValue: "\(Format.percent(system.gpu?.utilization ?? 0)) percent", wide: wide) {
+                Sparkline(values: system.gpuHistory, color: .accentColor, stretch: true)
+            }
+        case .disk:
+            let disk = system.rootVolume.map { Format.diskParts($0.available) } ?? ("—", "")
+            let full = (system.rootVolume?.usedFraction ?? 0) >= 0.95
+            StatTile(caption: "Disk", value: disk.0, unit: disk.1, detail: "free", alert: full, page: .disk,
+                     help: "Free space on \(system.rootVolume?.name ?? "the startup disk")",
+                     spokenName: "Disk", spokenValue: system.rootVolume == nil ? "unavailable" : "\(disk.0) \(disk.1) free", wide: wide) {
+                Meter(value: system.rootVolume?.usedFraction ?? 0, height: 4, alert: full, fill: .accentColor, track: Color.primary.opacity(0.1))
+                    .frame(height: 4)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 4)
+            }
+        case .network:
+            let down = Format.rateParts(system.networkIn)
+            StatTile(caption: "Network", value: down.0, unit: down.1, detail: "↑ " + Format.rate(system.networkOut),
+                     prefix: "↓", page: .network, help: "Downloading and uploading",
+                     spokenName: "Network",
+                     spokenValue: "download \(Format.spokenRate(system.networkIn)), upload \(Format.spokenRate(system.networkOut))",
+                     wide: wide) {
+                Sparkline(values: system.networkHistory, color: .accentColor, stretch: true)
+            }
+        case .temperature:
+            let hot = (temperature ?? 0) >= 95
+            StatTile(caption: "Temp", value: temperature.map { "\(Int($0.rounded()))" } ?? "—", unit: temperature == nil ? "" : "°C",
+                     detail: fanText, alert: hot, page: .sensors, help: temperatureHelp,
+                     spokenName: "Temperature",
+                     spokenValue: temperature.map { "\(Int($0.rounded())) degrees Celsius" + ((sensors?.summary?.gpuAverage).map { ", graphics \(Int($0.rounded())) degrees" } ?? "") } ?? "unavailable",
+                     wide: wide) {
+                Meter(value: ((temperature ?? 30) - 30) / 70, height: 4, alert: hot, fill: .accentColor, track: Color.primary.opacity(0.1))
+                    .frame(height: 4)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 4)
+            }
+        }
     }
 
     private var loadValue: String {
@@ -566,40 +598,32 @@ private struct StatTile<Graph: View>: View {
 private struct ControlsCard: View {
     var model: AppModel
 
+    /// The rows whose tools are on, in the order set on the Customize page.
+    static func rows(_ model: AppModel) -> [PanelLayoutStore.Control] {
+        var available: [PanelLayoutStore.Control] = []
+        if model.awake != nil { available.append(.awake) }
+        if model.clicker != nil { available.append(.clicker) }
+        if model.sensors?.hasFans == true { available.append(.fan) }
+        return model.layout.controls(available: available)
+    }
+
     var body: some View {
+        let rows = Self.rows(model)
         VStack(alignment: .leading, spacing: 0) {
-            let rows = rowCount
-            if let awake = model.awake {
-                AwakeRow(awake: awake)
-                    .padding(.vertical, 5)
-                if rows.index(of: .awake) < rows.count - 1 { Hairline().opacity(0.5) }
-            }
-            if let clicker = model.clicker {
-                ClickerRow(clicker: clicker, model: model)
-                    .padding(.vertical, 5)
-                if rows.index(of: .clicker) < rows.count - 1 { Hairline().opacity(0.5) }
-            }
-            if let sensors = model.sensors, sensors.hasFans {
-                FanRow(sensors: sensors)
-                    .padding(.vertical, 5)
+            ForEach(Array(rows.enumerated()), id: \.element) { index, row in
+                Group {
+                    switch row {
+                    case .awake: if let awake = model.awake { AwakeRow(awake: awake) }
+                    case .clicker: if let clicker = model.clicker { ClickerRow(clicker: clicker, model: model) }
+                    case .fan: if let sensors = model.sensors { FanRow(sensors: sensors) }
+                    }
+                }
+                .padding(.vertical, 5)
+                if index < rows.count - 1 { Hairline().opacity(0.5) }
             }
         }
         .panelCard(vertical: 3)
     }
-
-    private enum Row { case awake, clicker, fan }
-
-    private var rowCount: [Row] {
-        var rows: [Row] = []
-        if model.awake != nil { rows.append(.awake) }
-        if model.clicker != nil { rows.append(.clicker) }
-        if model.sensors?.hasFans == true { rows.append(.fan) }
-        return rows
-    }
-}
-
-private extension Array where Element: Equatable {
-    func index(of element: Element) -> Int { firstIndex(of: element) ?? count }
 }
 
 /// A control row's name in the panel's title weight; while the control is running, an accent dot
@@ -1140,6 +1164,14 @@ enum ShortcutRows {
         var id: String { action.id }
     }
 
+    /// The tools to show, in the order set on the Customize page.
+    static func visible(_ model: AppModel) -> [Row] {
+        let all = rows(model)
+        let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return model.layout.tools(available: all.map(\.id)).compactMap { byID[$0] }
+    }
+
+    /// Every tool that could be in the row: the built-in ones whose tool is on, then your plugins.
     static func rows(_ model: AppModel) -> [Row] {
         var rows: [Row] = []
         if model.screenshots != nil {
@@ -1154,6 +1186,9 @@ enum ShortcutRows {
         if model.wordCounter != nil {
             rows.append(Row(action: .wordCounter, title: "Count Words", short: "Words", symbol: ModuleID.wordCounter.symbol))
         }
+        for plugin in model.plugins.plugins where plugin.enabled {
+            rows.append(Row(action: .plugin(plugin.id), title: plugin.name, short: plugin.name, symbol: plugin.symbol))
+        }
         return rows
     }
 }
@@ -1167,16 +1202,20 @@ private struct ToolsCard: View {
     private static let gap: CGFloat = 2
 
     var body: some View {
-        let rows = ShortcutRows.rows(model)
-        let count = CGFloat(max(rows.count, 1))
-        // Each tile an equal share of the card, so a long shortcut can't widen it.
+        // Six to a row at most; each tile an equal share of its row, so a long shortcut can't widen it.
+        let lines = PanelLayout.rows(ShortcutRows.visible(model), perRow: PanelLayout.toolsPerRow)
+        let count = CGFloat(min(max(lines.first?.count ?? 1, 1), PanelLayout.toolsPerRow))
         let tile = (PanelGrid.width - 2 * PanelGrid.outer - 2 * Self.inset - Self.gap * (count - 1)) / count
-        HStack(spacing: Self.gap) {
-            ForEach(rows) { row in
-                ToolTile(row: row, shortcut: model.shortcuts.shortcut(for: row.action), launching: $launching) {
-                    afterPanelCloses { model.perform(row.action) }
+        VStack(alignment: .leading, spacing: Self.gap) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                HStack(spacing: Self.gap) {
+                    ForEach(line) { row in
+                        ToolTile(row: row, shortcut: model.shortcuts.shortcut(for: row.action), launching: $launching) {
+                            afterPanelCloses { model.perform(row.action) }
+                        }
+                        .frame(width: tile)
+                    }
                 }
-                .frame(width: tile)
             }
         }
         .padding(.horizontal, Self.inset)

@@ -123,7 +123,10 @@ struct ShortcutsPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             PageHeader(title: "Shortcuts", subtitle: "Click a shortcut, then press the keys you want. Esc cancels, Delete removes it.")
-            group("Everyday", [.captureArea, .captureScreen, .captureAreaEdit, .clipboardHistory, .windowPalette, .wordCounter])
+            group("Everyday", [.captureArea, .captureScreen, .captureAreaEdit, .clipboardHistory, .windowPalette, .wordCounter, .toggleClicker])
+            if !model.plugins.plugins.isEmpty {
+                group("Your plugins", model.plugins.plugins.map { .plugin($0.id) })
+            }
             group("App", [.openTutto, .toggleCorner, .muteFrontApp])
             if let switcher = model.switcher {
                 switcherGroup(switcher)
@@ -292,30 +295,16 @@ struct GeneralPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            PageHeader(title: "General", subtitle: "Turn any tool off and it stops completely: no memory, no CPU, no battery.")
-            InkGroup("Tools") {
-                ForEach(ModuleID.listed) { module in
-                    HStack(spacing: 12) {
-                        Image(systemName: module.symbol).frame(width: 20).foregroundStyle(Color.ink2)
-                        VStack(alignment: .leading, spacing: Metrics.titleToDetail) {
-                            Text(module.title).font(.system(size: 13, weight: .medium))
-                            Text(module.idleCost).font(.system(size: 11.5)).foregroundStyle(Color.ink3)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
-                        ModuleSwitch(model: model, module: module)
-                    }
-                    .padding(.vertical, Metrics.rowPadding)
-                    .overlay(alignment: .bottom) { if module != ModuleID.listed.last { Hairline().opacity(0.6) } }
+            PageHeader(title: "General", subtitle: "Tutto as a whole: how it starts, and where to change what it does and shows.")
+            InkGroup("Make it yours") {
+                LabeledRow("Plugins", detail: "Turn tools on and off (anything off costs nothing), and add your own plugins.") {
+                    Button("Plugins…") { MainWindowController.shared.show(page: .plugins) }
+                        .buttonStyle(OutlineButtonStyle(compact: true))
                 }
-            }
-            InkGroup("Menu bar panel") {
-                ForEach(PanelSections.Section.allCases) { section in
-                    LabeledRow(section.title, detail: section.detail) {
-                        InkSwitch(isOn: Binding(get: { model.panel.shows(section) }, set: { model.panel.set(section, shown: $0) }),
-                                  label: "Show \(section.title) in the menu bar panel")
-                    }
-                    if section != PanelSections.Section.allCases.last { Hairline().opacity(0.6) }
+                Hairline().opacity(0.6)
+                LabeledRow("Customize", detail: "What the menu bar panel shows and in what order.") {
+                    Button("Customize…") { MainWindowController.shared.show(page: .customize) }
+                        .buttonStyle(OutlineButtonStyle(compact: true))
                 }
             }
             InkGroup("App") {

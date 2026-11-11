@@ -152,6 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 ///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows switcher strip screenshots archives corner wordCounter sound shortcuts permissions general
 ///   actions: capture-area capture-screen capture-edit clipboard windows word-counter mute-front-app quit
 ///            stay-awake?for=2h30 (starts, or adds time)  stay-awake-end  agent-busy (an agent is working)
+///            plugin?name=<name> (runs one of your plugins; or ?id=<uuid>)
 ///            clicker (starts or stops; ?cps=20&button=left|right|middle&double=1&at=x,y|pointer&for=30&clicks=100)
 @MainActor
 enum DeepLinks {
@@ -178,6 +179,19 @@ enum DeepLinks {
             return
         }
         if name == "agent-busy" { return model.awake?.noteAgentWork() ?? () }
+        if name == "plugin" {
+            // ?name=Plain Text Clipboard (any case) or ?id=<uuid>
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let wanted = items.first { $0.name == "name" }?.value ?? url.pathComponents.dropFirst(2).first
+            if let id = items.first(where: { $0.name == "id" })?.value.flatMap(UUID.init(uuidString:)) {
+                model.plugins.run(id)
+            } else if let wanted, let plugin = model.plugins.plugin(named: wanted) {
+                model.plugins.run(plugin)
+            } else {
+                Toast.shared.show("No plugin called “\(wanted ?? "")”", detail: "See Tutto › Plugins.", duration: 2.5)
+            }
+            return
+        }
         if name == "clicker" {
             // Optional settings first: ?cps=20&button=right&double=1&at=640,400 (or at=pointer)&for=30 (seconds)&clicks=100
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []

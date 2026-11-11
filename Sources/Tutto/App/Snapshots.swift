@@ -47,7 +47,7 @@ enum Snapshots {
             for page in MainPage.allCases where only.isEmpty || only.contains(page.rawValue) {
                 MainWindowController.shared.navigation.page = page
                 render(MainView(model: model, navigation: MainWindowController.shared.navigation)
-                        .frame(width: 960, height: 680),
+                        .frame(width: 960, height: only.contains("tall") ? 1500 : 680),
                        appearance: appearance, to: dir.appendingPathComponent("page-\(page.rawValue)-\(name).png"))
             }
             for extra in SnapshotExtras.all where only.contains(extra.name) || (only.isEmpty && extra.inDefaultSet) {
@@ -162,6 +162,12 @@ struct SnapshotExtras {
         })
         // States live readings rarely show: the stats card's title calm, worth a look and alarmed,
         // and an app icon as it is, playing and muted.
+        extras.append(SnapshotExtras(name: "plugin-editor", inDefaultSet: false) { model in
+            var plugin = ScriptPlugin.templates[1]
+            plugin.id = UUID()
+            return AnyView(PluginEditor(model: model, draft: PluginDraft(plugin: plugin, isNew: true)) {}
+                .background(Color(nsColor: .windowBackgroundColor)))
+        })
         extras.append(SnapshotExtras(name: "panel-states", inDefaultSet: false) { _ in
             let glances = [Glance("On battery", "4 h 9 min left"), Glance("Working hard", "CPU 91%", level: .notice),
                            Glance("Battery low", "18 min left", level: .alert)]

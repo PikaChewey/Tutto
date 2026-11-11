@@ -23,8 +23,10 @@ final class AppModel {
     let shortcuts = ShortcutStore()
     let hotkeys = HotkeyCenter()
     let permissions = Permissions()
-    /// Which parts the menu bar panel shows.
-    let panel = PanelSections()
+    /// How the menu bar panel is arranged (the Customize page).
+    let layout = PanelLayoutStore()
+    /// Your own plugins (the Plugins page).
+    let plugins = PluginsModel()
 
     private(set) var enabled: Set<ModuleID>
     private(set) var system: SystemMonitor?
@@ -92,6 +94,7 @@ final class AppModel {
         // Things that live outside Tutto's process must match the switch even if it was
         // turned off in an earlier session: Finder only loads the menu extension when Archives is on.
         if !enabled.contains(.archives) && !quietly { permissions.setFinderExtension(enabled: false) }
+        plugins.load()
         if !quietly { bindShortcuts() }
         permissions.refresh()
         MemoryRelief.start { [weak self] in self?.letGoOfPictures() }
@@ -265,7 +268,7 @@ final class AppModel {
     func bindShortcuts() {
         var stripKeys: [KeyShortcut: StripCommand] = [:]
         for action in ShortcutAction.all {
-            let active = action.module.map { enabled.contains($0) } ?? true
+            let active = action.isActive(enabled)
             let shortcut = active ? shortcuts.shortcut(for: action) : nil
             if action == .toggleClicker {
                 // Hold mode needs the keys going up as well.
@@ -282,7 +285,7 @@ final class AppModel {
         strip?.setShortcuts(stripKeys)
         // So do ones on the switcher's keys (⇧⌘` is macOS's "previous window" too).
         switcher?.claim(Set(ShortcutAction.all.compactMap { action -> KeyShortcut? in
-            guard action.module.map({ enabled.contains($0) }) ?? true else { return nil }
+            guard action.isActive(enabled) else { return nil }
             return shortcuts.shortcut(for: action)
         }))
     }
@@ -290,7 +293,7 @@ final class AppModel {
     /// Runs whatever action this shortcut is bound to (for key filters that take the keys first).
     func perform(shortcut: KeyShortcut) {
         guard let action = ShortcutAction.all.first(where: { action in
-            (action.module.map { enabled.contains($0) } ?? true) && shortcuts.shortcut(for: action) == shortcut
+            action.isActive(enabled) && shortcuts.shortcut(for: action) == shortcut
         }) else { return }
         perform(action)
     }
@@ -321,6 +324,7 @@ final class AppModel {
         case .toggleCorner:
             if let corner { corner.isEnabled.toggle() }
         case .toggleClicker: clicker?.toggle()
+        case .plugin(let id): plugins.run(id)
         case .window(let windowAction): windows?.perform(windowAction)
         case .strip(let command): strip?.perform(command)
         }
@@ -353,51 +357,5 @@ final class AppModel {
         /// The tools that existed when `enabled` was saved.
         static let known = "modules.known"
         static let onboarded = "hasCompletedOnboarding"
-    }
-}
-
-/// The menu bar panel's parts, each of which can be hidden (General › Menu bar panel), so the
-/// panel holds only what you use.
-@MainActor
-@Observable
-final class PanelSections {
-    enum Section: String, CaseIterable, Identifiable {
-        case battery, readings, controls, sound, tools
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .battery: "Battery and busiest apps"
-            case .readings: "Readings"
-            case .controls: "Controls"
-            case .sound: "Sound"
-            case .tools: "Tools"
-            }
-        }
-
-        var detail: String {
-            switch self {
-            case .battery: "Charge, watts, health and the three apps using the processor most."
-            case .readings: "CPU, memory, GPU, disk, network and temperature, with the last minute."
-            case .controls: "Stay awake, the auto clicker and the fan, one line each."
-            case .sound: "Your apps, to mute one with a click."
-            case .tools: "Screenshots, clipboard history, the window palette and Word Counter, with their keys."
-            }
-        }
-    }
-
-    private(set) var hidden: Set<String>
-    private let defaults = UserDefaults.standard
-
-    init() {
-        hidden = Set(UserDefaults.standard.stringArray(forKey: "panel.hidden") ?? [])
-    }
-
-    func shows(_ section: Section) -> Bool { !hidden.contains(section.rawValue) }
-
-    func set(_ section: Section, shown: Bool) {
-        if shown { hidden.remove(section.rawValue) } else { hidden.insert(section.rawValue) }
-        defaults.set(hidden.sorted(), forKey: "panel.hidden")
     }
 }
