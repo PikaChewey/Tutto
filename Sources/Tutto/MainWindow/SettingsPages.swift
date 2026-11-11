@@ -309,6 +309,15 @@ struct GeneralPage: View {
                     .overlay(alignment: .bottom) { if module != ModuleID.listed.last { Hairline().opacity(0.6) } }
                 }
             }
+            InkGroup("Menu bar panel") {
+                ForEach(PanelSections.Section.allCases) { section in
+                    LabeledRow(section.title, detail: section.detail) {
+                        InkSwitch(isOn: Binding(get: { model.panel.shows(section) }, set: { model.panel.set(section, shown: $0) }),
+                                  label: "Show \(section.title) in the menu bar panel")
+                    }
+                    if section != PanelSections.Section.allCases.last { Hairline().opacity(0.6) }
+                }
+            }
             InkGroup("App") {
                 LabeledRow("Open at login", detail: "Tutto starts quietly in the menu bar.") {
                     InkSwitch(isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }),

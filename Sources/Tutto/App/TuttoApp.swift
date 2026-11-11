@@ -24,17 +24,22 @@ struct TuttoApp: App {
     }
 }
 
-/// The menu bar icon, and while Stay Awake runs, the time left beside it.
+/// The menu bar icon; while Stay Awake runs, the time left beside it; while the auto clicker
+/// clicks, its symbol, so a running clicker is never forgotten.
 private struct MenuBarLabel: View {
     var model: AppModel
 
     var body: some View {
-        if let text = model.awake?.menuBarText {
+        let awake = model.awake?.menuBarText
+        let clicking = model.clicker?.isOn == true
+        if awake != nil || clicking {
             HStack(spacing: 3) {
                 Image(nsImage: MenuBarGlyph.image())
-                Text(text).monospacedDigit()
+                if clicking { Image(systemName: "cursorarrow.click.2") }
+                if let awake { Text(awake).monospacedDigit() }
             }
-            .accessibilityLabel("Tutto, staying awake, \(text) left")
+            .accessibilityLabel(["Tutto", clicking ? "auto clicker on" : nil, awake.map { "staying awake, \($0) left" }]
+                .compactMap { $0 }.joined(separator: ", "))
         } else {
             Image(nsImage: MenuBarGlyph.image())
         }
@@ -144,6 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 ///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows switcher strip screenshots archives corner wordCounter sound shortcuts permissions general
 ///   actions: capture-area capture-screen capture-edit clipboard windows word-counter mute-front-app quit
 ///            stay-awake?for=2h30 (starts, or adds time)  stay-awake-end
+///            clicker (starts or stops; ?cps=20&button=left|right|middle&double=1&at=x,y|pointer&for=30&clicks=100)
 @MainActor
 enum DeepLinks {
     static func handle(_ url: URL, model: AppModel) {
@@ -167,6 +173,12 @@ enum DeepLinks {
                 ?? url.pathComponents.dropFirst(2).first ?? "1h"
             if let seconds = AwakeDuration.seconds(from: typed) { model.awake?.start(for: seconds) }
             return
+        }
+        if name == "clicker" {
+            // Optional settings first: ?cps=20&button=right&double=1&at=640,400 (or at=pointer)&for=30 (seconds)&clicks=100
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            if !items.isEmpty { model.clicker?.apply(items) }
+            return model.clicker?.toggle() ?? ()
         }
         if name == "stay-awake-end" { return model.awake?.endNow() ?? () }
         if name == "lid-closed" || name == "lid-open" { return model.awake?.simulateLid(closed: name == "lid-closed") ?? () }

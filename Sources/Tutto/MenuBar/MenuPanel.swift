@@ -36,23 +36,24 @@ struct MenuPanel: View {
         VStack(alignment: .leading, spacing: PanelGrid.gap) {
             PanelHeader(model: model)
             if let system = model.system {
-                if let battery = system.battery {
-                    BatteryCard(battery: battery, system: system)
-                } else {
-                    BusyAppsList(apps: system.busyApps, measured: system.busyAppsMeasured).panelCard()
+                if model.panel.shows(.battery) {
+                    if let battery = system.battery {
+                        BatteryCard(battery: battery, system: system)
+                    } else {
+                        BusyAppsList(apps: system.busyApps, measured: system.busyAppsMeasured).panelCard()
+                    }
                 }
-                StatTiles(system: system, sensors: model.sensors)
+                if model.panel.shows(.readings) {
+                    StatTiles(system: system, sensors: model.sensors)
+                }
             }
-            if let awake = model.awake {
-                AwakeCard(awake: awake)
+            if model.panel.shows(.controls), model.awake != nil || model.clicker != nil || model.sensors?.hasFans == true {
+                ControlsCard(model: model)
             }
-            if let sensors = model.sensors, sensors.hasFans {
-                FanCard(sensors: sensors)
-            }
-            if let sound = model.sound, SoundModule.isSupported {
+            if model.panel.shows(.sound), let sound = model.sound, SoundModule.isSupported {
                 SoundCard(sound: sound)
             }
-            if !ShortcutRows.rows(model).isEmpty {
+            if model.panel.shows(.tools), !ShortcutRows.rows(model).isEmpty {
                 ToolsCard(model: model)
             }
             Notices(model: model)
@@ -557,11 +558,155 @@ private struct StatTile<Graph: View>: View {
     }
 }
 
+// MARK: - Controls
+
+/// The things you switch on from the menu bar, one line each, in one card: Stay awake, the auto
+/// clicker and the fan. A row grows only while it's in use (a session's countdown, the clicker's
+/// count, the fan's custom speed).
+private struct ControlsCard: View {
+    var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            let rows = rowCount
+            if let awake = model.awake {
+                AwakeRow(awake: awake)
+                    .padding(.vertical, 5)
+                if rows.index(of: .awake) < rows.count - 1 { Hairline().opacity(0.5) }
+            }
+            if let clicker = model.clicker {
+                ClickerRow(clicker: clicker, model: model)
+                    .padding(.vertical, 5)
+                if rows.index(of: .clicker) < rows.count - 1 { Hairline().opacity(0.5) }
+            }
+            if let sensors = model.sensors, sensors.hasFans {
+                FanRow(sensors: sensors)
+                    .padding(.vertical, 5)
+            }
+        }
+        .panelCard(vertical: 3)
+    }
+
+    private enum Row { case awake, clicker, fan }
+
+    private var rowCount: [Row] {
+        var rows: [Row] = []
+        if model.awake != nil { rows.append(.awake) }
+        if model.clicker != nil { rows.append(.clicker) }
+        if model.sensors?.hasFans == true { rows.append(.fan) }
+        return rows
+    }
+}
+
+private extension Array where Element: Equatable {
+    func index(of element: Element) -> Int { firstIndex(of: element) ?? count }
+}
+
+/// A control row's name in the panel's title weight; while the control is running, an accent dot
+/// ahead of it (the panel's one colour for what's live).
+private struct RowLabel: View {
+    var symbol: String
+    var title: String
+    var live = false
+    var help: String?
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if live {
+                Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+                    .transition(.scale.combined(with: .opacity))
+            }
+            Text(title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(Color.ink)
+        }
+        .fixedSize()
+        .help(help ?? title)
+        .animation(Motion.micro, value: live)
+    }
+}
+
+/// The auto clicker on one line: its name, what it'll do, a chevron for the speed and button, and
+/// its switch. Switched on here, it starts 2 s after the panel closes (so it doesn't click the panel).
+private struct ClickerRow: View {
+    @Bindable var clicker: ClickerModule
+    var model: AppModel
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                RowLabel(symbol: ModuleID.clicker.symbol, title: clicker.state == .clicking ? "Clicking" : "Auto clicker",
+                         live: clicker.isOn)
+                Text(detail)
+                    .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                    .foregroundStyle(Color.ink3)
+                    .lineLimit(1)
+                    .contentTransition(.numericText())
+                Spacer(minLength: 4)
+                Button {
+                    withAnimation(Motion.snappy) { expanded.toggle() }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.ink3)
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(expanded ? "Fewer settings" : "Speed and button")
+                InkSwitch(isOn: Binding(get: { clicker.isOn }, set: { on in
+                    if on { afterPanelCloses { clicker.begin(fromPanel: true) } } else { clicker.end("Stopped") }
+                }), label: "Auto clicker")
+                .help(clicker.isOn ? "Stop clicking" : "Start clicking 2 s after the panel closes")
+            }
+            .frame(height: 26)
+            if expanded {
+                HStack(spacing: 8) {
+                    InkStepper(label: "CPS", value: Int(clicker.settings.clicksPerSecond.rounded()), range: 1...100) { value in
+                        clicker.update { $0.clicksPerSecond = Double(value) }
+                    }
+                    Spacer(minLength: 4)
+                    InkSegmented(selection: Binding(get: { clicker.settings.button }, set: { value in clicker.update { $0.button = value } }),
+                                 options: ClickButton.allCases.map { ($0, $0.title) })
+                        .fixedSize()
+                }
+                .transition(.opacity)
+                HStack {
+                    Text(clicker.settings.summary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.ink3)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    QuietLink(title: "More…") { showInApp(.clicker) }
+                }
+                .transition(.opacity)
+            }
+            if let notice = clicker.notice {
+                Text(notice)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var detail: String {
+        let keys = model.shortcuts.shortcut(for: .toggleClicker)?.displayString
+        switch clicker.state {
+        case .idle: return [clicker.settings.speedLabel, keys].compactMap { $0 }.joined(separator: " · ")
+        case .countdown(let n): return "in \(n)…"
+        case .clicking: return "\(clicker.clicks.formatted()) · \(clicker.settings.speedLabel)"
+        }
+    }
+}
+
 // MARK: - Stay Awake
 
 /// Stay Awake: type a time (or pick one) and the Mac stays on, lid closed included. While it runs:
 /// the countdown, when it ends, chips to add time, End, and one line on what the lid does.
-private struct AwakeCard: View {
+private struct AwakeRow: View {
     @Bindable var awake: StayAwakeModule
     @State private var typed = ""
     @State private var visible = false
@@ -579,29 +724,25 @@ private struct AwakeCard: View {
             }
             status
         }
-        .panelCard(vertical: 10)
         .animation(Motion.snappy, value: awake.isRunning)
         .background(VisibilityReader { visible = $0 })
     }
 
-    // Idle: the title, a field and four chips.
+    // Idle: one line, the name, a field and three chips (8h and more: type it).
     private var idle: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            CardTitle(title: "Stay awake") {
-                Text(awake.lastEnded ?? "lid can close, agents keep going")
-                    .font(.system(size: 11.5, weight: .medium).monospacedDigit())
-                    .foregroundStyle(Color.ink3)
-                    .contentTransition(.opacity)
-            }
-            HStack(spacing: 6) {
-                field(placeholder: "Type a time…")
-                ForEach(AwakeDuration.presets, id: \.self) { seconds in
-                    TimeChip(title: AwakeDuration.label(seconds), help: "Stay awake for \(AwakeDuration.label(seconds))") {
-                        awake.start(for: seconds)
-                    }
+        HStack(spacing: 6) {
+            RowLabel(symbol: ModuleID.awake.symbol, title: "Stay awake",
+                     help: awake.lastEnded.map { "Last session: \($0)" } ?? "The lid can close and agents keep going")
+            Spacer(minLength: 4)
+            field(placeholder: "Time…")
+                .frame(width: 66)
+            ForEach(AwakeDuration.presets.prefix(3), id: \.self) { seconds in
+                TimeChip(title: AwakeDuration.label(seconds), help: "Stay awake for \(AwakeDuration.label(seconds))") {
+                    awake.start(for: seconds)
                 }
             }
         }
+        .frame(height: 26)
         .transition(.opacity)
     }
 
@@ -609,9 +750,7 @@ private struct AwakeCard: View {
     private func running(_ session: StayAwakeModule.Session) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("Awake")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(Color.ink)
+                RowLabel(symbol: ModuleID.awake.symbol, title: "Awake", live: true)
                 Text("until \(session.endsAt.formatted(date: session.endsAt.timeIntervalSinceNow > 20 * 3600 ? .abbreviated : .omitted, time: .shortened))")
                     .font(.system(size: 11.5, weight: .medium).monospacedDigit())
                     .foregroundStyle(Color.ink3)
@@ -724,7 +863,7 @@ private struct AwakeCard: View {
             if !done.isEmpty { parts.append("While closed: " + done.joined(separator: ", ") + ".") }
         }
         if let reason = awake.lowPowerReason, !awake.lidClosed { parts.append("Low Power Mode on (\(reason)).") }
-        if parts.isEmpty { return awake.lidSafe ? "Close the lid whenever you like. It stays on, easy on the battery." : nil }
+        if parts.isEmpty { return awake.lidSafe ? "Close the lid any time: it stays on." : nil }
         return parts.joined(separator: " ")
     }
 }
@@ -741,7 +880,7 @@ private struct TimeChip: View {
             Text(title)
                 .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
                 .foregroundStyle(hovering ? Color.ink : Color.ink2)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 7)
                 .frame(height: 24)
                 .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(hovering ? 0.12 : 0.07)))
                 .contentShape(Rectangle())
@@ -777,7 +916,7 @@ private struct Shake: GeometryEffect {
 
 /// Auto, Custom or Max for the fans, right in the panel (Bryan: "very useful and convenient to have
 /// there"). Every fan follows the one choice; the helper set-up and the full fan page are in the app.
-private struct FanCard: View {
+private struct FanRow: View {
     @Bindable var sensors: SensorsModule
     @State private var customRPM: Double = 0
 
@@ -796,9 +935,7 @@ private struct FanCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text("Fan")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(Color.ink)
+                RowLabel(symbol: "fan", title: "Fan")
                 Text(speed)
                     .font(.system(size: 12, weight: .medium).monospacedDigit())
                     .foregroundStyle(Color.ink3)
@@ -838,7 +975,6 @@ private struct FanCard: View {
                 }
             }
         }
-        .panelCard(vertical: 8)
         .animation(Motion.snappy, value: choice)
         .background(VisibilityReader { visible in visible ? sensors.begin() : sensors.end() })
         .onAppear {

@@ -36,6 +36,7 @@ enum Snapshots {
             model.awake?.previewSession(remaining: 47 * 60 + 12, lidSafe: true,
                                         lastClosed: .init(darkened: true, mute: .init(deviceUID: "x", wasMuted: false), pausedNames: ["Chat", "Game"]))
         }
+        if only.contains("clicker-on") { model.clicker?.previewClicking(1_240) }
         if only.contains("awake-nohelper") { model.awake?.previewSession(remaining: 3600, lidSafe: false) }
 
         for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {

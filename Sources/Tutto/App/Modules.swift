@@ -2,7 +2,7 @@
 //  Modules.swift
 //  Tutto
 //
-//  The twelve tools inside Tutto. Each can be switched off on its own, and a module
+//  The thirteen tools inside Tutto. Each can be switched off on its own, and a module
 //  that is off holds no timers, taps, hotkeys, helpers or memory.
 //
 
@@ -21,6 +21,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
     case switcher
     case strip
     case awake
+    case clicker
 
     var id: String { rawValue }
 
@@ -46,6 +47,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .switcher: "Window Switcher"
         case .strip: "Scrolling Strip"
         case .awake: "Stay Awake"
+        case .clicker: "Auto Clicker"
         }
     }
 
@@ -63,6 +65,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .switcher: "rectangle.stack"
         case .strip: "rectangle.split.3x1"
         case .awake: "cup.and.heat.waves"
+        case .clicker: "cursorarrow.click.2"
         }
     }
 
@@ -81,6 +84,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .switcher: "⌘Tab shows every window, not just every app."
         case .strip: "Windows side by side on one strip that scrolls. ⌃⌥ ← → to move along it."
         case .awake: "Keep the Mac on for a time you type, lid closed included, easy on the battery."
+        case .clicker: "Clicks for you at the speed you set. ⌃⇧A or a switch in the menu bar starts and stops it."
         }
     }
 
@@ -96,6 +100,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .switcher: "Nothing but a key filter that waits for ⌘Tab. Windows are listed only when you press it."
         case .strip: "Nothing while windows sit still: macOS tells it when one changes, and it moves only then."
         case .awake: "Nothing until you start a timer. During one, a tick a minute for the time left."
+        case .clicker: "Nothing but its shortcut until you start it."
         }
     }
 }

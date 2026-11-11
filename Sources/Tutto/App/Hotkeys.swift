@@ -23,6 +23,7 @@ enum ShortcutAction: Hashable, Identifiable {
     case muteFrontApp
     case openTutto
     case toggleCorner
+    case toggleClicker
     case window(WindowAction)
     case strip(StripCommand)
 
@@ -37,6 +38,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .muteFrontApp: "sound.muteFront"
         case .openTutto: "app.open"
         case .toggleCorner: "corner.toggle"
+        case .toggleClicker: "clicker.toggle"
         case .window(let action): "windows.\(action.rawValue)"
         case .strip(let command): command.id
         }
@@ -53,6 +55,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .muteFrontApp: "Mute or unmute the front app"
         case .openTutto: "Open Tutto"
         case .toggleCorner: "Pause or resume Trackpad Corner"
+        case .toggleClicker: "Start or stop the auto clicker"
         case .window(let action): action.title
         case .strip(let command): command.title
         }
@@ -66,6 +69,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .wordCounter: .wordCounter
         case .muteFrontApp: .sound
         case .toggleCorner: .corner
+        case .toggleClicker: .clicker
         case .strip: .strip
         case .openTutto: nil
         }
@@ -80,13 +84,14 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureScreen: DefaultShortcuts.captureScreen
         case .captureAreaEdit: DefaultShortcuts.captureAreaEdit
         case .wordCounter: DefaultShortcuts.wordCounter
+        case .toggleClicker: DefaultShortcuts.toggleClicker
         case .strip(let command): command.defaultShortcut
         case .openTutto, .toggleCorner, .muteFrontApp, .window: nil
         }
     }
 
     static var fixed: [ShortcutAction] {
-        [.clipboardHistory, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .wordCounter, .muteFrontApp, .openTutto, .toggleCorner]
+        [.clipboardHistory, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .wordCounter, .toggleClicker, .muteFrontApp, .openTutto, .toggleCorner]
     }
 
     static var all: [ShortcutAction] {
@@ -148,6 +153,8 @@ final class HotkeyCenter {
         var shortcut: KeyShortcut
         var ref: EventHotKeyRef?
         var handler: () -> Void
+        /// Called when the keys are let go (the auto clicker's hold mode).
+        var release: (() -> Void)?
     }
 
     private var registrations: [UInt32: Registration] = [:]
@@ -163,7 +170,8 @@ final class HotkeyCenter {
     var onSuspendChange: ((Bool) -> Void)?
 
     init() {
-        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        var specs = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+                     EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))]
         let context = Unmanaged.passUnretained(self).toOpaque()
         InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
             guard let event, let context else { return OSStatus(eventNotHandledErr) }
@@ -171,20 +179,21 @@ final class HotkeyCenter {
             let status = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
                                            nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
             guard status == noErr else { return status }
+            let released = GetEventKind(event) == UInt32(kEventHotKeyReleased)
             let center = Unmanaged<HotkeyCenter>.fromOpaque(context).takeUnretainedValue()
-            MainActor.assumeIsolated { center.fire(hotKeyID.id) }
+            MainActor.assumeIsolated { released ? center.fireRelease(hotKeyID.id) : center.fire(hotKeyID.id) }
             return noErr
-        }, 1, &spec, context, &handlerRef)
+        }, specs.count, &specs, context, &handlerRef)
     }
 
     /// Registers (or replaces, or with nil removes) the shortcut for an id.
-    func bind(_ id: String, to shortcut: KeyShortcut?, handler: @escaping () -> Void) {
+    func bind(_ id: String, to shortcut: KeyShortcut?, handler: @escaping () -> Void, release: (() -> Void)? = nil) {
         unbind(id)
         guard let shortcut else { return }
         let number = nextID
         nextID += 1
         ids[id] = number
-        var registration = Registration(shortcut: shortcut, ref: nil, handler: handler)
+        var registration = Registration(shortcut: shortcut, ref: nil, handler: handler, release: release)
         if !suspended {
             registration.ref = register(shortcut, number: number, id: id)
         }
@@ -231,5 +240,9 @@ final class HotkeyCenter {
 
     private func fire(_ number: UInt32) {
         registrations[number]?.handler()
+    }
+
+    private func fireRelease(_ number: UInt32) {
+        registrations[number]?.release?()
     }
 }

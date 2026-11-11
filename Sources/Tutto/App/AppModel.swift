@@ -19,6 +19,8 @@ final class AppModel {
     let shortcuts = ShortcutStore()
     let hotkeys = HotkeyCenter()
     let permissions = Permissions()
+    /// Which parts the menu bar panel shows.
+    let panel = PanelSections()
 
     private(set) var enabled: Set<ModuleID>
     private(set) var system: SystemMonitor?
@@ -33,6 +35,7 @@ final class AppModel {
     private(set) var switcher: SwitcherModule?
     private(set) var strip: StripModule?
     private(set) var awake: StayAwakeModule?
+    private(set) var clicker: ClickerModule?
 
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
     /// On notched MacBooks a crowded menu bar puts new icons behind the notch, where they can't be clicked.
@@ -148,6 +151,7 @@ final class AppModel {
             case .wordCounter: if wordCounter == nil { wordCounter = WordCounterModule() }
             case .sound: if sound == nil { sound = SoundModule() }
             case .awake: if awake == nil { awake = StayAwakeModule() }
+            case .clicker: if clicker == nil { clicker = ClickerModule() }
             case .switcher, .strip, .system, .sensors: break
             }
             return
@@ -188,6 +192,9 @@ final class AppModel {
         case .awake:
             if awake == nil { awake = StayAwakeModule() }
             awake?.start()
+        case .clicker:
+            if clicker == nil { clicker = ClickerModule() }
+            clicker?.start()
         }
     }
 
@@ -232,6 +239,9 @@ final class AppModel {
         case .awake:
             awake?.stop()
             awake = nil
+        case .clicker:
+            clicker?.stop()
+            clicker = nil
         }
     }
 
@@ -243,6 +253,12 @@ final class AppModel {
         for action in ShortcutAction.all {
             let active = action.module.map { enabled.contains($0) } ?? true
             let shortcut = active ? shortcuts.shortcut(for: action) : nil
+            if action == .toggleClicker {
+                // Hold mode needs the keys going up as well.
+                hotkeys.bind(action.id, to: shortcut, handler: { [weak self] in self?.clicker?.holdBegan() },
+                             release: { [weak self] in self?.clicker?.holdEnded() })
+                continue
+            }
             hotkeys.bind(action.id, to: shortcut) { [weak self] in
                 self?.perform(action)
             }
@@ -290,6 +306,7 @@ final class AppModel {
         case .openTutto: MainWindowController.shared.show()
         case .toggleCorner:
             if let corner { corner.isEnabled.toggle() }
+        case .toggleClicker: clicker?.toggle()
         case .window(let windowAction): windows?.perform(windowAction)
         case .strip(let command): strip?.perform(command)
         }
@@ -322,5 +339,51 @@ final class AppModel {
         /// The tools that existed when `enabled` was saved.
         static let known = "modules.known"
         static let onboarded = "hasCompletedOnboarding"
+    }
+}
+
+/// The menu bar panel's parts, each of which can be hidden (General › Menu bar panel), so the
+/// panel holds only what you use.
+@MainActor
+@Observable
+final class PanelSections {
+    enum Section: String, CaseIterable, Identifiable {
+        case battery, readings, controls, sound, tools
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .battery: "Battery and busiest apps"
+            case .readings: "Readings"
+            case .controls: "Controls"
+            case .sound: "Sound"
+            case .tools: "Tools"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .battery: "Charge, watts, health and the three apps using the processor most."
+            case .readings: "CPU, memory, GPU, disk, network and temperature, with the last minute."
+            case .controls: "Stay awake, the auto clicker and the fan, one line each."
+            case .sound: "Your apps, to mute one with a click."
+            case .tools: "Screenshots, clipboard history, the window palette and Word Counter, with their keys."
+            }
+        }
+    }
+
+    private(set) var hidden: Set<String>
+    private let defaults = UserDefaults.standard
+
+    init() {
+        hidden = Set(UserDefaults.standard.stringArray(forKey: "panel.hidden") ?? [])
+    }
+
+    func shows(_ section: Section) -> Bool { !hidden.contains(section.rawValue) }
+
+    func set(_ section: Section, shown: Bool) {
+        if shown { hidden.remove(section.rawValue) } else { hidden.insert(section.rawValue) }
+        defaults.set(hidden.sorted(), forKey: "panel.hidden")
     }
 }
