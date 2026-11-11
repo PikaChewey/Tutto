@@ -117,6 +117,28 @@ public struct PluginTrigger: Codable, Equatable, Hashable, Sendable {
         case event = "on", percent, app, minutes, at, name
     }
 
+    /// The event in any case; numbers may be written as text ("15"); an unknown event is an error
+    /// (the plugin keeps its other triggers, and Tutto keeps this one in the file).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let text = try c.decode(String.self, forKey: .event)
+        guard let event = PluginEvent(rawValue: text.lowercased()) else {
+            throw DecodingError.dataCorruptedError(forKey: .event, in: c, debugDescription: "Unknown event \(text)")
+        }
+        func number(_ key: CodingKeys) -> Int? {
+            if let value = try? c.decodeIfPresent(Int.self, forKey: key) { return value }
+            if let value = try? c.decodeIfPresent(Double.self, forKey: key), value.isFinite { return Int(exactly: value.rounded()) }
+            if let text = try? c.decodeIfPresent(String.self, forKey: key) { return Int(text.trimmingCharacters(in: .whitespaces)) }
+            return nil
+        }
+        self.event = event
+        percent = number(.percent).map { min(max($0, 1), 99) }
+        minutes = number(.minutes).map { min(max($0, 1), 7 * 24 * 60) }
+        app = try? c.decodeIfPresent(String.self, forKey: .app)
+        at = try? c.decodeIfPresent(String.self, forKey: .at)
+        name = try? c.decodeIfPresent(String.self, forKey: .name)
+    }
+
     /// The trigger as it starts in the editor, with sensible values.
     public static func starting(_ event: PluginEvent) -> PluginTrigger {
         switch event {
@@ -192,13 +214,19 @@ public struct PluginSetting: Codable, Equatable, Hashable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         key = try c.decode(String.self, forKey: .key)
         title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? key
-        kind = (try? c.decodeIfPresent(Kind.self, forKey: .kind)) ?? .text
+        let kindText = ((try? c.decodeIfPresent(String.self, forKey: .kind)) ?? nil)?.lowercased() ?? "text"
+        guard let kind = Kind(rawValue: kindText) else {
+            // An unknown type isn't guessed at (a misspelt "secret" mustn't become plain text).
+            throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "Unknown setting type \(kindText)")
+        }
+        self.kind = kind
         if let text = try? c.decodeIfPresent(String.self, forKey: .defaultValue) {
             defaultValue = text
         } else if let flag = try? c.decodeIfPresent(Bool.self, forKey: .defaultValue) {
             defaultValue = flag ? "true" : "false"
-        } else if let number = try? c.decodeIfPresent(Double.self, forKey: .defaultValue) {
-            defaultValue = number == number.rounded() ? String(Int(number)) : String(number)
+        } else if let number = try? c.decodeIfPresent(Double.self, forKey: .defaultValue), number.isFinite {
+            // Whole numbers without a decimal point, as long as they fit; anything else as written.
+            defaultValue = Int(exactly: number).map(String.init) ?? String(number)
         } else {
             defaultValue = ""
         }
@@ -242,6 +270,10 @@ public enum PluginRunReason: String, Sendable {
 }
 
 public enum PluginEnvironment {
+    /// TUTTO_EVENT_INFO is cut to this many characters (a custom event's info comes from a link,
+    /// so it's whatever the sender wrote: quote it, and put `--` before it in commands).
+    public static let longestInfo = 1_000
+
     /// What a run is told, on top of the usual environment.
     public static func make(plugin: ScriptPlugin, reason: PluginRunReason, event: String? = nil, info: String? = nil,
                             values: [String: String] = [:], folder: URL? = nil) -> [String: String] {
@@ -250,8 +282,8 @@ public enum PluginEnvironment {
             "TUTTO_PLUGIN_ID": plugin.id.uuidString,
             "TUTTO_REASON": reason.rawValue,
         ]
-        if let event { environment["TUTTO_EVENT"] = event }
-        if let info { environment["TUTTO_EVENT_INFO"] = info }
+        if let event { environment["TUTTO_EVENT"] = String(event.prefix(200)) }
+        if let info { environment["TUTTO_EVENT_INFO"] = String(info.prefix(PluginEnvironment.longestInfo)) }
         if let folder { environment["TUTTO_PLUGIN_DIR"] = folder.path }
         for setting in plugin.settings {
             environment[setting.environmentName] = values[setting.key] ?? setting.defaultValue

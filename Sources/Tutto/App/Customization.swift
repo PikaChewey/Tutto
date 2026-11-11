@@ -167,7 +167,9 @@ final class PanelLayoutStore {
 
     /// The cards the panel shows, in order, with their sizes.
     func slots(_ model: AppModel) -> [WidgetSlot] {
-        all(model).filter { layout.widgets.isShown($0.id) }
+        // A tools row with every tile hidden isn't drawn as an empty card.
+        let noTools = ShortcutRows.visible(model).isEmpty
+        return all(model).filter { layout.widgets.isShown($0.id) && !(noTools && $0 == .card(.tools)) }
             .map { WidgetSlot(id: $0.id, size: size(of: $0, model), isRow: isRow($0)) }
     }
 

@@ -155,7 +155,8 @@ private struct PluginRow: View {
 
     var body: some View {
         let running = model.plugins.running.contains(plugin.id)
-        let isNew = model.plugins.isNew(plugin)
+        let standing = model.plugins.standing(plugin)
+        let isNew = standing != .approved
         let on = model.plugins.isOn(plugin)
         HStack(spacing: 12) {
             Image(systemName: plugin.symbol)
@@ -166,7 +167,7 @@ private struct PluginRow: View {
                 HStack(spacing: 6) {
                     Text(plugin.name).font(.system(size: 13, weight: .medium))
                     ForEach(plugin.kinds, id: \.self) { kind in Tag(text: kind) }
-                    if isNew { Tag(text: "New", accent: true) }
+                    if isNew { Tag(text: standing == .changed ? "Changed" : "New", accent: true) }
                     if model.plugins.isInPanel(plugin) && plugin.hasAction {
                         Text("in the tools row").font(.system(size: 10.5)).foregroundStyle(Color.ink3)
                     }
@@ -177,9 +178,12 @@ private struct PluginRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if isNew {
-                    Text("Added by hand: see what it runs (Edit), then switch it on.")
+                    Text(standing == .changed
+                         ? "Changed on disk since you switched it on: see what it runs now (Edit), then switch it on again."
+                         : "Added by hand: see what it runs (Edit), then switch it on.")
                         .font(.system(size: 10.5))
                         .foregroundStyle(Color.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else if let line = statusLine {
                     Text(line.text)
                         .font(.system(size: 10.5))
@@ -218,7 +222,7 @@ private struct PluginRow: View {
         var parts: [String] = []
         if !plugin.triggers.isEmpty { parts.append(plugin.triggers.map(\.summary).joined(separator: " · ")) }
         if let widget = plugin.widget, plugin.hasWidget {
-            parts.append("Card, every \(PluginEditor.interval(widget.every))\(widget.background ? ", also when closed" : "")")
+            parts.append("Card, every \(PluginEditor.interval(widget.every))\(widget.background ? ", watched when closed" : "")")
         }
         if parts.isEmpty { parts.append(plugin.command.split(whereSeparator: \.isNewline).first.map(String.init) ?? "") }
         return parts.joined(separator: " · ")
@@ -463,10 +467,10 @@ struct PluginEditor: View {
                                  options: [(.small, "Small"), (.wide, "Wide")])
                 }
                 Hairline().opacity(0.6)
-                LabeledRow("Also with the panel closed",
-                           detail: "Keeps it fresh for its automations (at most every 10 s, and a little battery).") {
+                LabeledRow("Watch it with the panel closed",
+                           detail: "Keeps refreshing (at least 10 s apart) and tells you when it turns to alert, like a server going down. Uses a little battery.") {
                     InkSwitch(isOn: Binding(get: { plugin.widget?.background ?? false }, set: { plugin.widget?.background = $0 }),
-                              label: "Also with the panel closed")
+                              label: "Watch it with the panel closed")
                 }
                 if let cardTrial {
                     Hairline().opacity(0.6)
@@ -884,7 +888,7 @@ private struct PluginGuide: View {
                     }
                     """#)
                     section("A card's output",
-                            "Plain text: the first line is the value, the second a detail, more lines a list (wide cards). Or JSON: value, unit, title, detail, symbol (an SF Symbol), level (normal, notice, alert), progress (0–1), series (numbers for a line), url (opened on click), items ([{\"title\", \"detail\", \"url\"}]). A card refreshes while it's on screen; \"background\": true keeps it fresh with the panel closed.")
+                            "Plain text: the first line is the value, the second a detail, more lines a list (wide cards). Or JSON: value, unit, title, detail, symbol (an SF Symbol), level (normal, notice, alert), progress (0–1), series (numbers for a line), url (opened on click), items ([{\"title\", \"detail\", \"url\"}]). A card refreshes while it's on screen; \"background\": true keeps watching it with the panel closed and tells you when it turns to alert.")
                     section("Triggers",
                             "\"on\" is one of: every (\"minutes\"), daily (\"at\": \"HH:MM\"), battery.below (\"percent\"), power.connected, power.disconnected, wake, sleep, lock, unlock, launch, app.launched / app.quit / app.activated (\"app\": a name or bundle id), clipboard.changed, network.changed, display.changed, agents.started, agents.finished, stayawake.started, stayawake.ended, custom (\"name\"; sent with open -g \"tutto://do/event?name=…&info=…\"). A trigger runs the plugin's command, at most 12 times a minute.")
                     section("Settings",
@@ -892,7 +896,7 @@ private struct PluginGuide: View {
                     section("What a run is told",
                             "$TUTTO_REASON (run, link, widget, trigger, test), $TUTTO_EVENT and $TUTTO_EVENT_INFO for a trigger (a battery's charge, an app's bundle id, a custom event's info), $TUTTO_PLUGIN, $TUTTO_PLUGIN_ID and, for a folder plugin, $TUTTO_PLUGIN_DIR.")
                     section("Safety",
-                            "Commands run as you, like any script. A plugin dropped into the folder starts switched off until you've looked at what it runs; ones you make here are on. Copies marked private (passwords) never reach a plugin.")
+                            "Commands run as you, like any script. A plugin dropped into the folder starts off until you've looked at what it runs, and one that changes on disk (its file or its scripts) waits for you again; ones you make or save here are on. Copies marked private (passwords) never reach a plugin. A custom event's info comes from a link anyone can open: quote it, and put -- before it in commands.")
                 }
                 .padding(.horizontal, 22)
                 .padding(.bottom, 8)

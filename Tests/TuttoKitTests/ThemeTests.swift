@@ -306,3 +306,168 @@ final class PluginV2Tests: XCTestCase {
         XCTAssertEqual(PluginRunner.run(cleaner.command, input: "https://a.b/c?utm_source=t", timeout: 10).output, "https://a.b/c")
     }
 }
+
+/// What the review of Customize v2 found, kept from coming back.
+final class PluginHardeningTests: XCTestCase {
+    private var folder: URL!
+
+    override func setUp() {
+        folder = FileManager.default.temporaryDirectory.appendingPathComponent("plugins-hard-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: folder)
+    }
+
+    private func decode(_ json: String) throws -> ScriptPlugin {
+        try JSONDecoder().decode(ScriptPlugin.self, from: Data(json.utf8))
+    }
+
+    private func write(_ name: String, _ json: String) throws {
+        try json.write(to: folder.appendingPathComponent(name), atomically: true, encoding: .utf8)
+    }
+
+    func testHugeNumbersInAFileDontCrash() throws {
+        let plugin = try decode(#"""
+        {"name": "Big", "command": "true", "timeout": 1e30,
+         "widget": {"command": "date", "every": 1e25},
+         "settings": [{"key": "n", "type": "number", "default": 1e20}, {"key": "m", "type": "number", "default": 123456789012345678901234567890}]}
+        """#)
+        XCTAssertEqual(plugin.timeout, ScriptPlugin.longestTimeout)
+        XCTAssertEqual(plugin.widget?.every, ScriptPlugin.Widget.longest)
+        XCTAssertEqual(plugin.settings.count, 2)
+        XCTAssertFalse(plugin.settings[0].defaultValue.isEmpty)
+        let small = try decode(#"{"name": "Small", "command": "true", "timeout": -4, "widget": {"command": "date", "every": 0}}"#)
+        XCTAssertEqual(small.timeout, 1)
+        XCTAssertEqual(small.widget?.every, ScriptPlugin.Widget.shortest)
+    }
+
+    func testTriggersAndSettingsAreReadForgivingly() throws {
+        let plugin = try decode(#"""
+        {"name": "Lenient", "command": "true",
+         "triggers": [{"on": "Every", "minutes": "15"}, {"on": "BATTERY.below", "percent": 12.0}, {"on": "moon.rises"}],
+         "settings": [{"key": "token", "type": "Secret"}, {"key": "oops", "type": "sekret"}]}
+        """#)
+        XCTAssertEqual(plugin.triggers, [PluginTrigger(event: .every, minutes: 15), PluginTrigger(event: .batteryBelow, percent: 12)])
+        XCTAssertEqual(plugin.settings.map(\.key), ["token"], "an unknown type is skipped, never turned into plain text")
+        XCTAssertEqual(plugin.settings.first?.kind, .secret)
+    }
+
+    func testANullOrBadIdGetsTheFilesStableId() throws {
+        try write("a.json", #"{"id": null, "name": "Null Id", "command": "true"}"#)
+        try write("b.json", #"{"id": "not-a-uuid", "name": "Bad Id", "command": "true"}"#)
+        let store = PluginStore(directory: folder, usesTrash: false)
+        let first = store.load()
+        XCTAssertEqual(first.problems, [])
+        XCTAssertEqual(Set(first.plugins.map(\.id)), Set(store.load().plugins.map(\.id)), "the same ids every time")
+    }
+
+    func testFilesClaimingTheSameIdAreBothLeftOut() throws {
+        let id = UUID().uuidString
+        try write("real.json", #"{"id": "\#(id)", "name": "Real", "command": "true"}"#)
+        try write("a-copycat.json", #"{"id": "\#(id)", "name": "Copycat", "command": "say hi"}"#)
+        try write("other.json", #"{"name": "Other", "command": "true"}"#)
+        let loaded = PluginStore(directory: folder, usesTrash: false).load()
+        XCTAssertEqual(loaded.plugins.map(\.name), ["Other"])
+        XCTAssertEqual(loaded.problems.count, 2)
+    }
+
+    func testAFingerprintChangesWithTheFileOrItsScripts() throws {
+        let store = PluginStore(directory: folder, usesTrash: false)
+        try write("one.json", #"{"name": "One", "command": "true"}"#)
+        let plugin = try XCTUnwrap(store.load().plugins.first)
+        let before = try XCTUnwrap(store.fingerprint(for: plugin.id))
+        XCTAssertEqual(store.load().plugins.first.flatMap { store.fingerprint(for: $0.id) }, before, "nothing changed")
+        try write("one.json", #"{"name": "One", "command": "rm -rf ~/stuff"}"#)
+        XCTAssertNotEqual(store.load().plugins.first.flatMap { store.fingerprint(for: $0.id) }, before)
+
+        let plugins = folder.appendingPathComponent("tool", isDirectory: true)
+        try FileManager.default.createDirectory(at: plugins, withIntermediateDirectories: true)
+        try #"{"name": "Tool", "command": "./run.sh"}"#.write(to: plugins.appendingPathComponent("plugin.json"), atomically: true, encoding: .utf8)
+        try "echo safe\n".write(to: plugins.appendingPathComponent("run.sh"), atomically: true, encoding: .utf8)
+        let tool = try XCTUnwrap(store.load().plugins.first { $0.name == "Tool" })
+        let toolPrint = store.fingerprint(for: tool.id)
+        try "x".write(to: plugins.appendingPathComponent(".DS_Store"), atomically: true, encoding: .utf8)
+        _ = store.load()
+        XCTAssertEqual(store.fingerprint(for: tool.id), toolPrint, "hidden files don't count")
+        try "echo changed\n".write(to: plugins.appendingPathComponent("run.sh"), atomically: true, encoding: .utf8)
+        _ = store.load()
+        XCTAssertNotEqual(store.fingerprint(for: tool.id), toolPrint, "a changed script asks again")
+    }
+
+    func testSavingKeepsWhatTuttoDoesntUse() throws {
+        try write("rich.json", #"""
+        {"name": "Rich", "command": "true", "description": "Mine", "author": "me", "version": 3, "enabled": false,
+         "triggers": [{"on": "wake"}, {"on": "moon.rises", "phase": "full"}],
+         "settings": [{"key": "a", "type": "text"}, {"key": "b", "type": "hologram"}]}
+        """#)
+        let store = PluginStore(directory: folder, usesTrash: false)
+        var plugin = try XCTUnwrap(store.load().plugins.first)
+        plugin.command = "echo edited"
+        plugin.triggers.append(PluginTrigger(event: .sleep))
+        try store.save(plugin)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("rich.json"))) as? [String: Any])
+        XCTAssertEqual(object["description"] as? String, "Mine")
+        XCTAssertEqual(object["author"] as? String, "me")
+        XCTAssertEqual(object["version"] as? Int, 3)
+        XCTAssertEqual(object["enabled"] as? Bool, false, "on and off are Tutto's; the file's own word stays")
+        XCTAssertEqual(object["command"] as? String, "echo edited")
+        let triggers = try XCTUnwrap(object["triggers"] as? [[String: Any]])
+        XCTAssertEqual(triggers.compactMap { $0["on"] as? String }, ["wake", "sleep", "moon.rises"], "an unknown trigger is kept")
+        let settings = try XCTUnwrap(object["settings"] as? [[String: Any]])
+        XCTAssertEqual(settings.compactMap { $0["key"] as? String }, ["a", "b"], "an unknown setting is kept")
+        let reloaded = try XCTUnwrap(store.load().plugins.first)
+        XCTAssertEqual(reloaded.command, "echo edited")
+        XCTAssertEqual(reloaded.triggers, [PluginTrigger(event: .wake), PluginTrigger(event: .sleep)])
+    }
+
+    func testCardLinesAreScaledToTheirRange() {
+        var content = PluginWidgetContent(value: "x", series: [3, 4, 2, 5])
+        XCTAssertEqual(content.normalizedSeries(), [1.0 / 3, 2.0 / 3, 0, 1])
+        content.series = [7, 7, 7]
+        XCTAssertEqual(content.normalizedSeries(), [0.5, 0.5, 0.5])
+        content.series = (0..<120).map(Double.init)
+        XCTAssertEqual(content.normalizedSeries().count, 60)
+        XCTAssertEqual(content.normalizedSeries().first, 0)
+    }
+
+    func testAColourMatchesItselfOnceSaved() throws {
+        let picked = RGBA(0.123456, 0.654321, 0.999)
+        let spec = ThemeSpec(name: "Mine", accent: .color(picked.quantized))
+        let saved = try JSONDecoder().decode(ThemeSpec.self, from: JSONEncoder().encode(spec))
+        XCTAssertTrue(saved.looksLike(spec))
+    }
+
+    func testThemeFilesArentOverwrittenUnasked() throws {
+        let files = ThemeFiles(directory: folder, usesTrash: false)
+        try files.save(ThemeSpec(name: "Mine"))
+        XCTAssertThrowsError(try files.save(ThemeSpec(name: "Mine", accent: .mono)))
+        XCTAssertNoThrow(try files.save(ThemeSpec(name: "Mine", accent: .mono), replacing: true))
+    }
+
+    func testATimeoutStopsWhatTheCommandStartedToo() {
+        let marker = "31.\(Int.random(in: 100...999))"
+        let started = Date()
+        let result = PluginRunner.run("trap '' TERM; sleep \(marker) & trap '' TERM; wait", input: nil, timeout: 0.5)
+        XCTAssertTrue(result.timedOut)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 4)
+        let left = Process()
+        left.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        left.arguments = ["-f", "sleep \(marker)"]
+        left.standardOutput = FileHandle.nullDevice
+        try? left.run()
+        left.waitUntilExit()
+        XCTAssertNotEqual(left.terminationStatus, 0, "nothing it started is left running")
+    }
+
+    func testSomethingLeftRunningInTheBackgroundDoesntHoldTheRun() {
+        let marker = "32.\(Int.random(in: 100...999))"
+        let started = Date()
+        let result = PluginRunner.run("sleep \(marker) & echo hi", input: nil, timeout: 10)
+        XCTAssertTrue(result.succeeded)
+        XCTAssertEqual(result.output.trimmingCharacters(in: .whitespacesAndNewlines), "hi")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+        _ = try? Process.run(URL(fileURLWithPath: "/usr/bin/pkill"), arguments: ["-f", "sleep \(marker)"])
+    }
+}

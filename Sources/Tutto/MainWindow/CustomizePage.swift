@@ -300,6 +300,10 @@ struct ArrangementEditor: View {
         }
         .onDrag {
             dragging = item.id
+            DragWatch.whenReleased {
+                dragging = nil
+                target = nil
+            }
             return NSItemProvider(object: item.id as NSString)
         }
         .onDrop(of: [.plainText], delegate: RowDrop(item: item.id, available: available, dragging: $dragging, target: $target, change: change))

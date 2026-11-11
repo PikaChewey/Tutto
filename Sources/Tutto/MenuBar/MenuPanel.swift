@@ -149,6 +149,10 @@ private struct Editable<Content: View>: View {
                         .onDrag {
                             editing.dragging = id
                             editing.selected = id
+                            DragWatch.whenReleased {
+                                editing.dragging = nil
+                                editing.target = nil
+                            }
                             return NSItemProvider(object: id as NSString)
                         }
                         .onDrop(of: [.plainText], delegate: CardDrop(id: id, editing: editing))
@@ -157,6 +161,19 @@ private struct Editable<Content: View>: View {
                 .animation(Motion.micro, value: editing.selected)
         } else {
             content
+        }
+    }
+}
+
+/// SwiftUI says nothing when a drag is cancelled: this clears a drag's state once the mouse
+/// button is up again (after a drop it's already clear).
+@MainActor
+enum DragWatch {
+    static func whenReleased(_ action: @escaping @MainActor () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            MainActor.assumeIsolated {
+                if NSEvent.pressedMouseButtons & 1 == 0 { action() } else { whenReleased(action) }
+            }
         }
     }
 }
@@ -644,6 +661,7 @@ private struct StatTile<Graph: View>: View {
                         .font(.system(size: 10.5).monospacedDigit())
                         .foregroundStyle(Color.ink3)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
                 HStack(alignment: .bottom, spacing: 6) {
                     // A word unit (GB, KB/s) gets a little air; % and °C sit close.
@@ -1377,7 +1395,7 @@ private struct PluginCard: View {
     @ViewBuilder
     private func graph(_ content: PluginWidgetContent?, alert: Bool) -> some View {
         if let content, content.series.count >= 2 {
-            Sparkline(values: content.series, color: alert ? .alert : .themeAccent, stretch: true)
+            Sparkline(values: content.normalizedSeries(), color: alert ? .alert : .themeAccent, stretch: true)
         } else if let progress = content?.progress {
             Meter(value: progress, height: 4, alert: alert, fill: .themeAccent, track: Color.ink.opacity(0.1))
                 .frame(height: 4)

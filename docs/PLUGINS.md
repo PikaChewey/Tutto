@@ -29,11 +29,11 @@ A plugin is a `.json` file in `~/Library/Application Support/Tutto/Plugins`, or 
 | `command` | The action: what runs from its shortcut, its tile in the tools row, Run, a link or a trigger. It runs with `zsh -l -c` (your PATH, as in Terminal) in your home folder, or in a folder plugin's own folder. |
 | `input` | `none`, or `clipboard` (the clipboard's text arrives on standard input). |
 | `output` | `notice` (its first lines in a toast), `clipboard` (what it prints replaces the clipboard; printing nothing leaves the clipboard alone) or `silent`. |
-| `timeout` | Seconds before it's stopped (1–600, default 30). Output is capped at 64 KB. |
+| `timeout` | Seconds before it's stopped (1–600, default 30), along with anything it started. Output is capped at 64 KB. |
 | `widget` | A card on the panel; see below. |
 | `triggers` | Events that run the action by themselves; see below. |
 | `settings` | Fields it asks for; see below. |
-| `enabled` | `false` switches it off. |
+| `enabled` | `false` makes it start switched off. After that, Tutto keeps your switch itself and never rewrites the file for it. |
 
 ### Cards
 
@@ -57,10 +57,11 @@ The card's `command` prints what the card shows:
 | `url` | Opened when the card is clicked. Without one, a click runs the plugin's command, or refreshes the card if it has no command. |
 
 When to run it:
-- `every` sets the seconds between runs while the card is on screen (at least 2).
+- `every` sets the seconds between runs while the card is on screen (2 s to a day).
 - The card refreshes as soon as it appears if its value is older than that.
-- `"background": true` keeps it fresh with the panel closed, at most every 10 s. Use this only when an automation needs it.
+- `"background": true` keeps watching the card with the panel closed (runs at least 10 s apart) and tells you when it turns to `alert`, like a server going down. It costs a little battery.
 - `size` is the card's starting size; you can change it on the Customize page.
+- A `series` is drawn scaled to its own lowest and highest values, and only the last 60 points.
 
 A card that fails shows the reason (the first line of its errors, or its exit code) instead of a stale value.
 
@@ -84,7 +85,7 @@ A card that fails shows the reason (the first line of its errors, or its exit co
 | `custom` | `"name"` | the `info` sent |
 
 How each kind behaves:
-- **Custom events** come from anything that can open a link: a script, a build, a coding agent's hook.
+- **Custom events** come from anything that can open a link: a script, a build, a coding agent's hook. A web page can open the link too, after your browser asks, so treat `$TUTTO_EVENT_INFO` as untrusted text: quote it, and put `--` before it in commands (`say -- "$TUTTO_EVENT_INFO"`).
 
   ```bash
   open -g "tutto://do/event?name=build-done&info=tests%20passed"
@@ -116,7 +117,7 @@ Tutto watches for an event only while a plugin that's on asks for it. With no pl
 
 | Variable | |
 |---|---|
-| `TUTTO_REASON` | `run` (button, shortcut, tile), `link`, `widget`, `trigger` or `test` (Try It) |
+| `TUTTO_REASON` | `run` (button, shortcut, tile), `link` (`tutto://do/plugin`), `widget`, `trigger` or `test` (Try It) |
 | `TUTTO_EVENT`, `TUTTO_EVENT_INFO` | for a trigger, the event and its details |
 | `TUTTO_PLUGIN`, `TUTTO_PLUGIN_ID` | its name and id |
 | `TUTTO_PLUGIN_DIR` | a folder plugin's folder |
@@ -133,7 +134,11 @@ The link reads the folder first, so a plugin you just wrote runs as it is now.
 ### Safety
 
 - Commands run as you, like any script you run yourself.
-- A plugin that turns up in the folder (one you didn't make in Tutto) starts **switched off**, with a "New" label, until you've looked at what it runs and switched it on. Plugins you make or edit in Tutto are on.
+- A plugin that turns up in the folder (one you didn't make in Tutto) starts **switched off**, with a "New" label, until you've looked at what it runs and switched it on.
+- An approval is for the plugin exactly as it was. If its file, or a folder plugin's scripts, change on disk, it shows "Changed" and waits for you again. Plugins you make or save in Tutto are approved as saved.
+- Two files that claim the same id are both left out, so neither can stand in for the other.
+- Saving a plugin from Tutto keeps everything in its file that Tutto doesn't use: a description, an author, triggers or settings this version can't read.
+- A copy marked private (a password manager's) never reaches a plugin's input, and is never replaced by a plugin's output.
 - A deleted plugin goes to the Trash, along with its settings, its secrets and its shortcut.
 
 ### Templates

@@ -58,11 +58,15 @@ public struct ScriptPlugin: Codable, Identifiable, Equatable, Sendable {
             self.background = background
         }
 
+        /// The longest gap between runs: a day.
+        public static let longest: Double = 86_400
+
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             command = try c.decode(String.self, forKey: .command)
-            every = (try? c.decodeIfPresent(Double.self, forKey: .every)) ?? 30
-            size = (try? c.decodeIfPresent(WidgetSize.self, forKey: .size)) ?? .small
+            let every = (try? c.decodeIfPresent(Double.self, forKey: .every)) ?? 30
+            self.every = every.isFinite ? min(max(every, Self.shortest), Self.longest) : 30
+            size = ((try? c.decodeIfPresent(String.self, forKey: .size)) ?? nil).flatMap { WidgetSize(rawValue: $0.lowercased()) } ?? .small
             background = (try? c.decodeIfPresent(Bool.self, forKey: .background)) ?? false
         }
 
@@ -108,22 +112,27 @@ public struct ScriptPlugin: Codable, Identifiable, Equatable, Sendable {
         self.settings = settings
     }
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id, name, symbol, command, input, output, enabled, timeout, widget, triggers, settings
+
+        /// Tutto's own keys in a plugin's file ("enabled" stays as written: Tutto keeps on and off itself).
+        static var allKeys: [String] { allCases.filter { $0 != .enabled }.map(\.rawValue) }
     }
 
     /// Hand-written files need only a name and a command (or a widget). A trigger or setting this
     /// Tutto doesn't know is skipped, not fatal.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        // A missing, null or malformed id gets one from the file's name when the folder is read.
+        id = ((try? c.decodeIfPresent(UUID.self, forKey: .id)) ?? nil) ?? UUID()
         name = try c.decode(String.self, forKey: .name)
         command = try c.decodeIfPresent(String.self, forKey: .command) ?? ""
         symbol = try c.decodeIfPresent(String.self, forKey: .symbol) ?? Self.defaultSymbol
-        input = try c.decodeIfPresent(Input.self, forKey: .input) ?? .none
-        output = try c.decodeIfPresent(Output.self, forKey: .output) ?? .notice
-        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
-        timeout = try c.decodeIfPresent(Double.self, forKey: .timeout) ?? 30
+        input = ((try? c.decodeIfPresent(String.self, forKey: .input)) ?? nil).flatMap { Input(rawValue: $0.lowercased()) } ?? .none
+        output = ((try? c.decodeIfPresent(String.self, forKey: .output)) ?? nil).flatMap { Output(rawValue: $0.lowercased()) } ?? .notice
+        enabled = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? true
+        let timeout = (try? c.decodeIfPresent(Double.self, forKey: .timeout)) ?? 30
+        self.timeout = timeout.isFinite ? min(max(timeout, 1), Self.longestTimeout) : 30
         widget = try c.decodeIfPresent(Widget.self, forKey: .widget)
         triggers = ((try? c.decodeIfPresent([Lenient<PluginTrigger>].self, forKey: .triggers)) ?? []).compactMap(\.value)
         settings = ((try? c.decodeIfPresent([Lenient<PluginSetting>].self, forKey: .settings)) ?? []).compactMap(\.value)
@@ -142,7 +151,6 @@ public struct ScriptPlugin: Codable, Identifiable, Equatable, Sendable {
             try c.encode(input, forKey: .input)
             try c.encode(output, forKey: .output)
         }
-        try c.encode(enabled, forKey: .enabled)
         try c.encode(timeout, forKey: .timeout)
         try c.encodeIfPresent(widget, forKey: .widget)
         if !triggers.isEmpty { try c.encode(triggers, forKey: .triggers) }
@@ -251,7 +259,7 @@ public struct ScriptPlugin: Codable, Identifiable, Equatable, Sendable {
                      command: "echo \"Time to stand up and stretch\"", output: .notice,
                      triggers: [PluginTrigger(event: .every, minutes: 50)]),
         ScriptPlugin(name: "Build Finished", symbol: "hammer",
-                     command: "say \"${TUTTO_EVENT_INFO:-Build finished}\"", output: .silent,
+                     command: "say -- \"${TUTTO_EVENT_INFO:-Build finished}\"", output: .silent,
                      triggers: [PluginTrigger(event: .custom, name: "build-done")]),
     ]
 
@@ -274,13 +282,18 @@ struct Lenient<T: Decodable>: Decodable {
 
 // MARK: - Files
 
-/// Plugins as JSON files in a folder: one file each.
+/// Plugins as JSON files in a folder: one file each, or a folder with a plugin.json.
 public final class PluginStore: @unchecked Sendable {
     public let directory: URL
     /// Where each plugin was read from or written to.
     private var files: [UUID: URL] = [:]
     /// The folder of a plugin that has one (its commands run there).
     private var folders: [UUID: URL] = [:]
+    /// Each file as it was read, so a save keeps what Tutto doesn't use (a description, an author,
+    /// a trigger this version doesn't know).
+    private var originals: [UUID: [String: Any]] = [:]
+    /// A digest of each plugin's file (and a folder plugin's other files), for approvals.
+    private var fingerprints: [UUID: String] = [:]
     private let lock = NSLock()
 
     /// Deleting moves to the Trash (tests delete outright).
@@ -298,7 +311,8 @@ public final class PluginStore: @unchecked Sendable {
     }
 
     /// Every plugin in the folder, by name, and a line for each file that couldn't be read. A
-    /// plugin is a .json file, or a folder with a plugin.json (and the scripts it runs).
+    /// plugin is a .json file, or a folder with a plugin.json (and the scripts it runs). Files
+    /// that claim the same id are all left out: neither can stand in for the other.
     public func load() -> (plugins: [ScriptPlugin], problems: [String]) {
         let urls = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
         var candidates: [(file: URL, name: String, folder: URL?)] = []
@@ -312,46 +326,85 @@ public final class PluginStore: @unchecked Sendable {
                 candidates.append((url, url.lastPathComponent, nil))
             }
         }
-        var plugins: [ScriptPlugin] = []
+        var read: [(plugin: ScriptPlugin, file: URL, name: String, folder: URL?, object: [String: Any], data: Data)] = []
         var problems: [String] = []
-        var found: [UUID: URL] = [:]
-        var folders: [UUID: URL] = [:]
         for candidate in candidates {
-            do {
-                let data = try Data(contentsOf: candidate.file)
-                var plugin = try JSONDecoder().decode(ScriptPlugin.self, from: data)
-                // A hand-written file without an id gets one from its name, the same every time.
-                if (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["id"] == nil {
-                    plugin.id = Self.stableID(for: candidate.name)
-                }
-                guard found[plugin.id] == nil else {
-                    problems.append("\(candidate.name): the same id as \(found[plugin.id]!.lastPathComponent)")
-                    continue
-                }
-                found[plugin.id] = candidate.file
-                folders[plugin.id] = candidate.folder
-                plugins.append(plugin)
-            } catch {
+            guard let data = try? Data(contentsOf: candidate.file),
+                  let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  var plugin = try? JSONDecoder().decode(ScriptPlugin.self, from: data) else {
                 problems.append("\(candidate.name): needs at least a \"name\" and a \"command\" (or a \"widget\")")
+                continue
             }
+            // A file without a usable id gets one from its name, the same every time.
+            if (object["id"] as? String).flatMap(UUID.init(uuidString:)) == nil {
+                plugin.id = Self.stableID(for: candidate.name)
+            }
+            read.append((plugin, candidate.file, candidate.name, candidate.folder, object, data))
+        }
+        let counts = Dictionary(grouping: read, by: { $0.plugin.id }).mapValues(\.count)
+        var plugins: [ScriptPlugin] = []
+        var found: [UUID: URL] = [:], folders: [UUID: URL] = [:], originals: [UUID: [String: Any]] = [:], prints: [UUID: String] = [:]
+        for entry in read {
+            guard counts[entry.plugin.id] == 1 else {
+                let others = read.filter { $0.plugin.id == entry.plugin.id && $0.name != entry.name }.map(\.name)
+                problems.append("\(entry.name): the same id as \(others.joined(separator: ", ")), so neither is used")
+                continue
+            }
+            found[entry.plugin.id] = entry.file
+            folders[entry.plugin.id] = entry.folder
+            originals[entry.plugin.id] = entry.object
+            prints[entry.plugin.id] = Self.fingerprint(manifest: entry.data, folder: entry.folder)
+            plugins.append(entry.plugin)
         }
         lock.withLock {
             files = found
             self.folders = folders
+            self.originals = originals
+            fingerprints = prints
         }
         return (plugins.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }, problems)
     }
 
-    /// Writes the plugin to its file (a new one gets a file named after it).
+    /// Writes the plugin to its file (a new one gets a file named after it). What was in the file
+    /// that Tutto doesn't use stays: other keys, and triggers or settings this version can't read.
     @discardableResult
     public func save(_ plugin: ScriptPlugin) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = lock.withLock { files[plugin.id] } ?? newFile(for: plugin.name)
+        let (existing, original, folder) = lock.withLock { (files[plugin.id], originals[plugin.id], folders[plugin.id]) }
+        let url = existing ?? newFile(for: plugin.name)
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try encoder.encode(plugin).write(to: url, options: .atomic)
-        lock.withLock { files[plugin.id] = url }
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        var object = (try JSONSerialization.jsonObject(with: encoder.encode(plugin)) as? [String: Any]) ?? [:]
+        if var merged = original {
+            // Tutto's own keys come from the plugin as edited; everything else is kept.
+            for key in ScriptPlugin.CodingKeys.allKeys { merged[key] = nil }
+            for key in ["triggers", "settings"] {
+                let unread = Self.unreadable(original?[key], as: key)
+                if !unread.isEmpty { object[key] = ((object[key] as? [Any]) ?? []) + unread }
+            }
+            merged.merge(object) { _, new in new }
+            object = merged
+        }
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        try data.write(to: url, options: .atomic)
+        lock.withLock {
+            files[plugin.id] = url
+            originals[plugin.id] = object
+            fingerprints[plugin.id] = Self.fingerprint(manifest: data, folder: folder)
+        }
         return url
+    }
+
+    /// Entries of a list that this Tutto can't read (kept as they were when the plugin is saved).
+    private static func unreadable(_ value: Any?, as key: String) -> [Any] {
+        guard let list = value as? [Any] else { return [] }
+        return list.filter { entry in
+            guard let data = try? JSONSerialization.data(withJSONObject: entry) else { return false }
+            switch key {
+            case "triggers": return (try? JSONDecoder().decode(PluginTrigger.self, from: data)) == nil
+            default: return (try? JSONDecoder().decode(PluginSetting.self, from: data)) == nil
+            }
+        }
     }
 
     /// Moves the plugin's file (or its folder) to the Trash.
@@ -366,6 +419,8 @@ public final class PluginStore: @unchecked Sendable {
         lock.withLock {
             files[plugin.id] = nil
             folders[plugin.id] = nil
+            originals[plugin.id] = nil
+            fingerprints[plugin.id] = nil
         }
     }
 
@@ -373,6 +428,37 @@ public final class PluginStore: @unchecked Sendable {
 
     /// The plugin's own folder, when it's a folder plugin.
     public func folder(for plugin: ScriptPlugin) -> URL? { lock.withLock { folders[plugin.id] } }
+
+    /// A digest of what the plugin is now: its file, and a folder plugin's other files. An
+    /// approval holds for this exact content; anything changed on disk asks again.
+    public func fingerprint(for id: UUID) -> String? { lock.withLock { fingerprints[id] } }
+
+    static func fingerprint(manifest: Data, folder: URL?) -> String {
+        var hash = SHA256()
+        hash.update(data: manifest)
+        if let folder {
+            let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+            let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])
+            var entries: [(String, URL, Int, Date?)] = []
+            while let url = walker?.nextObject() as? URL {
+                guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true,
+                      url.lastPathComponent != "plugin.json" || url.deletingLastPathComponent().standardizedFileURL != folder.standardizedFileURL else { continue }
+                let relative = String(url.standardizedFileURL.path.dropFirst(folder.standardizedFileURL.path.count))
+                entries.append((relative, url, values.fileSize ?? 0, values.contentModificationDate))
+                if entries.count > 2_000 { break }
+            }
+            for (relative, url, size, modified) in entries.sorted(by: { $0.0 < $1.0 }) {
+                hash.update(data: Data(relative.utf8))
+                // Scripts are read whole; anything big counts by its size and date.
+                if size <= 1_048_576, let data = try? Data(contentsOf: url) {
+                    hash.update(data: data)
+                } else {
+                    hash.update(data: Data("\(size)|\(modified?.timeIntervalSince1970 ?? 0)".utf8))
+                }
+            }
+        }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
+    }
 
     private func newFile(for name: String) -> URL {
         let slug = Self.slug(name)
@@ -448,24 +534,29 @@ public enum PluginRunner {
 
         let finished = DispatchSemaphore(value: 0)
         process.terminationHandler = { _ in finished.signal() }
+        // Output arrives through readability handlers (no thread waits on a pipe), so a command
+        // that leaves something running in the background, holding the pipes open, costs nothing
+        // once it has exited.
         let out = Collector(), err = Collector()
-        let reading = DispatchGroup()
+        let ended = DispatchSemaphore(value: 0)
         for (pipe, collector) in [(stdout, out), (stderr, err)] {
-            reading.enter()
-            DispatchQueue.global(qos: .utility).async {
-                while true {
-                    let chunk = pipe.fileHandleForReading.availableData
-                    if chunk.isEmpty { break }
+            pipe.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                if chunk.isEmpty {
+                    handle.readabilityHandler = nil
+                    ended.signal()
+                } else {
                     collector.append(chunk, limit: outputLimit)
                 }
-                reading.leave()
             }
         }
         do {
             try process.run()
         } catch {
+            for pipe in [stdout, stderr] { pipe.fileHandleForReading.readabilityHandler = nil }
             return PluginResult(status: -1, output: "", errors: error.localizedDescription, timedOut: false, seconds: 0)
         }
+        let pid = process.processIdentifier
         if let stdin {
             let handle = stdin.fileHandleForWriting
             // A command that exits without reading its input mustn't take Tutto with it: a write to
@@ -479,13 +570,24 @@ public enum PluginRunner {
         var timedOut = false
         if finished.wait(timeout: .now() + max(timeout, 0.1)) == .timedOut {
             timedOut = true
+            // The shell leads its own process group: stop everything it started, then make sure.
+            kill(-pid, SIGTERM)
             process.terminate()
             if finished.wait(timeout: .now() + 1) == .timedOut {
-                kill(process.processIdentifier, SIGKILL)
+                kill(-pid, SIGKILL)
+                kill(pid, SIGKILL)
                 _ = finished.wait(timeout: .now() + 1)
             }
         }
-        _ = reading.wait(timeout: .now() + 1)
+        // Whatever the command printed last, unless something it left running holds the pipes:
+        // then stop listening after a moment.
+        let deadline = DispatchTime.now() + 1
+        for _ in 0..<2 {
+            if ended.wait(timeout: deadline) == .timedOut { break }
+        }
+        // Not closed here: a handler still running holds its handle, and the pipes close when
+        // the last of them lets go.
+        for pipe in [stdout, stderr] { pipe.fileHandleForReading.readabilityHandler = nil }
         return PluginResult(status: process.isRunning ? -1 : process.terminationStatus,
                             output: out.text, errors: err.text, timedOut: timedOut,
                             seconds: Date().timeIntervalSince(started))

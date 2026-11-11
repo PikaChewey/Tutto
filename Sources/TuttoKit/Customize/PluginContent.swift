@@ -73,6 +73,15 @@ public struct PluginWidgetContent: Equatable, Sendable {
     public static let maxItems = 8
     public static let maxSeries = 120
 
+    /// The series as a line draws it: the last `points` values, scaled from their own lowest to
+    /// highest (a flat series sits in the middle).
+    public func normalizedSeries(points: Int = 60) -> [Double] {
+        let values = Array(series.suffix(points))
+        guard let low = values.min(), let high = values.max() else { return [] }
+        guard high > low else { return values.map { _ in 0.5 } }
+        return values.map { ($0 - low) / (high - low) }
+    }
+
     /// What the card shows for this output.
     public static func parse(_ output: String) -> PluginWidgetContent {
         let text = output.trimmingCharacters(in: .whitespacesAndNewlines)

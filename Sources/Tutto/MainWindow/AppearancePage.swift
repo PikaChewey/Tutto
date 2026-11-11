@@ -140,7 +140,7 @@ struct AppearancePage: View {
                     }
                 }
                 ColorPicker("Any colour", selection: Binding(get: { customColor }, set: { color in
-                    set { $0.accent = .color(RGBA(color).withAlpha(1)) }
+                    set { $0.accent = .color(RGBA(color).withAlpha(1).quantized) }
                 }), supportsOpacity: false)
                 .labelsHidden()
                 .controlSize(.small)
@@ -208,7 +208,7 @@ struct AppearancePage: View {
             let card = (palette.card ?? ink.withAlpha(palette.cardFill)).over(palette.background)
             fixed = fixed.adjusted(toContrast: 3.1, against: card)
         }
-        set { $0.accent = .color(fixed.withAlpha(1)) }
+        set { $0.accent = .color(fixed.withAlpha(1).quantized) }
     }
 
     // MARK: Files
@@ -230,7 +230,7 @@ struct AppearancePage: View {
                     }
                 } else {
                     Button("Save as Theme…") {
-                        name = theme.matching.map { "My \($0.name)" } ?? "My Theme"
+                        name = freeName(theme.matching.map { "My \($0.name)" } ?? "My Theme")
                         naming = true
                     }
                     .buttonStyle(OutlineButtonStyle(compact: true))
@@ -256,6 +256,13 @@ struct AppearancePage: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }
+    }
+
+    /// The name, or the name with a number, so it doesn't take another theme's.
+    private func freeName(_ base: String) -> String {
+        let taken = Set((ThemeSpec.builtIn + theme.files.map(\.spec)).map { $0.name.lowercased() })
+        guard taken.contains(base.lowercased()) else { return base }
+        return (2...99).map { "\(base) \($0)" }.first { !taken.contains($0.lowercased()) } ?? base
     }
 
     private func save() {

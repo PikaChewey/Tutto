@@ -46,6 +46,12 @@ public struct RGBA: Equatable, Hashable, Sendable {
 
     public func withAlpha(_ alpha: Double) -> RGBA { RGBA(red, green, blue, alpha) }
 
+    /// Rounded to what "#RRGGBBAA" holds, so a colour picked on screen equals itself once saved.
+    public var quantized: RGBA {
+        func q(_ v: Double) -> Double { (v * 255).rounded() / 255 }
+        return RGBA(q(red), q(green), q(blue), q(alpha))
+    }
+
     /// This colour laid over an opaque `background`.
     public func over(_ background: RGBA) -> RGBA {
         RGBA(red * alpha + background.red * (1 - alpha),
@@ -414,11 +420,19 @@ public struct ThemeFiles: Sendable {
         return (themes.sorted { $0.0.name.localizedCaseInsensitiveCompare($1.0.name) == .orderedAscending }, problems)
     }
 
-    /// Writes a theme to a file named after it (replacing a theme file of the same name).
+    /// The file a theme of this name is saved to.
+    public func url(for name: String) -> URL {
+        directory.appendingPathComponent(PluginStore.slug(name) + ".json")
+    }
+
+    /// Writes a theme to a file named after it (replacing the file only when asked).
     @discardableResult
-    public func save(_ spec: ThemeSpec) throws -> URL {
+    public func save(_ spec: ThemeSpec, replacing: Bool = false) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appendingPathComponent(PluginStore.slug(spec.name) + ".json")
+        let url = url(for: spec.name)
+        if !replacing, FileManager.default.fileExists(atPath: url.path) {
+            throw CocoaError(.fileWriteFileExists, userInfo: [NSLocalizedDescriptionKey: "You already have a theme called “\(spec.name)”: pick another name."])
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try encoder.encode(spec).write(to: url, options: .atomic)

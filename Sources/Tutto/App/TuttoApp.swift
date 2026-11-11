@@ -186,9 +186,9 @@ enum DeepLinks {
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let wanted = items.first { $0.name == "name" }?.value ?? url.pathComponents.dropFirst(2).first
             if let id = items.first(where: { $0.name == "id" })?.value.flatMap(UUID.init(uuidString:)) {
-                model.plugins.run(id)
+                model.plugins.run(id, reason: .link)
             } else if let wanted, let plugin = model.plugins.plugin(named: wanted) {
-                model.plugins.run(plugin)
+                model.plugins.run(plugin, reason: .link)
             } else {
                 Toast.shared.show("No plugin called “\(wanted ?? "")”", detail: "See Tutto › Plugins.", duration: 2.5)
             }

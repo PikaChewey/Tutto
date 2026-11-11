@@ -23,9 +23,12 @@ final class PluginHost {
     private var shown: [UUID: Int] = [:]
     private var cardTimers: [UUID: (interval: Double, timer: DispatchSourceTimer)] = [:]
 
-    // Events
-    private var watching: Set<PluginEvent> = []
-    private var tokens: [(center: NotificationCenter, token: NSObjectProtocol)] = []
+    // Events: each source running, with how to stop it.
+    private enum Source: Hashable, CaseIterable {
+        case wake, sleep, lock, unlock, appLaunched, appQuit, appActivated, power, clipboard, network, display, agents
+    }
+
+    private var active: [Source: () -> Void] = [:]
     private var powerSource: CFRunLoopSource?
     private var lastPower: (onBattery: Bool, charge: Int?)?
     private var batteryWatches: [String: BatteryWatch] = [:]
@@ -44,15 +47,24 @@ final class PluginHost {
     /// Agents count as finished after this long without a sign of work (and no busy build).
     static let agentsQuietAfter: TimeInterval = 180
 
-    /// Follows the plugins: what's watched, what's scheduled, which cards refresh.
+    /// Follows the plugins: what's watched, what's scheduled, which cards refresh. A source that
+    /// stays wanted keeps running (and keeps what it knows: a battery already below a threshold,
+    /// agents already at work).
     func refresh() {
-        let active = plugins.plugins.filter { plugins.isOn($0) }
-        let triggered = active.filter(\.hasAction)
-        let wanted = Set(triggered.flatMap { $0.triggers.map(\.event) })
-        if wanted != watching { watch(wanted) }
+        let on = plugins.plugins.filter { plugins.isOn($0) }
+        let triggered = on.filter(\.hasAction)
+        let wanted = Self.sources(for: Set(triggered.flatMap { $0.triggers.map(\.event) }))
+        let running = Set(active.keys)
+        for source in running.subtracting(wanted) { active.removeValue(forKey: source)?() }
+        for source in wanted.subtracting(running) { active[source] = start(source) }
+        if wanted != running {
+            pluginLog.notice("watching \(wanted.map { "\($0)" }.sorted().joined(separator: ", "), privacy: .public)")
+        }
+        // Battery thresholds of triggers that are gone are forgotten.
+        let keys = Set(triggered.flatMap { plugin in plugin.triggers.indices.map { "\(plugin.id.uuidString)#\($0)" } })
+        batteryWatches = batteryWatches.filter { keys.contains($0.key) }
         reschedule(triggered)
-        refreshCardTimers(active)
-        AppModel.shared.awake?.onPluginEvent = { [weak self] event, info in self?.fire(event, info: info) }
+        refreshCardTimers(on)
         if !launched {
             launched = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
@@ -129,72 +141,76 @@ final class PluginHost {
 
     // MARK: Sources
 
-    private func watch(_ wanted: Set<PluginEvent>) {
-        stopWatching()
-        watching = wanted
+    private static func sources(for events: Set<PluginEvent>) -> Set<Source> {
+        var sources = Set<Source>()
+        let map: [(PluginEvent, Source)] = [(.wake, .wake), (.sleep, .sleep), (.lock, .lock), (.unlock, .unlock),
+                                            (.appLaunched, .appLaunched), (.appQuit, .appQuit), (.appActivated, .appActivated),
+                                            (.powerConnected, .power), (.powerDisconnected, .power), (.batteryBelow, .power),
+                                            (.clipboardChanged, .clipboard), (.networkChanged, .network),
+                                            (.displayChanged, .display), (.agentsStarted, .agents), (.agentsFinished, .agents)]
+        for (event, source) in map where events.contains(event) { sources.insert(source) }
+        return sources
+    }
+
+    /// Starts a source; returns how to stop it.
+    private func start(_ source: Source) -> () -> Void {
         let workspace = NSWorkspace.shared.notificationCenter
         let distributed = DistributedNotificationCenter.default()
-        func on(_ center: NotificationCenter, _ name: Notification.Name, _ handle: @escaping @MainActor () -> Void) {
-            tokens.append((center, center.addObserver(forName: name, object: nil, queue: .main) { _ in
-                MainActor.assumeIsolated { handle() }
-            }))
-        }
-        func onApp(_ name: Notification.Name, _ event: PluginEvent) {
-            tokens.append((workspace, workspace.addObserver(forName: name, object: nil, queue: .main) { note in
-                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-                let bundle = app?.bundleIdentifier, appName = app?.localizedName
-                MainActor.assumeIsolated { [weak self] in self?.appEvent(event, bundle: bundle, name: appName) }
-            }))
-        }
-        if wanted.contains(.wake) {
-            on(workspace, NSWorkspace.didWakeNotification) { [weak self] in self?.fire(.wake) }
-        }
-        if wanted.contains(.sleep) {
-            on(workspace, NSWorkspace.willSleepNotification) { [weak self] in self?.fire(.sleep) }
-        }
-        if wanted.contains(.lock) {
-            on(distributed, Notification.Name("com.apple.screenIsLocked")) { [weak self] in self?.fire(.lock) }
-        }
-        if wanted.contains(.unlock) {
-            on(distributed, Notification.Name("com.apple.screenIsUnlocked")) { [weak self] in self?.fire(.unlock) }
-        }
-        if wanted.contains(.appLaunched) { onApp(NSWorkspace.didLaunchApplicationNotification, .appLaunched) }
-        if wanted.contains(.appQuit) { onApp(NSWorkspace.didTerminateApplicationNotification, .appQuit) }
-        if wanted.contains(.appActivated) { onApp(NSWorkspace.didActivateApplicationNotification, .appActivated) }
-        if !wanted.isDisjoint(with: [.powerConnected, .powerDisconnected, .batteryBelow]) { startPower() }
-        if wanted.contains(.clipboardChanged) { startClipboard() }
-        if wanted.contains(.networkChanged) { startNetwork() }
-        if wanted.contains(.displayChanged) {
+        switch source {
+        case .wake: return observe(workspace, NSWorkspace.didWakeNotification) { [weak self] in self?.fire(.wake) }
+        case .sleep: return observe(workspace, NSWorkspace.willSleepNotification) { [weak self] in self?.fire(.sleep) }
+        case .lock: return observe(distributed, Notification.Name("com.apple.screenIsLocked")) { [weak self] in self?.fire(.lock) }
+        case .unlock: return observe(distributed, Notification.Name("com.apple.screenIsUnlocked")) { [weak self] in self?.fire(.unlock) }
+        case .appLaunched: return observeApps(NSWorkspace.didLaunchApplicationNotification, .appLaunched)
+        case .appQuit: return observeApps(NSWorkspace.didTerminateApplicationNotification, .appQuit)
+        case .appActivated: return observeApps(NSWorkspace.didActivateApplicationNotification, .appActivated)
+        case .power:
+            startPower()
+            return { [weak self] in self?.stopPower() }
+        case .clipboard:
+            startClipboard()
+            return { [weak self] in
+                self?.clipboardTimer?.cancel()
+                self?.clipboardTimer = nil
+            }
+        case .network:
+            startNetwork()
+            return { [weak self] in
+                self?.pathMonitor?.cancel()
+                self?.pathMonitor = nil
+                self?.lastNetwork = nil
+                self?.networkDebounce?.cancel()
+            }
+        case .display:
             screenCount = NSScreen.screens.count
-            on(NotificationCenter.default, NSApplication.didChangeScreenParametersNotification) { [weak self] in self?.screensChanged() }
-        }
-        if !wanted.isDisjoint(with: [.agentsStarted, .agentsFinished]) { startAgents() }
-        if !wanted.isEmpty {
-            pluginLog.notice("watching \(wanted.map(\.rawValue).sorted().joined(separator: ", "), privacy: .public)")
+            return observe(NotificationCenter.default, NSApplication.didChangeScreenParametersNotification) { [weak self] in self?.screensChanged() }
+        case .agents:
+            startAgents()
+            return { [weak self] in
+                self?.agentWatcher?.stop()
+                self?.agentWatcher = nil
+                self?.agentsQuiet?.cancel()
+                self?.agentsQuiet = nil
+                self?.agentsSince = nil
+            }
         }
     }
 
-    private func stopWatching() {
-        for entry in tokens { entry.center.removeObserver(entry.token) }
-        tokens.removeAll()
-        if let powerSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), powerSource, .commonModes)
-            self.powerSource = nil
+    private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ handle: @escaping @MainActor () -> Void) -> () -> Void {
+        let token = center.addObserver(forName: name, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { handle() }
         }
-        lastPower = nil
-        batteryWatches.removeAll()
-        pathMonitor?.cancel()
-        pathMonitor = nil
-        lastNetwork = nil
-        networkDebounce?.cancel()
-        clipboardTimer?.cancel()
-        clipboardTimer = nil
-        agentWatcher?.stop()
-        agentWatcher = nil
-        agentsQuiet?.cancel()
-        agentsQuiet = nil
-        agentsSince = nil
-        watching = []
+        return { center.removeObserver(token) }
+    }
+
+    private func observeApps(_ name: Notification.Name, _ event: PluginEvent) -> () -> Void {
+        let workspace = NSWorkspace.shared.notificationCenter
+        let token = workspace.addObserver(forName: name, object: nil, queue: .main) { note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            let bundle = app?.bundleIdentifier, appName = app?.localizedName
+            MainActor.assumeIsolated { [weak self] in self?.appEvent(event, bundle: bundle, name: appName) }
+        }
+        return { workspace.removeObserver(token) }
     }
 
     private func appEvent(_ event: PluginEvent, bundle: String?, name: String?) {
@@ -213,6 +229,12 @@ final class PluginHost {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         powerSource = source
         powerChanged()
+    }
+
+    private func stopPower() {
+        if let powerSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), powerSource, .commonModes) }
+        powerSource = nil
+        lastPower = nil
     }
 
     private func powerChanged() {
@@ -249,7 +271,9 @@ final class PluginHost {
         let count = pasteboard.changeCount
         guard count != lastPasteboard else { return }
         lastPasteboard = count
-        guard count != plugins.ownPasteboardChange else { return }
+        // Tutto's own copies, and any copy made while one of your plugins runs (a plugin that
+        // copies with pbcopy), don't set off "You copy something".
+        guard count != plugins.ownPasteboardChange, plugins.running.isEmpty else { return }
         let types = Set((pasteboard.types ?? []).map(\.rawValue))
         guard types.isDisjoint(with: ClipboardModule.skipTypes) else { return }
         fire(.clipboardChanged)

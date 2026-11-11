@@ -212,6 +212,8 @@ final class AppModel {
             strip?.start()
         case .awake:
             if awake == nil { awake = StayAwakeModule() }
+            // Plugins with Stay Awake triggers hear about its sessions, every time it starts.
+            awake?.onPluginEvent = { [weak self] event, info in self?.plugins.host.fire(event, info: info) }
             awake?.start()
         case .clicker:
             if clicker == nil { clicker = ClickerModule() }

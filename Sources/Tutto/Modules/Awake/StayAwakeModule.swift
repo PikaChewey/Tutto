@@ -155,6 +155,8 @@ final class StayAwakeModule: ModuleController {
         toolsTimer?.cancel()
         toolsTimer = nil
         quitting = true
+        // Switching the tool off (or quitting) isn't a session ending for plugins to act on.
+        onPluginEvent = nil
         if session != nil { end("Tutto quit", waitForHelper: true) }
         if lidRecord != nil && !lidClosed { restoreLid() }
         lid.stop()
