@@ -269,15 +269,7 @@ final class Toast {
             onClick?()
             self?.dismiss()
         })
-        hosting.layoutSubtreeIfNeeded()
-        var size = hosting.fittingSize
-        // A detail too long for one line is drawn on two, but the fitting size measures one: at
-        // the toast's widest, measure again at that width for the real height.
-        if size.width >= ToastView.widest - 1 {
-            let measured = NSHostingController(rootView: ToastView(content: content) {})
-                .sizeThatFits(in: CGSize(width: size.width, height: 1_000))
-            size.height = max(size.height, measured.height.rounded(.up))
-        }
+        let size = Self.size(for: content, hosting: hosting)
         let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
@@ -307,6 +299,20 @@ final class Toast {
         }
         hideWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
+    }
+
+    /// The toast's size. A detail too long for one line is drawn on two, but the fitting size
+    /// measures one: at the toast's widest, it's measured again at that width for the real height.
+    static func size(for content: Content, hosting: NSView? = nil) -> CGSize {
+        let view = hosting ?? NSHostingView(rootView: ToastView(content: content) {})
+        view.layoutSubtreeIfNeeded()
+        var size = view.fittingSize
+        if size.width >= ToastView.widest - 1 {
+            let measured = NSHostingController(rootView: ToastView(content: content) {})
+                .sizeThatFits(in: CGSize(width: size.width, height: 1_000))
+            size.height = max(size.height, measured.height.rounded(.up))
+        }
+        return size
     }
 
     func dismiss() {

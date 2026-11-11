@@ -24,6 +24,14 @@ enum Snapshots {
         let model = AppModel.shared
         AppModel.rendersOffscreen = true
         model.launch(quietly: true)
+        // `toast-size`: the sizes a short and a long toast get (nothing shown on screen).
+        if only.contains("toast-size") {
+            for detail in ["Copied 42 characters",
+                           "Executed 318 tests, with 0 failures (0 unexpected) in 8.214 (8.253) seconds and the rest of a long line"] {
+                let size = Toast.size(for: Toast.Content(title: "3 lines copied", detail: detail))
+                print("toast:", Int(size.width), "x", Int(size.height), "for", detail.count, "characters")
+            }
+        }
         // Tutto's own theme, or `theme:Paper` for a built-in one; renders don't change the theme kept.
         let themeName = only.first(where: { $0.hasPrefix("theme:") }).map { String($0.dropFirst(6)) } ?? "Tutto"
         let spec = ThemeSpec.builtIn.first { $0.name.caseInsensitiveCompare(themeName) == .orderedSame } ?? .tutto
