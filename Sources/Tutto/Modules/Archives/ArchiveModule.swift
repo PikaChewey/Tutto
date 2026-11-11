@@ -81,8 +81,13 @@ final class ArchiveModule: ModuleController {
 
     // MARK: ModuleController
 
+    /// Registers the Finder extension once per build of Tutto (two `pluginkit` runs), not at every
+    /// launch: macOS keeps the registration until the app changes.
     func start() {
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        guard defaults.string(forKey: Keys.registeredBuild) != build else { return }
         model?.permissions.setFinderExtension(enabled: true)
+        defaults.set(build, forKey: Keys.registeredBuild)
     }
 
     func stop() {
@@ -90,6 +95,7 @@ final class ArchiveModule: ModuleController {
         progress?.close()
         progress = nil
         model?.permissions.setFinderExtension(enabled: false)
+        defaults.removeObject(forKey: Keys.registeredBuild)
     }
 
     // MARK: Requests
@@ -146,7 +152,7 @@ final class ArchiveModule: ModuleController {
         let job = ArchiveJob(kind: .compress, name: output.lastPathComponent)
         start(job)
         let flag = job.cancelFlag
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Task.detached(priority: .userInitiated) { [self] in
             do {
                 let written = try ArchiveCompressor.compress(urls, to: output, format: format, progress: { progress in
                     Task { @MainActor in
@@ -156,12 +162,12 @@ final class ArchiveModule: ModuleController {
                 }, isCancelled: { flag.isCancelled })
                 await MainActor.run {
                     job.state = .done("Created \(written.lastPathComponent)")
-                    self?.finished(job, revealing: [written])
+                    self.finished(job, revealing: [written])
                 }
             } catch {
                 await MainActor.run {
                     job.state = flag.isCancelled ? .cancelled : .failed(Self.describe(error))
-                    self?.finished(job, revealing: [])
+                    self.finished(job, revealing: [])
                 }
             }
         }
@@ -174,7 +180,7 @@ final class ArchiveModule: ModuleController {
         start(job)
         let flag = job.cancelFlag
         let trash = trashAfterExtracting
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Task.detached(priority: .userInitiated) { [self] in
             let extractor = ArchiveExtractor(url: archive)
             do {
                 let result = try extractor.extract(to: destination, options: options, progress: { progress in
@@ -192,16 +198,16 @@ final class ArchiveModule: ModuleController {
                     let count = result.entryCount
                     job.fraction = 1
                     job.state = .done("\(count) item\(count == 1 ? "" : "s") extracted")
-                    self?.finished(job, revealing: result.containingFolder.map { [$0] } ?? result.items)
+                    self.finished(job, revealing: result.containingFolder.map { [$0] } ?? result.items)
                 }
             } catch ArchiveError.passwordRequired {
-                await MainActor.run { self?.askPassword(for: archive, job: job, destination: destination, options: options, wrong: false) }
+                await MainActor.run { self.askPassword(for: archive, job: job, destination: destination, options: options, wrong: false) }
             } catch ArchiveError.wrongPassword {
-                await MainActor.run { self?.askPassword(for: archive, job: job, destination: destination, options: options, wrong: true) }
+                await MainActor.run { self.askPassword(for: archive, job: job, destination: destination, options: options, wrong: true) }
             } catch {
                 await MainActor.run {
                     job.state = flag.isCancelled ? .cancelled : .failed(Self.describe(error))
-                    self?.finished(job, revealing: [])
+                    self.finished(job, revealing: [])
                 }
             }
         }
@@ -278,6 +284,7 @@ final class ArchiveModule: ModuleController {
     }
 
     private enum Keys {
+        static let registeredBuild = "archives.finderRegisteredBuild"
         static let destination = "archives.destination"
         static let fixedFolder = "archives.fixedFolder"
         static let folderRule = "archives.folderRule"

@@ -283,6 +283,28 @@ public enum ProcessTree {
         return order.reversed()
     }
 
+    /// pid → (parent pid, command name) for every process owned by `uid`, from one `sysctl`.
+    public static func snapshot(ownedBy uid: uid_t = getuid()) -> [Int32: (parent: Int32, name: String)] {
+        var result: [Int32: (parent: Int32, name: String)] = [:]
+        for info in list(ownedBy: uid) {
+            let name = withUnsafeBytes(of: info.kp_proc.p_comm) { raw in
+                String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
+            }
+            result[info.kp_proc.p_pid] = (info.kp_eproc.e_ppid, name)
+        }
+        return result
+    }
+
+    private static func list(ownedBy uid: uid_t) -> [kinfo_proc] {
+        var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_UID, Int32(bitPattern: uid)]
+        var size = 0
+        guard sysctl(&name, 4, nil, &size, nil, 0) == 0, size > 0 else { return [] }
+        size += 16 * MemoryLayout<kinfo_proc>.stride  // room for processes started meanwhile
+        var list = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride)
+        guard sysctl(&name, 4, &list, &size, nil, 0) == 0 else { return [] }
+        return Array(list.prefix(size / MemoryLayout<kinfo_proc>.stride))
+    }
+
     /// pid → parent pid for every process owned by `uid`.
     public static func parents(ownedBy uid: uid_t = getuid()) -> [Int32: Int32] {
         var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_UID, Int32(bitPattern: uid)]

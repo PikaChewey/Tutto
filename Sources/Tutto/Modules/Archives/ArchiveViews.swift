@@ -179,6 +179,7 @@ private struct ArchiveSettings: View {
                     }
                 }
             }
+            .onAppear { model.permissions.refresh(finderMaxAge: 0) }
             InkGroup("Extracting") {
                 LabeledRow("Extract to", detail: archives.destination == .fixed ? archives.fixedFolderPath.replacingOccurrences(of: NSHomeDirectory(), with: "~") : nil) {
                     HStack(spacing: 8) {

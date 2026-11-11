@@ -45,6 +45,19 @@ fi
 EXT=$APP/Contents/PlugIns/TuttoFinder.appex
 mkdir -p $EXT/Contents/MacOS
 cp $BIN/TuttoFinder $EXT/Contents/MacOS/TuttoFinder
+
+# Release: the symbols go to build/Symbols as dSYMs (crash reports, `sample` and `atos` find them by
+# UUID), and the shipped binaries leave their symbol tables out: the app binary goes from about
+# 11 MB to under 5 MB. Debug builds keep everything.
+if [[ $CONFIG == release ]]; then
+  rm -rf build/Symbols && mkdir -p build/Symbols
+  for name in Tutto TuttoHelper TuttoFinder; do
+    dsymutil $BIN/$name -o build/Symbols/$name.dSYM 2>/dev/null || echo "dsymutil failed for $name (symbols stay in the binary)" >&2
+  done
+  for binary in $APP/Contents/MacOS/Tutto $APP/Contents/MacOS/TuttoHelper $EXT/Contents/MacOS/TuttoFinder; do
+    [[ -d build/Symbols/${binary:t}.dSYM ]] && strip -x $binary 2>/dev/null
+  done
+fi
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Resources/FinderExtension-Info.plist > $EXT/Contents/Info.plist
 
 # actool reports failures in its plist output; show them instead of stopping silently.

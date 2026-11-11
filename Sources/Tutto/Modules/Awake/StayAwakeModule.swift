@@ -692,8 +692,9 @@ final class StayAwakeModule: ModuleController {
     // MARK: Battery and heat
 
     private func conditions() -> AwakeConditions {
-        let battery = BatteryReader.read()
-        return AwakeConditions(onBattery: battery.map { !$0.isPluggedIn } ?? false, charge: battery?.percent,
+        // The light read: the full battery reader also parses the registry and, hourly, a health report.
+        let power = PowerSourceNow.read()
+        return AwakeConditions(onBattery: power.onBattery, charge: power.charge,
                                heat: Heat(ProcessInfo.processInfo.thermalState),
                                lidClosed: lidClosed, externalDisplay: lidClosed && Displays.externalIsActive())
     }

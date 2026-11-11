@@ -118,7 +118,7 @@ enum SwitcherLab {
                             frame += 1
                         }
                     }
-                    Thread.sleep(forTimeInterval: 0.006)
+                    usleep(6_000)
                 }
                 say("\(frame) frames")
             case "axmove", "axbench", "axinfo":
@@ -143,7 +143,7 @@ enum SwitcherLab {
                         say("size -> \(AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &size)!).rawValue)")
                     }
                     say("position -> \(set(Double(rest[3])!, Double(rest[4])!).rawValue)")
-                    Thread.sleep(forTimeInterval: 0.15)
+                    usleep(150_000)
                     say("after: \(frame())")
                 case "axbench":
                     let n = Int(rest[3])!

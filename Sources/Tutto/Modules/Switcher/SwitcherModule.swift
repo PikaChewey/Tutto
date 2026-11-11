@@ -449,6 +449,7 @@ final class SwitcherModule: ModuleController {
         overlay?.hide()
         session.renaming = nil
         session.query = nil
+        thumbnails.cancelPending()
         thumbnails.forgetSoon()
         releaseSoon()
     }
@@ -1002,7 +1003,7 @@ final class ThumbnailStore {
         return queue
     }()
     /// Card picture size in pixels (2x of 208 × 130 points), the size every window picture is kept at.
-    static let pixelSize = WindowPictures.pixelSize
+    nonisolated static let pixelSize = WindowPictures.pixelSize
 
     /// The pictures kept of `ids` (the cards of this opening).
     func cachedImages(for ids: [CGWindowID]) -> [CGWindowID: NSImage] {
@@ -1019,7 +1020,13 @@ final class ThumbnailStore {
             if inFlight.contains(id) { continue }
             if let entry = images[id], Date().timeIntervalSince(entry.taken) < 2 { continue }
             inFlight.insert(id)
-            queue.addOperation {
+            let operation = BlockOperation()
+            operation.completionBlock = { [weak operation] in
+                // Cancelled before it ran: the window can be asked for again.
+                guard operation?.isCancelled == true else { return }
+                DispatchQueue.main.async { MainActor.assumeIsolated { _ = self.inFlight.remove(id) } }
+            }
+            operation.addExecutionBlock {
                 // The whole window, or nothing (the card keeps its icon): never a clipped sliver.
                 let picture = WindowPictures.capture(id, fitting: Self.pixelSize)
                 DispatchQueue.main.async {
@@ -1031,7 +1038,14 @@ final class ThumbnailStore {
                     }
                 }
             }
+            queue.addOperation(operation)
         }
+    }
+
+    /// Pictures not started yet when the switcher closes are never taken: by the next opening
+    /// they'd be older than the 2 s a picture is reused for, so they'd be taken again anyway.
+    func cancelPending() {
+        queue.cancelAllOperations()
     }
 
     func forgetSoon() {

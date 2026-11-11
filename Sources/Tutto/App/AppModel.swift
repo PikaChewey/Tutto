@@ -7,9 +7,13 @@
 //
 
 import AppKit
+import os
+import QuartzCore
 import Observation
 import ServiceManagement
 import TuttoKit
+
+private let launchLog = Logger(subsystem: "ca.bryanyao.Tutto", category: "launch")
 
 @MainActor
 @Observable
@@ -74,7 +78,17 @@ final class AppModel {
             StripModule.rescueParkedWindows()
             StripModule.restoreDock()
         }
-        for id in ModuleID.allCases where enabled.contains(id) { start(id) }
+        // One line in the log per launch: how long the tools took to start, and the slowest.
+        let launchBegan = CACurrentMediaTime()
+        var slowest: [(ModuleID, Double)] = []
+        for id in ModuleID.allCases where enabled.contains(id) {
+            let began = CACurrentMediaTime()
+            start(id)
+            slowest.append((id, CACurrentMediaTime() - began))
+        }
+        let total = Int((CACurrentMediaTime() - launchBegan) * 1000)
+        let top = slowest.sorted { $0.1 > $1.1 }.prefix(3).map { "\($0.0.rawValue) \(Int($0.1 * 1000)) ms" }.joined(separator: ", ")
+        launchLog.notice("tools started in \(total) ms (slowest: \(top, privacy: .public))")
         // Things that live outside Tutto's process must match the switch even if it was
         // turned off in an earlier session: Finder only loads the menu extension when Archives is on.
         if !enabled.contains(.archives) && !quietly { permissions.setFinderExtension(enabled: false) }

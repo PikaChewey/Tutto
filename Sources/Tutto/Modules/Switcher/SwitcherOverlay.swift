@@ -67,11 +67,13 @@ final class SwitcherOverlay {
         // app while the switcher is up, and SwiftUI's hover tracking can go quiet then.
         if cardClickMonitor == nil {
             cardClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-                MainActor.assumeIsolated {
-                    guard let self, event.window === self.panel, let index = self.card(at: NSEvent.mouseLocation) else { return event }
+                let window = event.windowNumber
+                let handled = MainActor.assumeIsolated { () -> Bool in
+                    guard let self, window == self.panel.windowNumber, let index = self.card(at: NSEvent.mouseLocation) else { return false }
                     self.actions.commit(index)
-                    return nil
+                    return true
                 }
+                return handled ? nil : event
             }
         }
         if pointerTimer == nil {

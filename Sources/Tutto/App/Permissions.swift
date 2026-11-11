@@ -4,7 +4,9 @@
 //
 //  Live status of everything macOS asks the user to approve, with what each one powers.
 //  Nothing polls: status is re-read when macOS announces a change, when Tutto becomes
-//  active, or when a permissions view is on screen.
+//  active, or when a permissions view is on screen. The Finder extension's state takes a
+//  `pluginkit` run to read, so that one is re-read only where it's shown, or at most every
+//  10 minutes otherwise (opening the menu bar panel makes Tutto active each time).
 //
 
 import AppKit
@@ -102,16 +104,20 @@ final class Permissions {
         }
     }
 
-    func refresh() {
+    /// `finderMaxAge`: re-read the Finder extension only when its state is older than this.
+    func refresh(finderMaxAge: TimeInterval = 600) {
         accessibility = AXIsProcessTrusted()
         screenRecording = CGPreflightScreenCaptureAccess()
         systemAudio = SystemAudioAccess.status()
         fanHelper = SMAppService.daemon(plistName: Self.helperPlist).status
-        refreshFinderExtension()
+        if finderCheckedAt.map({ -$0.timeIntervalSinceNow >= finderMaxAge }) ?? true { refreshFinderExtension() }
     }
+
+    private var finderCheckedAt: Date?
 
     /// `pluginkit -m` lists the extension with a leading "+" when it's switched on.
     func refreshFinderExtension() {
+        finderCheckedAt = Date()
         Task.detached(priority: .utility) {
             let output = Shell.run("/usr/bin/pluginkit", ["-m", "-i", Self.finderExtensionID])
             let enabled: Bool? = output.isEmpty ? nil : output.trimmingCharacters(in: .whitespaces).hasPrefix("+")

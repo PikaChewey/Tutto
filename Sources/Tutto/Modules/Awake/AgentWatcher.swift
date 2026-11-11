@@ -67,15 +67,16 @@ final class AgentWatcher {
     }
 
     /// Whether commands agents started kept the processor busy since the last call (false on the
-    /// first call, which only takes the starting reading).
+    /// first call, which only takes the starting reading). One process-table read, then CPU times
+    /// for just the processes under agents (usually a handful, not the hundreds running).
     func toolsBusy() -> Bool {
         let now = mach_absolute_time()
-        let parents = ProcessTree.parents()
+        let processes = ProcessTree.snapshot()
+        let parents = processes.mapValues(\.parent)
+        let names = processes.mapValues(\.name)
         var current: [Int32: (time: UInt64, started: UInt64)] = [:]
         var deltas: [Int32: UInt64] = [:]
-        var names: [Int32: String] = [:]
-        var buffer = [CChar](repeating: 0, count: 256)
-        for pid in parents.keys where pid > 1 {
+        for pid in AgentWork.tools(parents: parents, names: names) {
             var info = rusage_info_v4()
             let status: Int32 = withUnsafeMutablePointer(to: &info) { pointer in
                 pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V4, $0) }
@@ -86,7 +87,6 @@ final class AgentWatcher {
             if let previous = lastCPU[pid], previous.started == reading.started, reading.time > previous.time {
                 deltas[pid] = reading.time - previous.time
             }
-            if proc_name(pid, &buffer, UInt32(buffer.count)) > 0 { names[pid] = String(cString: buffer) }
         }
         let elapsed = lastSample == 0 ? 0 : now &- lastSample
         lastCPU = current

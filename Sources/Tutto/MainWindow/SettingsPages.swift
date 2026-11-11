@@ -242,7 +242,7 @@ struct PermissionsPage: View {
                 note("Screen Recording", "macOS may ask you to re-confirm screen recording from time to time; that's macOS, not a problem with Tutto.")
             }
         }
-        .background(VisibilityReader { visible in if visible { model.permissions.refresh() } })
+        .background(VisibilityReader { visible in if visible { model.permissions.refresh(finderMaxAge: 0) } })
     }
 
     private func note(_ title: String, _ text: String) -> some View {

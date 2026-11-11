@@ -299,9 +299,9 @@ struct OnboardingView: View {
         poll?.invalidate()
         poll = nil
         guard on else { return }
-        model.permissions.refresh()
+        model.permissions.refresh(finderMaxAge: 0)
         poll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            MainActor.assumeIsolated { model.permissions.refresh() }
+            MainActor.assumeIsolated { model.permissions.refresh(finderMaxAge: 2) }
         }
     }
 }

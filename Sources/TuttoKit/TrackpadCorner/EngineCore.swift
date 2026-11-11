@@ -51,9 +51,9 @@ public final class EngineCore: @unchecked Sendable {
     /// The parts of the outside world the engine reads or touches, swappable in tests.
     public struct System: Sendable {
         var tapToClickEnabled: @Sendable (Int) -> Bool = { SystemTrackpad.tapToClickEnabled(deviceIndex: $0) }
-        var recentlyTyped: @Sendable () -> Bool = SystemTrackpad.recentlyTyped
+        var recentlyTyped: @Sendable () -> Bool = { SystemTrackpad.recentlyTyped() }
         var postRightClick: @Sendable () -> Bool = { EngineCore.postRightClick() }
-        var menuUnderPointer: @Sendable (CGPoint) -> Bool = SystemTrackpad.menuContains
+        var menuUnderPointer: @Sendable (CGPoint) -> Bool = { SystemTrackpad.menuContains($0) }
 
         public init() {}
     }

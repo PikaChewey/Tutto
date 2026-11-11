@@ -74,7 +74,8 @@ final class ClickerEngine: @unchecked Sendable {
             post(at: target(pointer), source: source)
             clicks += 1
             let elapsed = Date().timeIntervalSince(begin)
-            lock.withLock { $0.progress.clicks = clicks }
+            let count = clicks
+            lock.withLock { $0.progress.clicks = count }
             if ClickerRules.isDone(settings, clicks: clicks, elapsed: elapsed) {
                 ending = .done
                 break

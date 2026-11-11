@@ -314,3 +314,25 @@ public final class PowerSourceObserver {
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .defaultMode) }
     }
 }
+
+/// What Stay Awake's battery rules need, and nothing more: whether the Mac runs on battery and the
+/// internal battery's charge (nil with no battery, or while it can't be read). One power-sources
+/// read: no registry walk, no health report.
+public enum PowerSourceNow {
+    public static func read() -> (onBattery: Bool, charge: Int?) {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return (false, nil) }
+        let providing = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String?
+        var charge: Int?
+        if let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] {
+            for source in list {
+                guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
+                      description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
+                      let current = description[kIOPSCurrentCapacityKey] as? Int,
+                      let maximum = description[kIOPSMaxCapacityKey] as? Int, maximum > 0 else { continue }
+                charge = current * 100 / maximum
+                break
+            }
+        }
+        return (providing == kIOPSBatteryPowerValue, charge)
+    }
+}

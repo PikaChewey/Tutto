@@ -23,6 +23,24 @@ public enum AgentWork {
     /// Minutes of quiet before a session it started ends.
     public static let graceChoices = [5, 10, 30]
 
+    /// Every process under an agent that isn't an agent itself: the commands they started. Only
+    /// these need their CPU read.
+    public static func tools(parents: [Int32: Int32], names: [Int32: String]) -> [Int32] {
+        func isAgent(_ pid: Int32) -> Bool { names[pid].map { commandNames.contains($0) } ?? false }
+        var children: [Int32: [Int32]] = [:]
+        for (pid, parent) in parents where pid != parent { children[parent, default: []].append(pid) }
+        var found: [Int32] = []
+        var seen = Set<Int32>()
+        var stack = parents.keys.filter(isAgent)
+        while let pid = stack.popLast() {
+            for child in children[pid, default: []] where seen.insert(child).inserted {
+                if !isAgent(child) { found.append(child) }
+                stack.append(child)
+            }
+        }
+        return found.sorted()
+    }
+
     /// Whether the commands agents started (everything under an agent's process, not the agent
     /// itself) used at least `threshold` of one core over the interval: a build or test run.
     /// `cpu` is each process's CPU time over `elapsed` (same units).

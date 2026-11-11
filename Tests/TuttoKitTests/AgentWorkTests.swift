@@ -51,4 +51,28 @@ final class AgentWorkTests: XCTestCase {
         XCTAssertEqual(policy.agentQuietMinutes, 10)
         XCTAssertTrue(policy.muteWhenClosed)
     }
+
+    func testToolsAreEverythingUnderAnAgentButAgents() {
+        // 100 claude → 101 zsh → 102 swift-frontend; 100 → 103 node; 100 → 104 claude (a subagent) → 105 git;
+        // 200 Safari (not under an agent).
+        let parents: [Int32: Int32] = [100: 50, 101: 100, 102: 101, 103: 100, 104: 100, 105: 104, 200: 1, 50: 1]
+        let names: [Int32: String] = [100: "claude", 101: "zsh", 102: "swift-frontend", 103: "node", 104: "claude", 105: "git", 200: "Safari", 50: "login"]
+        XCTAssertEqual(AgentWork.tools(parents: parents, names: names), [101, 102, 103, 105])
+        XCTAssertEqual(AgentWork.tools(parents: [1: 0, 2: 1], names: [1: "launchd", 2: "zsh"]), [])
+    }
+
+    func testProcessSnapshotReadsNamesAndParents() {
+        let snapshot = ProcessTree.snapshot()
+        let me = snapshot[getpid()]
+        XCTAssertNotNil(me)
+        XCTAssertEqual(me?.parent, getppid())
+        XCTAssertFalse(me?.name.isEmpty ?? true)
+        XCTAssertGreaterThan(snapshot.count, 5)
+    }
+
+    func testPowerSourceReadIsConsistent() {
+        let power = PowerSourceNow.read()
+        if let charge = power.charge { XCTAssertTrue((0...100).contains(charge)) }
+        if power.onBattery { XCTAssertNotNil(power.charge, "on battery means there's a battery to read") }
+    }
 }
