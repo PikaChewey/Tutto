@@ -23,6 +23,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
     case awake
     case clicker
     case converter
+    case cleaner
 
     var id: String { rawValue }
 
@@ -50,6 +51,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .awake: "Stay Awake"
         case .clicker: "Auto Clicker"
         case .converter: "Convert"
+        case .cleaner: "Clean Up"
         }
     }
 
@@ -69,6 +71,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .awake: "cup.and.heat.waves"
         case .clicker: "cursorarrow.click.2"
         case .converter: "arrow.triangle.2.circlepath"
+        case .cleaner: "sparkles"
         }
     }
 
@@ -89,6 +92,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .awake: "Keep the Mac on for a time you type, lid closed included, easy on the battery."
         case .clicker: "Clicks for you at the speed you set. ⌃⇧A or a switch in the menu bar starts and stops it."
         case .converter: "Pictures, video, sound, PDFs and documents into other formats, or smaller. Tap ⇧ while dragging files."
+        case .cleaner: "Leftovers from removed apps, caches, logs and the Trash. You review it all; it goes to the Trash."
         }
     }
 
@@ -107,6 +111,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .awake: "Nothing until you start a timer. During one, a tick a minute for the time left."
         case .clicker: "Nothing but its shortcut until you start it."
         case .converter: "Nothing but a glance at each mouse press and modifier key, for the wheel. Work runs only when you convert."
+        case .cleaner: "Nothing. It looks only when you scan."
         }
     }
 }

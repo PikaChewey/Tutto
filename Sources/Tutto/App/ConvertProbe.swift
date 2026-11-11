@@ -115,6 +115,33 @@ enum ConvertProbe {
         say("done")
     }
 
+    /// `Tutto --cleanup-probe DIR`: the Clean Up scan, read-only, on this Mac's home folder; the
+    /// findings (nothing is moved) in DIR/cleanup.txt.
+    static func runCleanupIfRequested() -> Bool {
+        let args = CommandLine.arguments
+        guard let flag = args.firstIndex(of: "--cleanup-probe"), args.count > flag + 1 else { return false }
+        let dir = URL(fileURLWithPath: args[flag + 1], isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let started = Date()
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier?.lowercased() })
+        let names = Set(NSWorkspace.shared.runningApplications.compactMap { $0.localizedName?.lowercased() })
+        let result = CleanupScanner.run(fullDiskAccess: Permissions.hasFullDiskAccess(), running: running, runningNames: names,
+                                        progress: { _ in }, isCancelled: { false })
+        var lines = [String(format: "scan took %.1f s; full disk access: %@", Date().timeIntervalSince(started), Permissions.hasFullDiskAccess() ? "yes" : "no")]
+        for category in CleanupCategory.allCases {
+            let items = result.items.filter { $0.category == category }.sorted { $0.bytes > $1.bytes }
+            let total = items.reduce(Int64(0)) { $0 + $1.bytes }
+            lines.append("\n== \(category.title): \(items.count) items, \(ByteCountFormatter.string(fromByteCount: total, countStyle: .file)) (ticked by default: \(category.selectedByDefault))")
+            for item in items {
+                lines.append("  \(ByteCountFormatter.string(fromByteCount: item.bytes, countStyle: .file).padding(toLength: 10, withPad: " ", startingAt: 0)) \(item.title) — \(item.detail)")
+            }
+        }
+        lines.append("\nskipped: \(result.skipped.joined(separator: ", "))")
+        if let trash = result.trash { lines.append("trash: \(trash.count) items, \(trash.bytes) bytes") }
+        try? lines.joined(separator: "\n").write(to: dir.appendingPathComponent("cleanup.txt"), atomically: true, encoding: .utf8)
+        return true
+    }
+
     private static func bytes(_ count: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file)
     }

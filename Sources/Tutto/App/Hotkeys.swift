@@ -22,6 +22,7 @@ enum ShortcutAction: Hashable, Identifiable {
     case recordScreen
     case scrollingCapture
     case convertFiles
+    case cleanUp
     case wordCounter
     case muteFrontApp
     case openTutto
@@ -42,6 +43,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .recordScreen: "screenshot.record"
         case .scrollingCapture: "screenshot.scrolling"
         case .convertFiles: "convert.window"
+        case .cleanUp: "cleanup.open"
         case .wordCounter: "wordcounter.open"
         case .muteFrontApp: "sound.muteFront"
         case .openTutto: "app.open"
@@ -63,6 +65,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .recordScreen: "Record the screen (again to stop)"
         case .scrollingCapture: "Scrolling capture"
         case .convertFiles: "Open the Convert window"
+        case .cleanUp: "Clean up (scan for leftovers, caches and logs)"
         case .wordCounter: "Word counter"
         case .muteFrontApp: "Mute or unmute the front app"
         case .openTutto: "Open Tutto"
@@ -80,6 +83,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .windowPalette, .window: .windows
         case .captureArea, .captureScreen, .captureAreaEdit, .recordScreen, .scrollingCapture: .screenshots
         case .convertFiles: .converter
+        case .cleanUp: .cleaner
         case .wordCounter: .wordCounter
         case .muteFrontApp: .sound
         case .toggleCorner: .corner
@@ -101,6 +105,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .recordScreen: DefaultShortcuts.recordScreen
         case .scrollingCapture: DefaultShortcuts.scrollingCapture
         case .convertFiles: DefaultShortcuts.convertFiles
+        case .cleanUp: nil
         case .wordCounter: DefaultShortcuts.wordCounter
         case .toggleClicker: DefaultShortcuts.toggleClicker
         case .strip(let command): command.defaultShortcut
@@ -110,7 +115,7 @@ enum ShortcutAction: Hashable, Identifiable {
 
     static var fixed: [ShortcutAction] {
         [.clipboardHistory, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .recordScreen, .scrollingCapture, .convertFiles,
-         .wordCounter,
+         .cleanUp, .wordCounter,
          .toggleClicker,
          .muteFrontApp, .openTutto, .toggleCorner]
     }

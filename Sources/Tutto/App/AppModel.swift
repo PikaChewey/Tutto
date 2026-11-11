@@ -43,6 +43,7 @@ final class AppModel {
     private(set) var awake: StayAwakeModule?
     private(set) var clicker: ClickerModule?
     private(set) var converter: ConverterModule?
+    private(set) var cleaner: CleanupModule?
 
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
     /// On notched MacBooks a crowded menu bar puts new icons behind the notch, where they can't be clicked.
@@ -175,6 +176,7 @@ final class AppModel {
             case .awake: if awake == nil { awake = StayAwakeModule() }
             case .clicker: if clicker == nil { clicker = ClickerModule() }
             case .converter: if converter == nil { converter = ConverterModule() }
+            case .cleaner: if cleaner == nil { cleaner = CleanupModule() }
             case .switcher, .strip, .system, .sensors: break
             }
             return
@@ -223,6 +225,9 @@ final class AppModel {
         case .converter:
             if converter == nil { converter = ConverterModule() }
             converter?.start()
+        case .cleaner:
+            if cleaner == nil { cleaner = CleanupModule() }
+            cleaner?.start()
         }
     }
 
@@ -273,6 +278,9 @@ final class AppModel {
         case .converter:
             converter?.stop()
             converter = nil
+        case .cleaner:
+            cleaner?.stop()
+            cleaner = nil
         }
     }
 
@@ -332,6 +340,9 @@ final class AppModel {
         case .recordScreen: screenshots?.recorder.toggle()
         case .scrollingCapture: screenshots?.scrolling.toggle()
         case .convertFiles: if let converter { ConvertWindowController.shared.show(module: converter) }
+        case .cleanUp:
+            MainWindowController.shared.show(page: .cleaner)
+            cleaner?.scanIfStale()
         case .wordCounter: wordCounter?.togglePanel()
         case .muteFrontApp:
             if let result = sound?.toggleFrontmost() {

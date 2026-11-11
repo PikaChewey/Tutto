@@ -21,6 +21,7 @@ enum Permission: String, CaseIterable, Identifiable {
     case systemAudio
     case finderExtension
     case fanHelper
+    case fullDiskAccess
 
     var id: String { rawValue }
 
@@ -31,6 +32,7 @@ enum Permission: String, CaseIterable, Identifiable {
         case .systemAudio: "System Audio Recording"
         case .finderExtension: "Finder extension"
         case .fanHelper: "Tutto's helper"
+        case .fullDiskAccess: "Full Disk Access"
         }
     }
 
@@ -42,6 +44,7 @@ enum Permission: String, CaseIterable, Identifiable {
         case .systemAudio: "Muting apps in Sound. Tutto holds their sound back; nothing is recorded."
         case .finderExtension: "Extract and Compress in Finder's right-click menu."
         case .fanHelper: "Setting fan speeds, and Stay Awake with the lid closed. Reading temperatures and fans doesn't need it."
+        case .fullDiskAccess: "Clean Up's look into apps' containers and the Trash. Optional: without it, Clean Up checks everything else."
         }
     }
 
@@ -52,6 +55,7 @@ enum Permission: String, CaseIterable, Identifiable {
         case .systemAudio: [.sound]
         case .finderExtension: [.archives]
         case .fanHelper: [.sensors, .awake]
+        case .fullDiskAccess: [.cleaner]
         }
     }
 
@@ -63,6 +67,7 @@ enum Permission: String, CaseIterable, Identifiable {
         case .systemAudio: "Privacy & Security › Screen & System Audio Recording › System Audio Recording Only"
         case .finderExtension: "General › Login Items & Extensions › Extensions"
         case .fanHelper: "General › Login Items & Extensions › App Background Activity"
+        case .fullDiskAccess: "Privacy & Security › Full Disk Access"
         }
     }
 }
@@ -75,6 +80,7 @@ final class Permissions {
     private(set) var systemAudio = SystemAudioAccess.status()
     private(set) var finderExtension: Bool?
     private(set) var fanHelper: SMAppService.Status = .notRegistered
+    private(set) var fullDiskAccess = Permissions.hasFullDiskAccess()
 
     nonisolated static let finderExtensionID = "ca.bryanyao.Tutto.FinderExtension"
     nonisolated static let helperPlist = "ca.bryanyao.Tutto.helper.plist"
@@ -101,7 +107,16 @@ final class Permissions {
         case .systemAudio: systemAudio == .unknown ? nil : systemAudio == .granted
         case .finderExtension: finderExtension
         case .fanHelper: fanHelper == .enabled
+        case .fullDiskAccess: fullDiskAccess
         }
+    }
+
+    /// Full Disk Access has no call to ask about it; opening a file only it can read tells.
+    nonisolated static func hasFullDiskAccess() -> Bool {
+        let probe = "/Library/Application Support/com.apple.TCC/TCC.db"
+        guard let handle = FileHandle(forReadingAtPath: probe) else { return false }
+        try? handle.close()
+        return true
     }
 
     /// `finderMaxAge`: re-read the Finder extension only when its state is older than this.
@@ -110,6 +125,7 @@ final class Permissions {
         screenRecording = CGPreflightScreenCaptureAccess()
         systemAudio = SystemAudioAccess.status()
         fanHelper = SMAppService.daemon(plistName: Self.helperPlist).status
+        fullDiskAccess = Self.hasFullDiskAccess()
         if finderCheckedAt.map({ -$0.timeIntervalSinceNow >= finderMaxAge }) ?? true { refreshFinderExtension() }
     }
 
@@ -158,6 +174,8 @@ final class Permissions {
             }
             fanHelper = SMAppService.daemon(plistName: Self.helperPlist).status
             if fanHelper == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+        case .fullDiskAccess:
+            open("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
         }
         refresh()
     }

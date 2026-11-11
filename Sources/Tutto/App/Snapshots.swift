@@ -49,6 +49,12 @@ enum Snapshots {
                                         lastClosed: .init(darkened: true, mute: .init(deviceUID: "x", wasMuted: false), pausedNames: ["Chat", "Game"]))
         }
         if only.contains("clicker-on") { model.clicker?.previewClicking() }
+        // `cleanup-scan`: the Clean Up page after a real (read-only) scan of this Mac.
+        if only.contains("cleanup-scan"), let cleaner = model.cleaner {
+            cleaner.scan()
+            let deadline = Date().addingTimeInterval(60)
+            while cleaner.state != .ready, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+        }
         if only.contains("clicker-open") { ClickerRow.startsExpanded = true }
         // `clicker-long`: the longest labels, a time limit, and a run 18 s into it.
         if only.contains("clicker-long") {

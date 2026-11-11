@@ -1685,6 +1685,9 @@ enum ShortcutRows {
         if model.converter != nil {
             rows.append(Row(action: .convertFiles, title: "Convert Files", short: "Convert", symbol: ModuleID.converter.symbol))
         }
+        if model.cleaner != nil {
+            rows.append(Row(action: .cleanUp, title: "Clean Up", short: "Clean", symbol: ModuleID.cleaner.symbol))
+        }
         for plugin in model.plugins.plugins where model.plugins.isOn(plugin) && plugin.hasAction {
             rows.append(Row(action: .plugin(plugin.id), title: plugin.name, short: plugin.name, symbol: plugin.symbol))
         }
