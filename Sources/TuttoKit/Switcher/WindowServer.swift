@@ -251,6 +251,18 @@ public enum WindowServer {
         return nil
     }
 
+    /// Names this login, during which window numbers stay unique (they start over after logging
+    /// out): the window server's session ID, or the boot time with the audit session if that's missing.
+    public static let loginSession: String = {
+        let info = CGSessionCopyCurrentDictionary() as? [String: Any]
+        if let id = info?["CGSSessionUniqueSessionUUID"] as? String, !id.isEmpty { return id }
+        var boot = timeval()
+        var size = MemoryLayout<timeval>.size
+        var mib: [Int32] = [CTL_KERN, KERN_BOOTTIME]
+        guard sysctl(&mib, 2, &boot, &size, nil, 0) == 0 else { return "" }
+        return "\(boot.tv_sec)-\(info?["kCGSSessionAuditIDKey"] as? Int ?? 0)"
+    }()
+
     /// The normal windows on screen right now, front to back.
     public static func onScreenWindows() -> [CGWindowID] {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {

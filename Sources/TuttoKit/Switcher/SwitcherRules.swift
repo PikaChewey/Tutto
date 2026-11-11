@@ -208,20 +208,77 @@ public struct PointerIntent: Sendable, Equatable {
     }
 }
 
+/// The windows you were in, newest first, each with its app (bundle ID): what puts the window
+/// you were just in one press away.
 public struct RecentWindows: Sendable, Equatable {
-    public private(set) var ids: [CGWindowID] = []
+    public struct Entry: Codable, Sendable, Equatable {
+        public let id: CGWindowID
+        public var app: String
+        public init(id: CGWindowID, app: String) {
+            self.id = id
+            self.app = app
+        }
+    }
+
+    public private(set) var entries: [Entry] = []
     public let limit: Int
+    public var ids: [CGWindowID] { entries.map(\.id) }
 
     public init(limit: Int = 64) { self.limit = limit }
 
-    public mutating func touch(_ id: CGWindowID) {
-        ids.removeAll { $0 == id }
-        ids.insert(id, at: 0)
-        if ids.count > limit { ids.removeLast(ids.count - limit) }
+    /// `app`: the window's bundle ID ("" when not known, which keeps the one known already).
+    public mutating func touch(_ id: CGWindowID, app: String = "") {
+        let known = entries.first { $0.id == id }?.app ?? ""
+        entries.removeAll { $0.id == id }
+        entries.insert(Entry(id: id, app: app.isEmpty ? known : app), at: 0)
+        if entries.count > limit { entries.removeLast(entries.count - limit) }
     }
 
-    public mutating func keep(only live: Set<CGWindowID>) {
-        ids.removeAll { !live.contains($0) }
+    /// Forgets the windows of apps that quit (`running`: bundle IDs). A window missing from one
+    /// listing keeps its place: it's on its way between Spaces, mid-animation or briefly not shown,
+    /// and forgetting it there sent it to the end of the cards. Window numbers aren't reused
+    /// while you're logged in, so a closed window's entry is harmless until `limit` drops it.
+    public mutating func keep(appsRunning running: Set<String>) {
+        entries.removeAll { !$0.app.isEmpty && !running.contains($0.app) }
+    }
+
+    /// Puts back the order saved before Tutto restarted, after the windows used since (they're
+    /// newer). Only in the same login (`session`; window numbers start over after logging out) and
+    /// only for windows that still belong to the same app (`windows`: each window there now, with
+    /// its app's bundle ID).
+    public mutating func restore(_ saved: SwitcherMemory, session: String, windows: [CGWindowID: String]) {
+        guard saved.session == session, !session.isEmpty else { return }
+        let have = Set(ids)
+        let back = saved.windows.filter { entry in
+            !have.contains(entry.id) && !entry.app.isEmpty && windows[entry.id] == entry.app
+        }
+        entries.append(contentsOf: back)
+        if entries.count > limit { entries.removeLast(entries.count - limit) }
+    }
+}
+
+/// What the window switcher remembers across a restart of Tutto: the windows you were in and
+/// when each app was last in front (system uptime, which a restart of Tutto doesn't reset).
+public struct SwitcherMemory: Codable, Sendable, Equatable {
+    public var session: String
+    public var windows: [RecentWindows.Entry]
+    public var appTimes: [String: TimeInterval]
+
+    public init(session: String, recent: RecentWindows, apps: [String: TimeInterval]) {
+        self.session = session
+        windows = recent.entries.filter { !$0.app.isEmpty }
+        appTimes = apps
+    }
+
+    /// The saved app times for the apps running now (`running`: bundle ID → pid), by pid; none
+    /// from another login.
+    public func apps(session: String, running: [String: pid_t]) -> [pid_t: TimeInterval] {
+        guard self.session == session, !session.isEmpty else { return [:] }
+        var times: [pid_t: TimeInterval] = [:]
+        for (app, time) in appTimes {
+            if let pid = running[app] { times[pid] = time }
+        }
+        return times
     }
 }
 

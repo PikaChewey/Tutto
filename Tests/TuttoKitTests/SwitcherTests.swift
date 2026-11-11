@@ -147,9 +147,9 @@ final class SwitcherRulesTests: XCTestCase {
 
     func testRecentWindowsStayBounded() {
         var recent = RecentWindows(limit: 3)
-        for id: CGWindowID in [1, 2, 3, 2, 4] { recent.touch(id) }
+        for id: CGWindowID in [1, 2, 3, 2, 4] { recent.touch(id, app: id == 4 ? "quits" : "stays") }
         XCTAssertEqual(recent.ids, [4, 2, 3])
-        recent.keep(only: [2, 3])
+        recent.keep(appsRunning: ["stays"])
         XCTAssertEqual(recent.ids, [2, 3])
     }
 

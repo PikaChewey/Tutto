@@ -141,6 +141,11 @@ final class SwitcherModule: ModuleController {
     private var recent = RecentWindows()
     /// When each app was last in front, for the order of cards without a window here.
     private var appsUsed: [pid_t: TimeInterval] = [:]
+    /// The order saved before Tutto last quit, put back at the first listing of windows (a
+    /// restart forgot it, and every window then sorted by its Space: the app in full screen on
+    /// the last Space went to the end of the cards). Saved 2 s after a change and when stopping.
+    private var savedMemory: SwitcherMemory?
+    private var saveWork: DispatchWorkItem?
     private var overlay: SwitcherOverlay?
     private var revealWork: DispatchWorkItem?
     /// Empties the cards and their pictures 30 s after the switcher closes.
@@ -173,6 +178,7 @@ final class SwitcherModule: ModuleController {
         } else {
             names = []
         }
+        savedMemory = d.data(forKey: Keys.memory).flatMap { try? JSONDecoder().decode(SwitcherMemory.self, from: $0) }
     }
 
     // MARK: Lifecycle
@@ -223,6 +229,7 @@ final class SwitcherModule: ModuleController {
 
     func stop() {
         cancel()
+        saveMemory()
         stopObservingFocus()
         tap?.stop()
         tap = nil
@@ -336,7 +343,7 @@ final class SwitcherModule: ModuleController {
         let current = SwitcherOrder.current(onScreen: WindowServer.onScreenWindows(), frontApp: frontApp?.processIdentifier,
                                             cards: items.compactMap { item in item.windowID.map { ($0, item.pid) } })
         if let current {
-            recent.touch(current)
+            noteUsed(current, pid: frontApp?.processIdentifier ?? 0)
             if let index = items.firstIndex(where: { $0.windowID == current }), index > 0 { items.insert(items.remove(at: index), at: 0) }
         }
         // The window you're in first, the one before it second and selected: set all at once,
@@ -522,7 +529,7 @@ final class SwitcherModule: ModuleController {
             app.activate()
             return
         }
-        recent.touch(window)
+        noteUsed(window, pid: item.pid)
         if app.isHidden { app.unhide() }
         if let own = ownWindow(item) {
             log.notice("switch to Tutto's own window \(window)")
@@ -553,18 +560,65 @@ final class SwitcherModule: ModuleController {
         }
     }
 
+    /// You're in window `id` of app `pid` now.
+    private func noteUsed(_ id: CGWindowID, pid: pid_t) {
+        recent.touch(id, app: NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "")
+        scheduleSave()
+    }
+
+    private func scheduleSave() {
+        saveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.saveMemory() } }
+        saveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+
+    /// Writes the order down for the next start. An order saved earlier and not put back yet
+    /// (no ⌘Tab since this start) goes after this one rather than being lost.
+    private func saveMemory() {
+        saveWork?.cancel()
+        saveWork = nil
+        let session = WindowServer.loginSession
+        guard !session.isEmpty else { return }
+        var windows = recent
+        var apps: [String: TimeInterval] = [:]
+        if let pending = savedMemory, pending.session == session {
+            windows.restore(pending, session: session,
+                            windows: Dictionary(pending.windows.map { ($0.id, $0.app) }, uniquingKeysWith: { a, _ in a }))
+            apps = pending.appTimes
+        }
+        for (pid, time) in appsUsed {
+            if let app = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier { apps[app] = max(apps[app] ?? 0, time) }
+        }
+        guard let data = try? JSONEncoder().encode(SwitcherMemory(session: session, recent: windows, apps: apps)) else { return }
+        defaults.set(data, forKey: Keys.memory)
+    }
+
     private func appActivated(_ app: NSRunningApplication?) {
         guard let pid = app?.processIdentifier, pid != getpid() else { return }
         observeFocus(of: pid)
         appsUsed[pid] = ProcessInfo.processInfo.systemUptime
-        // The window comes forward a moment after its app is announced.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+        scheduleSave()
+        noteFrontWindow(of: pid, attempt: 0)
+    }
+
+    /// Records the window an app that just came to the front shows. It comes forward a moment
+    /// after its app is announced, and later still when its Space slides in (a full-screen app),
+    /// so look again a little later while that app is still in front, rather than missing it.
+    private func noteFrontWindow(of pid: pid_t, attempt: Int) {
+        let delays: [TimeInterval] = [0.2, 0.6, 1.4]
+        DispatchQueue.main.asyncAfter(deadline: .now() + delays[attempt]) { [weak self] in
             MainActor.assumeIsolated {
-                if let id = Self.frontCard(of: pid) { self?.recent.touch(id) }
+                guard let self, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return }
+                guard let id = Self.frontCard(of: pid) else {
+                    if attempt + 1 < delays.count { self.noteFrontWindow(of: pid, attempt: attempt + 1) }
+                    return
+                }
+                self.noteUsed(id, pid: pid)
+                // Remember its window's element while it's on this Space (cheap here, sometimes
+                // impossible later from another Space).
+                DispatchQueue.global(qos: .utility).async { WindowElements.rememberFocusedWindow(of: pid) }
             }
-            // Remember its window's element while it's on this Space (cheap here, sometimes
-            // impossible later from another Space).
-            DispatchQueue.global(qos: .utility).async { WindowElements.rememberFocusedWindow(of: pid) }
         }
     }
 
@@ -573,7 +627,7 @@ final class SwitcherModule: ModuleController {
             MainActor.assumeIsolated {
                 guard let self, let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier, pid != getpid(),
                       let window = Self.frontCard(of: pid) else { return }
-                self.recent.touch(window)
+                self.noteUsed(window, pid: pid)
                 DispatchQueue.global(qos: .utility).async { WindowElements.rememberFocusedWindow(of: pid) }
             }
         }
@@ -603,7 +657,7 @@ final class SwitcherModule: ModuleController {
             let module = Unmanaged<SwitcherModule>.fromOpaque(refcon).takeUnretainedValue()
             WindowElements.remember(element)
             guard let id = WindowElements.windowID(of: element) else { return }
-            MainActor.assumeIsolated { module.recent.touch(id) }
+            MainActor.assumeIsolated { module.noteUsed(id, pid: module.observedPID) }
         }
         guard AXObserverCreate(pid, callback, &created) == .success, let observer = created else { return }
         let app = AXUIElementCreateApplication(pid)
@@ -821,6 +875,15 @@ final class SwitcherModule: ModuleController {
         // Every window there is, shown by this ⌘Tab or not: what's remembered about each (when it
         // was last used, its Accessibility handle) stays while it exists.
         let existing = Set(listed.map(\.id))
+        // What you used before Tutto restarted, for the windows still there with the same app.
+        if let saved = savedMemory {
+            savedMemory = nil
+            let session = WindowServer.loginSession
+            let bundles = listed.compactMap { w in byPID[w.pid]?.bundleIdentifier.map { (w.id, $0) } }
+            recent.restore(saved, session: session, windows: Dictionary(bundles, uniquingKeysWith: { a, _ in a }))
+            let pids = Dictionary(apps.compactMap { app in app.bundleIdentifier.map { ($0, app.processIdentifier) } }, uniquingKeysWith: { a, _ in a })
+            appsUsed.merge(saved.apps(session: session, running: pids)) { now, _ in now }
+        }
         var windows = listed.filter { WindowAdmission.admits($0, options: options, haveFlags: haveFlags) }
 
         let spaces = WindowServer.spaces()
@@ -882,8 +945,10 @@ final class SwitcherModule: ModuleController {
             case .app(let pid): return byPID[pid].map { appCard($0, elsewhere: true) }
             }
         }
-        recent.keep(only: existing)
-        WindowElements.prune(keeping: existing)
+        // A window missing from this one listing keeps its place and its handle; only windows of
+        // apps that quit are forgotten.
+        recent.keep(appsRunning: Set(apps.compactMap(\.bundleIdentifier)))
+        WindowElements.prune(keeping: existing.union(recent.ids))
         thumbnails.keep(only: existing)
 
         // The rest stay reachable after the windows, the most recently used first: apps whose
@@ -979,6 +1044,7 @@ final class SwitcherModule: ModuleController {
         static let hints = "switcher.hints"
         static let excluded = "switcher.excluded"
         static let names = "switcher.names"
+        static let memory = "switcher.memory"
     }
 }
 
