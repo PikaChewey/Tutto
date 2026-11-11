@@ -31,14 +31,17 @@ private struct MenuBarLabel: View {
 
     var body: some View {
         let awake = model.awake?.menuBarText
+        let agents = model.awake?.isAgentSession == true
         let clicking = model.clicker?.isOn == true
-        if awake != nil || clicking {
+        if awake != nil || clicking || agents {
             HStack(spacing: 3) {
                 Image(nsImage: MenuBarGlyph.image())
+                if agents { Image(systemName: "cup.and.heat.waves") }
                 if clicking { Image(systemName: "cursorarrow.click.2") }
                 if let awake { Text(awake).monospacedDigit() }
             }
-            .accessibilityLabel(["Tutto", clicking ? "auto clicker on" : nil, awake.map { "staying awake, \($0) left" }]
+            .accessibilityLabel(["Tutto", agents ? "staying awake while agents work" : nil, clicking ? "auto clicker on" : nil,
+                                 awake.map { "staying awake, \($0) left" }]
                 .compactMap { $0 }.joined(separator: ", "))
         } else {
             Image(nsImage: MenuBarGlyph.image())
@@ -148,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// automation (Shortcuts, scripts, Stream Deck…).
 ///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows switcher strip screenshots archives corner wordCounter sound shortcuts permissions general
 ///   actions: capture-area capture-screen capture-edit clipboard windows word-counter mute-front-app quit
-///            stay-awake?for=2h30 (starts, or adds time)  stay-awake-end
+///            stay-awake?for=2h30 (starts, or adds time)  stay-awake-end  agent-busy (an agent is working)
 ///            clicker (starts or stops; ?cps=20&button=left|right|middle&double=1&at=x,y|pointer&for=30&clicks=100)
 @MainActor
 enum DeepLinks {
@@ -174,6 +177,7 @@ enum DeepLinks {
             if let seconds = AwakeDuration.seconds(from: typed) { model.awake?.start(for: seconds) }
             return
         }
+        if name == "agent-busy" { return model.awake?.noteAgentWork() ?? () }
         if name == "clicker" {
             // Optional settings first: ?cps=20&button=right&double=1&at=640,400 (or at=pointer)&for=30 (seconds)&clicks=100
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []

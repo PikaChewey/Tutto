@@ -134,11 +134,33 @@ public struct AwakePolicy: Codable, Equatable, Sendable {
     public var sleepWhenDoneClosed = true
     /// Time left beside the menu bar icon.
     public var showTimeInMenuBar = true
+    /// Stay awake by itself while coding agents work, and stop once they've been quiet.
+    public var whileAgentsWork = true
+    /// Minutes of quiet before a session started for agents ends.
+    public var agentQuietMinutes = 10
 
     public init() {}
 
+    /// Settings saved by an older Tutto, with fields since added, keep their defaults.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = AwakePolicy()
+        lowPowerBelow = try c.decodeIfPresent(Int.self, forKey: .lowPowerBelow) ?? d.lowPowerBelow
+        endBelow = try c.decodeIfPresent(Int.self, forKey: .endBelow) ?? d.endBelow
+        heatRules = try c.decodeIfPresent(Bool.self, forKey: .heatRules) ?? d.heatRules
+        darkenWhenClosed = try c.decodeIfPresent(Bool.self, forKey: .darkenWhenClosed) ?? d.darkenWhenClosed
+        lowPowerWhenClosed = try c.decodeIfPresent(Bool.self, forKey: .lowPowerWhenClosed) ?? d.lowPowerWhenClosed
+        muteWhenClosed = try c.decodeIfPresent(Bool.self, forKey: .muteWhenClosed) ?? d.muteWhenClosed
+        pauseAppsWhenClosed = try c.decodeIfPresent(Bool.self, forKey: .pauseAppsWhenClosed) ?? d.pauseAppsWhenClosed
+        sleepWhenDoneClosed = try c.decodeIfPresent(Bool.self, forKey: .sleepWhenDoneClosed) ?? d.sleepWhenDoneClosed
+        showTimeInMenuBar = try c.decodeIfPresent(Bool.self, forKey: .showTimeInMenuBar) ?? d.showTimeInMenuBar
+        whileAgentsWork = try c.decodeIfPresent(Bool.self, forKey: .whileAgentsWork) ?? d.whileAgentsWork
+        agentQuietMinutes = try c.decodeIfPresent(Int.self, forKey: .agentQuietMinutes) ?? d.agentQuietMinutes
+    }
+
     /// The end floor stays below the Low Power Mode floor (when both are on).
     public mutating func normalize() {
+        agentQuietMinutes = min(max(agentQuietMinutes, 1), 240)
         lowPowerBelow = min(max(lowPowerBelow, 0), 95)
         endBelow = min(max(endBelow, 0), 50)
         if endBelow > 0, lowPowerBelow > 0, endBelow >= lowPowerBelow { lowPowerBelow = min(endBelow + 5, 95) }

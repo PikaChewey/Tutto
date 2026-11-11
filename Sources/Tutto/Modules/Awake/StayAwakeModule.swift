@@ -29,6 +29,8 @@ final class StayAwakeModule: ModuleController {
     struct Session: Codable, Equatable {
         var startedAt: Date
         var endsAt: Date
+        /// Started by "While agents work": it moves its end along while they work.
+        var agents: Bool? = nil
     }
 
     /// What the lid closing changed, to undo when it opens (kept on disk, so a relaunch can too).
@@ -72,6 +74,8 @@ final class StayAwakeModule: ModuleController {
         guard changed != policy else { return }
         policy = changed
         save(policy, Keys.policy)
+        agentGate.grace = TimeInterval(policy.agentQuietMinutes * 60)
+        if policy.whileAgentsWork { agentWatcher.start() } else { agentWatcher.stop() }
         updateMenuBarText()
         evaluate()
     }
@@ -109,6 +113,9 @@ final class StayAwakeModule: ModuleController {
     @ObservationIgnored private var sampledBrightness: Float?
     @ObservationIgnored private var sampledKeyboard: Float?
     @ObservationIgnored private var lowPowerOn = false
+    @ObservationIgnored private let agentWatcher = AgentWatcher()
+    @ObservationIgnored private var agentGate = AgentGate(grace: 600)
+    @ObservationIgnored private var toolsTimer: DispatchSourceTimer?
     @ObservationIgnored private var reconnects = 0
     @ObservationIgnored private var watchingDisplays = false
     @ObservationIgnored private var displayWork: DispatchWorkItem?
@@ -123,6 +130,8 @@ final class StayAwakeModule: ModuleController {
         hotspotEnabled = defaults.bool(forKey: Keys.hotspotEnabled)
         hotspotSSID = defaults.string(forKey: Keys.hotspotSSID) ?? ""
         lid.onChange = { [weak self] closed in self?.lidChanged(closed) }
+        agentGate.grace = TimeInterval(policy.agentQuietMinutes * 60)
+        agentWatcher.onActivity = { [weak self] in self?.noteAgentWork() }
     }
 
     // MARK: ModuleController
@@ -135,9 +144,14 @@ final class StayAwakeModule: ModuleController {
             if LidObserver.read() == true { lid.start() } else { restoreLid() }
         }
         adoptSession()
+        if policy.whileAgentsWork { agentWatcher.start() }
+        if session?.agents == true { armToolsCheck() }
     }
 
     func stop() {
+        agentWatcher.stop()
+        toolsTimer?.cancel()
+        toolsTimer = nil
         quitting = true
         if session != nil { end("Tutto quit", waitForHelper: true) }
         if lidRecord != nil && !lidClosed { restoreLid() }
@@ -153,7 +167,8 @@ final class StayAwakeModule: ModuleController {
     func start(for seconds: TimeInterval) {
         guard seconds >= 60 else { return }
         if let session {
-            return setEnd(session.endsAt.addingTimeInterval(seconds))
+            // Time added by hand: an agents' session becomes an ordinary one.
+            return setEnd((session.agents == true ? Date() : session.endsAt).addingTimeInterval(seconds))
         }
         let now = Date()
         let ends = now.addingTimeInterval(min(seconds, AwakeLimits.longest))
@@ -174,8 +189,9 @@ final class StayAwakeModule: ModuleController {
     }
 
     /// Moves the end of the session running (adding time, typed or from a chip).
-    func setEnd(_ date: Date) {
+    func setEnd(_ date: Date, byHand: Bool = true) {
         guard var session else { return }
+        if byHand { session.agents = nil }
         session.endsAt = min(date, Date().addingTimeInterval(AwakeLimits.longest))
         self.session = session
         save(session, Keys.session)
@@ -184,7 +200,57 @@ final class StayAwakeModule: ModuleController {
         holdSleep(until: session.endsAt)
     }
 
-    func endNow() { end("Ended") }
+    func endNow() {
+        if session?.agents == true { agentGate.endedByHand() }
+        end("Ended")
+    }
+
+    var isAgentSession: Bool { session?.agents == true }
+
+    // MARK: While agents work
+
+    /// A sign of agent work: a session-log write, a busy build, or `tutto://do/agent-busy`.
+    func noteAgentWork() {
+        guard policy.whileAgentsWork else { return }
+        switch agentGate.activity(at: Date(), session: session != nil, ours: session?.agents == true) {
+        case .nothing:
+            break
+        case .start:
+            start(for: agentGate.grace)
+            guard var session else { return }
+            session.agents = true
+            self.session = session
+            save(session, Keys.session)
+            updateMenuBarText()
+            armToolsCheck()
+            awakeLog.notice("agents working: staying awake")
+        case .extend:
+            // Moved in steps of a minute or more, not at every write.
+            guard let session, agentGate.end(after: Date()).timeIntervalSince(session.endsAt) >= 60 else { return }
+            setEnd(agentGate.end(after: Date()), byHand: false)
+        }
+    }
+
+    /// Once a minute during an agents' session: commands they started keeping the processor busy
+    /// count as work too.
+    private func armToolsCheck() {
+        toolsTimer?.cancel()
+        _ = agentWatcher.toolsBusy()  // the starting reading
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 60, repeating: 60, leeway: .seconds(5))
+        timer.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.session?.agents == true else {
+                    self?.toolsTimer?.cancel()
+                    self?.toolsTimer = nil
+                    return
+                }
+                if self.agentWatcher.toolsBusy() { self.noteAgentWork() }
+            }
+        }
+        timer.resume()
+        toolsTimer = timer
+    }
 
     /// Ends the session. Paused apps resume at once; the display and sound wait
     /// for the lid to open if it's closed. A Mac whose lid is closed with no other display goes
@@ -455,7 +521,9 @@ final class StayAwakeModule: ModuleController {
         guard let session else { return }
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(wallDeadline: .now() + max(0, session.endsAt.timeIntervalSinceNow), leeway: .milliseconds(200))
-        timer.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.end("Time's up") } }
+        timer.setEventHandler { [weak self] in
+            MainActor.assumeIsolated { self?.end(self?.session?.agents == true ? "Agents went quiet" : "Time's up") }
+        }
         timer.resume()
         endTimer = timer
     }
@@ -485,7 +553,8 @@ final class StayAwakeModule: ModuleController {
     }
 
     private func updateMenuBarText() {
-        guard let session, policy.showTimeInMenuBar else { return menuBarText = nil }
+        // An agents' session has no set end to count down to; the icon shows it instead.
+        guard let session, policy.showTimeInMenuBar, session.agents != true else { return menuBarText = nil }
         let text = AwakeDuration.menuBar(session.endsAt.timeIntervalSinceNow)
         if text != menuBarText { menuBarText = text }
     }

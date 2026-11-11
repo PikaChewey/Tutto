@@ -34,6 +34,7 @@ private struct StayAwakeSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             sessionGroup
+            agentsGroup
             lidGroup
             appsGroup
             batteryGroup
@@ -72,6 +73,30 @@ private struct StayAwakeSettings: View {
                 }
             }
         }
+    }
+
+    private var agentsGroup: some View {
+        InkGroup("While agents work") {
+            LabeledRow("Stay awake while agents work",
+                       detail: "When a coding agent starts working, Stay Awake turns on by itself, lid included, and turns off once agents have been quiet for a while; with the lid closed the Mac then sleeps. Ending it by hand keeps it off until they go quiet.") {
+                InkSwitch(isOn: Binding(get: { awake.policy.whileAgentsWork }, set: { on in awake.update { $0.whileAgentsWork = on } }),
+                          label: "Stay awake while agents work")
+            }
+            if awake.policy.whileAgentsWork {
+                Hairline().opacity(0.6)
+                LabeledRow("Quiet for", detail: "How long agents must be quiet before it turns off.") {
+                    InkSegmented(selection: Binding(get: { awake.policy.agentQuietMinutes }, set: { value in awake.update { $0.agentQuietMinutes = value } }),
+                                 options: AgentWork.graceChoices.map { ($0, "\($0) min") })
+                        .fixedSize()
+                }
+                Hairline().opacity(0.6)
+                LabeledRow("What counts as working",
+                           detail: "Writing to their session logs (\(AgentWatcher.folders.map { $0.path.replacingOccurrences(of: NSHomeDirectory(), with: "~") }.joined(separator: ", ")), which they do every few seconds while they work and never while they wait for you), or a command they started keeping the processor busy, like a build. Other tools can say so with `open -g tutto://do/agent-busy`.") {
+                    EmptyView()
+                }
+            }
+        }
+        .animation(Motion.snappy, value: awake.policy.whileAgentsWork)
     }
 
     private var lidGroup: some View {

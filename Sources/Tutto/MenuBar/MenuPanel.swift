@@ -751,11 +751,18 @@ private struct AwakeRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 RowLabel(symbol: ModuleID.awake.symbol, title: "Awake", live: true)
-                Text("until \(session.endsAt.formatted(date: session.endsAt.timeIntervalSinceNow > 20 * 3600 ? .abbreviated : .omitted, time: .shortened))")
-                    .font(.system(size: 11.5, weight: .medium).monospacedDigit())
-                    .foregroundStyle(Color.ink3)
-                Spacer(minLength: 8)
-                countdown(session)
+                if session.agents == true {
+                    Text("while agents work")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Color.ink3)
+                    Spacer(minLength: 8)
+                } else {
+                    Text("until \(session.endsAt.formatted(date: session.endsAt.timeIntervalSinceNow > 20 * 3600 ? .abbreviated : .omitted, time: .shortened))")
+                        .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                        .foregroundStyle(Color.ink3)
+                    Spacer(minLength: 8)
+                    countdown(session)
+                }
             }
             .lineLimit(1)
             HStack(spacing: 6) {
@@ -863,6 +870,9 @@ private struct AwakeRow: View {
             if !done.isEmpty { parts.append("While closed: " + done.joined(separator: ", ") + ".") }
         }
         if let reason = awake.lowPowerReason, !awake.lidClosed { parts.append("Low Power Mode on (\(reason)).") }
+        if awake.isAgentSession, parts.isEmpty {
+            return "Ends \(awake.policy.agentQuietMinutes) min after they go quiet. Close the lid any time."
+        }
         if parts.isEmpty { return awake.lidSafe ? "Close the lid any time: it stays on." : nil }
         return parts.joined(separator: " ")
     }
