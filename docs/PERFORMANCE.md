@@ -17,6 +17,24 @@ Tools: `scripts/measure.sh` (CPU % = CPU-time delta from `ps` over wall time; fo
 | PERF-7 | Hotkey → overlay ≤ 200 ms; mouse-up → clipboard ≤ 150 ms | display capture **57–97 ms**; shortcut → overlay on screen **60–121 ms**; mouse-up → clipboard/editor **0–72 ms** (3 live runs, `os_log` timings) | ✅ |
 | PERF-8 | App bundle ≤ 15 MB | **7.9 MB** (release, arm64) | ✅ |
 
+## Optimization pass (2026-11-10, builds 125 → 127)
+
+Bryan: "optimize the entire application and anything without removing any core functionality". Measured on the installed app, same Mac.
+
+| What | Before (build 125) | After (build 127) | How |
+|---|---|---|---|
+| App bundle | 13 MB (app binary 11.2 MB) | **6.7 MB** (4.7 MB) | release binaries ship without symbol tables; dSYMs in `build/Symbols` (crash reports, `sample`, `atos` find them by UUID; checked with `atos`) |
+| Launch: CPU used in the first 4.5 s / 10.5 s | 0.58 s / 1.13 s | **0.22 s / 0.22 s** (nothing after the first seconds) | the Finder extension registered once per build instead of at every launch (two `pluginkit` runs); (the first launch also had ⌘Tab use in it) |
+| Footprint 10 s after launch (peak) | 35 MB (peak 80 MB over the first minutes) | **17 MB (peak 18 MB)** | same |
+| Tools' start-up | not measured | **222 ms** (strip 105, sound 74, system 16), logged once per launch (`category == "launch"`) | new launch line |
+| Opening the menu bar panel | a `pluginkit` run every time (Tutto becomes active) | at most one every 10 min; pages that show the extension still read it at once | rate-limited Finder-extension check |
+| Stay Awake's battery rules | the full battery reader (registry walk; hourly `system_profiler`) on every power event | one power-sources read | `PowerSourceNow` |
+| While agents work: the minute check | a CPU reading for every process (about 600) plus its name | one process-table read, CPU readings only for commands under agents | `ProcessTree.snapshot`, `AgentWork.tools` |
+| Window switcher | pictures still queued kept being taken after it closed (and were stale by the next ⌘Tab) | cancelled on close | `ThumbnailStore.cancelPending` |
+| Compiler warnings | 14 (release), 2 more in debug | **0 and 0** | Archives' jobs, the switcher's picture size and click monitor, Trackpad Corner's hooks, the clicker's count, the switcher lab |
+
+While Bryan worked (agents running, ⌘Tab about three times a minute) build 125 measured 1.01 % CPU, 0.17 wake-ups/s, 40 MB and an energy impact of 1.01 over 60 s; nearly all of it was the window switcher in use (opening in 14–27 ms; a card picture costs about 5 ms of CPU, most of it scaling). With him away for 30 s it used 0.03 %. Idle and panel numbers for build 127 with him away: see the next rows once measured.
+
 ## Per-module idle cost (90 s each, user away, `scripts/measure-modules.sh`)
 
 | Modules on | CPU | Footprint | Wake-ups/s |
