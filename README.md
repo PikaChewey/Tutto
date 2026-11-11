@@ -5,7 +5,7 @@
 <p align="center"><b>Every Mac utility you actually use, in one quiet menu bar app.</b><br>
 Battery &amp; system load · temperatures &amp; fans · clipboard history · window snapping · screenshots with OCR · archives from Finder · trackpad corner right-click · word counter.</p>
 
-Tutto is eleven everyday tools in one native Swift app that uses **13 MB of memory and no measurable CPU while idle**. Every tool can be switched off, and a tool that's off uses nothing at all.
+Tutto is thirteen everyday tools in one native Swift app that uses **about 20 MB of memory when it starts and no measurable CPU while idle** (around 65 MB once you've used every tool). Every tool can be switched off, and a tool that's off uses nothing at all: twelve from the Overview and General pages, and the Scrolling Strip, which rearranges every window, from its own page.
 
 <p align="center">
   <img src="docs/assets/panel.png" width="300" alt="Tutto's menu bar panel: its sliders mark with a one-line verdict on the Mac, the battery with watts, health and the three busiest apps, six tiles for CPU, memory, GPU, disk, network and temperature with small line charts, a strip of apps to mute, the tools in a row with their keys, and Tutto's own memory use in the footer">
@@ -111,7 +111,7 @@ Measurements and comparisons with comparable utilities are in [docs/PERFORMANCE.
 ## Development
 
 ```bash
-swift test                               # 194 unit tests (corner engine, readers, archives, clipboard, layout…)
+swift test                               # 356 XCTest + 48 Swift Testing tests (corner engine, readers, archives, clipboard, layout, themes, plugins…)
 scripts/build.sh --debug                 # debug build with offscreen UI snapshots:
 build/Products.noindex/Tutto.app/Contents/MacOS/Tutto --snapshot /tmp/shots panel battery editor
 scripts/measure.sh 180 Tutto <OtherApp> …           # idle CPU / memory / wake-ups, side by side

@@ -31,3 +31,14 @@ final class ScreenshotNamesTests: XCTestCase {
         XCTAssertEqual(name("Lecture (Nov 10)", "jpg"), "Lecture (Nov 10).jpg")
     }
 }
+
+final class RecognizedLinesTests: XCTestCase {
+    func testSlashedZerosBecomeDigits() {
+        XCTAssertEqual(RecognizedLines.fixingSlashedZeros("Executed 318 tests, with Ø failures"), "Executed 318 tests, with 0 failures")
+        XCTAssertEqual(RecognizedLines.fixingSlashedZeros("(Ø unexpected) in 8.214 (8.253)"), "(0 unexpected) in 8.214 (8.253)")
+        XCTAssertEqual(RecognizedLines.fixingSlashedZeros("1Ø0 and 2.Ø5 and 1ØØ"), "100 and 2.05 and 100")
+        XCTAssertEqual(RecognizedLines.fixingSlashedZeros("Øresund bridge, 16 km"), "Øresund bridge, 16 km", "a word keeps its letter")
+        XCTAssertEqual(RecognizedLines.fixingSlashedZeros("København Ø"), "København Ø", "no digits: nothing to say it's a zero")
+        XCTAssertEqual(RecognizedLines.fixingSlashedZeros("no zeros here"), "no zeros here")
+    }
+}

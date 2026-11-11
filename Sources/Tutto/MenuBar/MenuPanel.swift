@@ -1846,3 +1846,29 @@ struct BatteryGlyph: View {
         .accessibilityHidden(true)
     }
 }
+
+#if DEBUG
+/// For renders: network tiles with made-up speeds, to check the caption and its detail at
+/// three- and four-digit uploads.
+struct PreviewNetworkTiles: View {
+    var body: some View {
+        VStack(spacing: PanelGrid.gap) {
+            ForEach(["↑ 84 KB/s", "↑ 120 KB/s", "↑ 375 KB/s", "↑ 999 KB/s", "↑ 1.2 MB/s"], id: \.self) { detail in
+                HStack(spacing: PanelGrid.gap) {
+                    StatTile(caption: "Network", value: "227", unit: "KB/s", detail: detail, prefix: "↓", page: .network,
+                             help: "", spokenName: "Network", spokenValue: detail, wide: false) {
+                        Sparkline(values: [0.2, 0.5, 0.3, 0.7, 0.4], color: .themeAccent, stretch: true)
+                    }
+                    StatTile(caption: "Temp", value: "91", unit: "°C", detail: "GPU 82°", page: .sensors,
+                             help: "", spokenName: "Temp", spokenValue: "91", wide: false) {
+                        Meter(value: 0.6, height: 4, alert: false, fill: .themeAccent, track: Color.ink.opacity(0.1))
+                            .frame(height: 4).frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 4)
+                    }
+                }
+            }
+        }
+        .padding(PanelGrid.outer)
+        .frame(width: PanelGrid.width)
+    }
+}
+#endif

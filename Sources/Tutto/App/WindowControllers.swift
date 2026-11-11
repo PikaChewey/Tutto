@@ -270,7 +270,14 @@ final class Toast {
             self?.dismiss()
         })
         hosting.layoutSubtreeIfNeeded()
-        let size = hosting.fittingSize
+        var size = hosting.fittingSize
+        // A detail too long for one line is drawn on two, but the fitting size measures one: at
+        // the toast's widest, measure again at that width for the real height.
+        if size.width >= ToastView.widest - 1 {
+            let measured = NSHostingController(rootView: ToastView(content: content) {})
+                .sizeThatFits(in: CGSize(width: size.width, height: 1_000))
+            size.height = max(size.height, measured.height.rounded(.up))
+        }
         let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
@@ -315,6 +322,7 @@ final class Toast {
 }
 
 private struct ToastView: View {
+    static let widest: CGFloat = 420
     var content: Toast.Content
     var click: () -> Void
     @State private var shown = false
@@ -354,7 +362,7 @@ private struct ToastView: View {
             .padding(.vertical, 9)
             .padding(.leading, content.image != nil || content.swatch != nil ? 9 : 14)
             .padding(.trailing, 16)
-            .frame(maxWidth: 420)
+            .frame(maxWidth: Self.widest)
             .background(PaletteBackground())
             .overlay(RoundedRectangle(cornerRadius: Radius.of(14), style: .continuous).strokeBorder(Color.hairline))
         }

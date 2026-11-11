@@ -9,6 +9,7 @@
 
 import AppKit
 import Observation
+import TuttoKit
 import Vision
 
 enum EditorTool: String, CaseIterable, Identifiable {
@@ -288,7 +289,7 @@ final class EditorDocument {
             let observations = textRequest.results ?? []
             let lines = TextLayout.lines(observations.compactMap { observation in
                 observation.topCandidates(1).first.map { (observation.boundingBox, $0.string) }
-            })
+            }).map(RecognizedLines.fixingSlashedZeros)
             let codes = (codeRequest.results ?? []).compactMap(\.payloadStringValue)
             // Normalized boxes (bottom-left origin) → base-image pixels.
             let boxes = observations.map { observation -> CGRect in

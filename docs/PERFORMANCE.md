@@ -15,7 +15,7 @@ Tools: `scripts/measure.sh` (CPU % = CPU-time delta from `ps` over wall time; fo
 | PERF-5 | Menu bar panel open (1 Hz updates): CPU ≤ 3 % | **1.5 %**, 32 MB, 0.67 wake-ups/s (30 s) | ✅ (after fix, see below) |
 | PERF-6 | Lighter than the baseline apps combined | see comparison | ✅ |
 | PERF-7 | Hotkey → overlay ≤ 200 ms; mouse-up → clipboard ≤ 150 ms | display capture **57–97 ms**; shortcut → overlay on screen **60–121 ms**; mouse-up → clipboard/editor **0–72 ms** (3 live runs, `os_log` timings) | ✅ |
-| PERF-8 | App bundle ≤ 15 MB | **7.9 MB** (release, arm64) | ✅ |
+| PERF-8 | App bundle ≤ 15 MB | **8.0 MB** (release, arm64, build 137 with themes and plugins; 6.7 MB after the optimization pass, before them) | ✅ |
 
 ## Optimization pass (2026-11-10, builds 125 → 127)
 

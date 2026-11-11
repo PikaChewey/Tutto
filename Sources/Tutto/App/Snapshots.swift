@@ -175,6 +175,9 @@ struct SnapshotExtras {
                     .background(Color(nsColor: .windowBackgroundColor)))
             })
         }
+        extras.append(SnapshotExtras(name: "network-tiles", inDefaultSet: false) { _ in
+            AnyView(PreviewNetworkTiles().background(PanelMaterialStandIn()))
+        })
         extras.append(SnapshotExtras(name: "panel-states", inDefaultSet: false) { _ in
             let glances = [Glance("On battery", "4 h 9 min left"), Glance("Working hard", "CPU 91%", level: .notice),
                            Glance("Battery low", "18 min left", level: .alert)]

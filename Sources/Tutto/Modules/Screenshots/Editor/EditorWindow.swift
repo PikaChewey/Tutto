@@ -157,6 +157,15 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// The start of copied text for a toast: one line, cut at a word with an ellipsis.
+    static func preview(_ text: String, limit: Int = 80) -> String {
+        let flat = text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        guard flat.count > limit else { return flat }
+        let cut = flat.prefix(limit)
+        let words = cut.lastIndex(of: " ").map { cut[..<$0] } ?? cut
+        return words.trimmingCharacters(in: .whitespaces.union(.punctuationCharacters)) + "…"
+    }
+
     func recognizeText() {
         Task { @MainActor in
             let result = await document.recognizeText()
@@ -167,7 +176,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate {
                 pasteboard.setString(result.text, forType: .string)
                 let codeNote = result.codes.isEmpty ? "" : " · QR code found, click to copy it"
                 Toast.shared.show("\(result.lineCount) line\(result.lineCount == 1 ? "" : "s") copied",
-                                  detail: String(result.text.prefix(80)).replacingOccurrences(of: "\n", with: " ") + codeNote,
+                                  detail: Self.preview(result.text) + codeNote,
                                   duration: result.codes.isEmpty ? 1.8 : 4) {
                     if let code = result.codes.first {
                         pasteboard.clearContents()
