@@ -14,6 +14,7 @@
 import AppKit
 import AudioToolbox
 import CoreAudio
+import IOKit.pwr_mgt
 import TuttoKit
 
 @MainActor
@@ -112,6 +113,85 @@ enum AudioProbe {
                 }
                 rig.stop()
             } catch { say("\(error)") }
+        case "access":
+            say("system audio recording access: \(SystemAudioAccess.status())")
+        case "mutecheck":
+            // mutecheck <pid>: does the mute hold without a running device? For each setup, what the app
+            // sends to the output device, what another tap hears, and coreaudiod's assertions for Tutto/app.
+            guard SystemAudioAccess.status() == .granted else { say("no system audio recording access: not tapping"); break }
+            let pid = pid_t(rest[1])!
+            let all = AudioProcessList.read()
+            guard let obj = all.first(where: { $0.pid == pid })?.objectID else { say("no object"); break }
+            let me = ProcessInfo.processInfo.processIdentifier
+            let meter = TapMeter(CATapDescription(__excludingProcesses: others(than: pid, in: all),
+                                                  andDeviceUID: AudioDevices.defaultOutputUID() ?? "", withStream: 0))
+            let heard = TapMeter(CATapDescription(stereoMixdownOfProcesses: [obj]))
+            say("meters: speakers=\(meter.status) capture=\(heard.status)")
+            func watch(_ phase: String, _ seconds: Double) {
+                for _ in 0..<Int(seconds * 2) {
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+                    let held = PowerAssertions.audio(for: [me, pid]).filter { !$0.contains("BuiltInSpeakerDevice") || $0.contains("for \(me)") }
+                    say("app→speakers \(meter.take())  heard \(heard.take())  app output=\(AudioProcessList.isRunningOutput(obj))  "
+                        + "[\(phase)] held: \(held.isEmpty ? "-" : held.sorted().joined(separator: " | "))")
+                }
+            }
+            watch("unmuted", 2)
+            for setup in LabRig.Setup.allCases {
+                do {
+                    let lab = try LabRig(process: obj, setup: setup)
+                    watch(setup.rawValue, 4)
+                    lab.stop()
+                } catch { say("\(setup.rawValue): \(error)") }
+                watch("unmuted", 2)
+            }
+            meter.stop(); heard.stop()
+        case "power":
+            // power <pid> <variant 0…3> <seconds> [norearm] [sleepok]: one rig on the app, re-armed 0.5 s after
+            // the app goes quiet (as SoundModule does), logging every change of the rig, the app's output and the
+            // power assertions coreaudiod holds for Tutto or the app. `sleepok` sets SleepingIsAllowed first.
+            guard SystemAudioAccess.status() == .granted else { say("no system audio recording access: not tapping"); break }
+            let pid = pid_t(rest[1])!, variant = Int(rest[2])!, seconds = Double(rest[3])!
+            let rearms = !rest.contains("norearm")
+            guard let obj = AudioProcessList.read().first(where: { $0.pid == pid })?.objectID else { say("no object"); break }
+            if rest.contains("sleepok") { say("sleeping allowed: status \(setSleepingAllowed(true))") }
+            let configs: [MuteRig.Config] = [.init(), .init(includeOutputDevice: false),
+                                             .init(tapAutoStart: false), .init(includeOutputDevice: false, tapAutoStart: false)]
+            let me = ProcessInfo.processInfo.processIdentifier
+            var lastAssertions: Set<String> = PowerAssertions.audio(for: [me, pid])
+            for line in lastAssertions.sorted() { say("held before: \(line)") }
+            do {
+                let rig = try MuteRig(processes: [obj], config: configs[variant])
+                say("rig variant \(variant) built, Tutto pid \(me), app pid \(pid), rearm \(rearms)")
+                let until = Date().addingTimeInterval(seconds)
+                var last = ""
+                var quietSince: Date?
+                while Date() < until {
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+                    let output = AudioProcessList.isRunningOutput(obj)
+                    if rearms {
+                        if output { quietSince = nil } else if quietSince == nil { quietSince = Date() }
+                        if let q = quietSince, -q.timeIntervalSinceNow > 0.5, rig.isRunning {
+                            say("rearm status=\(rig.rearm())")
+                            quietSince = nil
+                        }
+                    }
+                    let state = "rig running=\(rig.isRunning) app output=\(output)"
+                    if state != last { say(state); last = state }
+                    let now = PowerAssertions.audio(for: [me, pid])
+                    for line in now.subtracting(lastAssertions).sorted() { say("+ \(line)") }
+                    for line in lastAssertions.subtracting(now).sorted() { say("- \(line)") }
+                    lastAssertions = now
+                }
+                rig.stop()
+                say("rig stopped")
+                for _ in 0..<20 {
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+                    let now = PowerAssertions.audio(for: [me, pid])
+                    for line in now.subtracting(lastAssertions).sorted() { say("+ \(line)") }
+                    for line in lastAssertions.subtracting(now).sorted() { say("- \(line)") }
+                    lastAssertions = now
+                }
+            } catch { say("\(error)") }
         default:
             say("unknown command")
         }
@@ -121,6 +201,86 @@ enum AudioProbe {
 
     private static func others(than pid: pid_t, in processes: [AudioProcess]) -> [NSNumber] {
         processes.filter { $0.pid != pid }.map { NSNumber(value: $0.objectID) }
+    }
+
+    private static func setSleepingAllowed(_ allowed: Bool) -> OSStatus {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertySleepingIsAllowed,
+                                                 mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var value: UInt32 = allowed ? 1 : 0
+        return AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil,
+                                          UInt32(MemoryLayout<UInt32>.size), &value)
+    }
+}
+
+/// Mute set-ups taken apart, to see which parts the mute needs: the tap alone, the tap in a device that
+/// is never started, started (MuteRig as shipped), or started and then stopped (what a re-arm passes through).
+private struct LabError: Error { let stage: String; let status: OSStatus }
+
+@available(macOS 14.2, *)
+private final class LabRig {
+    enum Setup: String, CaseIterable { case tapOnly = "tap only", neverStarted = "device never started",
+                                            started = "device started (auto start)", stopped = "device started then stopped" }
+    private var tap = AudioObjectID(kAudioObjectUnknown)
+    private var device = AudioObjectID(kAudioObjectUnknown)
+    private var proc: AudioDeviceIOProcID?
+
+    init(process: AudioObjectID, setup: Setup) throws {
+        let description = CATapDescription(stereoMixdownOfProcesses: [process])
+        description.uuid = UUID()
+        description.muteBehavior = .muted
+        description.isPrivate = true
+        var status = AudioHardwareCreateProcessTap(description, &tap)
+        guard status == noErr else { throw LabError(stage: "tap", status: status) }
+        guard setup != .tapOnly else { return }
+        let output = AudioDevices.defaultOutputUID() ?? ""
+        let composition: [String: Any] = [
+            kAudioAggregateDeviceNameKey: "Tutto lab", kAudioAggregateDeviceUIDKey: "ca.bryanyao.Tutto.lab.\(UUID().uuidString)",
+            kAudioAggregateDeviceIsPrivateKey: true, kAudioAggregateDeviceIsStackedKey: false,
+            kAudioAggregateDeviceTapListKey: [[kAudioSubTapUIDKey: description.uuid.uuidString, kAudioSubTapDriftCompensationKey: true]],
+            kAudioAggregateDeviceTapAutoStartKey: true,
+            kAudioAggregateDeviceMainSubDeviceKey: output,
+            kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: output]],
+        ]
+        status = AudioHardwareCreateAggregateDevice(composition as CFDictionary, &device)
+        guard status == noErr else { stop(); throw LabError(stage: "device", status: status) }
+        status = AudioDeviceCreateIOProcIDWithBlock(&proc, device, nil) { _, _, _, _, _ in }
+        guard status == noErr else { stop(); throw LabError(stage: "ioproc", status: status) }
+        guard setup != .neverStarted else { return }
+        status = AudioDeviceStart(device, proc)
+        guard status == noErr else { stop(); throw LabError(stage: "start", status: status) }
+        if setup == .stopped {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+            AudioDeviceStop(device, proc)
+        }
+    }
+
+    func stop() {
+        if let proc { AudioDeviceStop(device, proc); AudioDeviceDestroyIOProcID(device, proc) }
+        proc = nil
+        if device != kAudioObjectUnknown { AudioHardwareDestroyAggregateDevice(device) }
+        if tap != kAudioObjectUnknown { AudioHardwareDestroyProcessTap(tap) }
+        device = AudioObjectID(kAudioObjectUnknown)
+        tap = AudioObjectID(kAudioObjectUnknown)
+    }
+}
+
+/// The power assertions coreaudiod holds on behalf of given processes ("type name" lines).
+enum PowerAssertions {
+    static func audio(for pids: Set<pid_t>) -> Set<String> {
+        var dictionary: Unmanaged<CFDictionary>?
+        guard IOPMCopyAssertionsByProcess(&dictionary) == kIOReturnSuccess,
+              let byProcess = dictionary?.takeRetainedValue() as NSDictionary? else { return [] }
+        var lines: Set<String> = []
+        for case let (_, list as NSArray) in byProcess {
+            for case let assertion as NSDictionary in list {
+                guard let name = assertion["AssertName"] as? String, name.hasPrefix("com.apple.audio."),
+                      let behalf = assertion["AssertionOnBehalfOfPID"] as? Int, pids.contains(pid_t(behalf)) else { continue }
+                let type = assertion["AssertType"] as? String ?? "?"
+                lines.insert("\(type) for \(behalf) \(name)")
+            }
+        }
+        return lines
     }
 }
 
