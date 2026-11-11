@@ -194,12 +194,12 @@ Researched (2026-11-10): othyn/macos-auto-clicker (MIT, 488★), WorldOfBasti/Ma
 
 | ID | Requirement | Acceptance criteria | Status |
 |---|---|---|---|
-| CLICK-1 | Turn it on and off from the menu bar panel | A row in the Controls card: name, speed and shortcut, a switch; started there it waits 2 s after the panel closes; a chevron shows CPS and button | see TEST_RESULTS "Auto Clicker" |
-| CLICK-2 | Speed | 1–100 CPS (page stepper, panel stepper, link), on its own thread with `mach_wait_until` | `ClickerTests`; accuracy see TEST_RESULTS |
-| CLICK-3 | A shortcut from any app | ⌃⇧A by default, recordable (F-keys too); hold-to-click mode uses the key going up | see TEST_RESULTS |
+| CLICK-1 | Turn it on and off from the menu bar panel | A row in the Controls card: name, speed and shortcut, a switch; started there it waits 2 s after the panel closes; a chevron shows CPS and button | [~] Rendered idle and running; the switch itself not clicked live (the link and the shortcut were) |
+| CLICK-2 | Speed | 1–100 CPS (page stepper, panel stepper, link), on its own thread with `mach_wait_until` | [x] `ClickerTests`; live: 50 / 100 / 250 clicks received in 5 s at 10 / 20 / 50 CPS, exactly (TEST_RESULTS "Auto Clicker, live") |
+| CLICK-3 | A shortcut from any app | ⌃⇧A by default, recordable (F-keys too); hold-to-click mode uses the key going up | [x] Live: ⌃⇧A stopped a run with no limit (0 clicks after). Hold mode: [~] not run live |
 | CLICK-4 | A timer and other limits | Stop after N clicks or a time; start delay; random spread ±10/25 % | `ClickerTests` (limits, spread averages to the set speed) |
-| CLICK-5 | Button, double, where | Left/right/middle; double clicks posted with click state 1 then 2; at the pointer or a picked spot | see TEST_RESULTS |
-| CLICK-6 | Always a way out | A screen corner stops a run (checked before every click, any display); the pill and the menu bar icon show it's on | `ClickerTests.testCornersOfEveryScreen`; live see TEST_RESULTS |
+| CLICK-5 | Button, double, where | Left/right/middle; double clicks posted with click state 1 then 2; at the pointer or a picked spot | [x] Live: 10 double clicks (click count 2) at 5 CPS for 2 s, 10 right clicks at 10 CPS for 1 s, all at a set spot |
+| CLICK-6 | Always a way out | A screen corner stops a run (checked before every click, any display); the pill and the menu bar icon show it's on | [x] `ClickerTests.testCornersOfEveryScreen`; live: the pointer pushed into the top-left corner stopped a run (0 clicks after) |
 | CLICK-7 | A cleaner panel | Stay awake, auto clicker and fan in one Controls card of one-line rows; General › Menu bar panel hides any part | [x] Offscreen renders: 734 pt with the clicker added (735 before it), four cards below the tiles down to three, every card the same width |
 
 ## UX — design
