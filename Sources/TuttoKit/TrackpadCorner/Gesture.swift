@@ -178,6 +178,15 @@ public struct TouchTracker: Sendable {
 
     public var newest: Track? { active.max { $0.downAt < $1.downAt } }
     public var isTouching: Bool { !active.isEmpty }
+    /// Fingers on the glass now (resting ones included).
+    public var fingerCount: Int { active.count }
+
+    /// Fingers that landed together with the newest one (within `window`): the fingers of a
+    /// gesture, leaving out a thumb or palm that was resting there before it.
+    public func fingersLandedTogether(within window: UInt64) -> Int {
+        guard let newest = active.map(\.downAt).max() else { return 0 }
+        return active.filter { newest &- $0.downAt <= window }.count
+    }
 
     public mutating func reset() {
         active.removeAll(keepingCapacity: true)
@@ -299,18 +308,36 @@ public struct RuleSet: Equatable, Sendable {
     /// How long after a tap lifts macOS may still deliver its "Tap to click" click.
     /// macOS holds taps back for up to ~0.8 s when tap-to-drag is on.
     public var tapClickWindow: UInt64 = ClickDecider.standardTapClickWindow
+    /// A physical click with exactly `ClickDecider.middleClickFingers` fingers down is a middle
+    /// click (and its drag a middle drag), anywhere on the trackpad.
+    public var middleClick = false
 
     public init(zone: CornerZone = .standard, clickEnabled: Bool = true, tapEnabled: Bool = true,
-                tapClickWindow: UInt64 = ClickDecider.standardTapClickWindow) {
+                tapClickWindow: UInt64 = ClickDecider.standardTapClickWindow, middleClick: Bool = false) {
         self.zone = zone
         self.clickEnabled = clickEnabled
         self.tapEnabled = tapEnabled
         self.tapClickWindow = tapClickWindow
+        self.middleClick = middleClick
     }
 }
 
 public enum ClickDecider {
     public static let standardTapClickWindow: UInt64 = 350_000_000
+    /// Exactly this many fingers down during a click make it a middle click (more is a palm or a
+    /// second hand, fewer are ordinary and secondary clicks).
+    public static let middleClickFingers = 3
+    /// Fingers of one gesture land within this of each other; a thumb resting longer doesn't count.
+    public static let middleClickLandingWindow: UInt64 = 500_000_000
+
+    /// Whether a click with these trackpads' fingers down is a middle click: exactly three fingers
+    /// that landed together, and nothing else on that trackpad.
+    public static func isMiddleClick(trackers: [TouchTracker], rules: RuleSet) -> Bool {
+        rules.middleClick && trackers.contains { tracker in
+            tracker.fingersLandedTogether(within: middleClickLandingWindow) == middleClickFingers
+                && tracker.fingerCount == middleClickFingers
+        }
+    }
     public static let dragDelayedTapClickWindow: UInt64 = 900_000_000
     /// After it has clicked once, a finger must stay this close (mm) to click the corner again.
     /// Nudging toward a menu item means you're pointing now.

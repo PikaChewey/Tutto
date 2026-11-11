@@ -351,6 +351,7 @@ struct CornerPage: View {
                        module: .corner)
             if let module = model.corner {
                 CornerPageContent(module: module)
+                    .onAppear { module.refreshSystemSettings() }
             } else {
                 ModuleOffView(module: .corner, model: model)
             }
@@ -360,6 +361,13 @@ struct CornerPage: View {
 
 private struct CornerPageContent: View {
     @Bindable var module: CornerModule
+
+    private var middleClickDetail: String {
+        if module.threeFingerDragOn {
+            return "Waiting while macOS's three-finger drag is on (Accessibility › Pointer Control › Trackpad Options): every three-finger drag would become a middle drag."
+        }
+        return "Press with three fingers anywhere on the trackpad: links open in a new tab, tabs close, Terminal pastes. Hold and drag to pan or orbit in 3D and CAD apps."
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -381,6 +389,12 @@ private struct CornerPageContent: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Button("Set Up & Test…") { OnboardingWindowController.shared.show(step: .corner) }
                         .buttonStyle(OutlineButtonStyle(compact: true))
+                }
+            }
+            InkGroup("Middle click") {
+                LabeledRow("Three-finger click is a middle click", detail: middleClickDetail) {
+                    InkSwitch(isOn: $module.middleClick, label: "Three-finger click is a middle click",
+                              active: !module.threeFingerDragOn)
                 }
             }
             InkGroup("Troubleshooting") {

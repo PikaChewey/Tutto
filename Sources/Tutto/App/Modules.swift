@@ -78,7 +78,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .windows: "Snap windows to halves, thirds and quarters from a palette."
         case .screenshots: "Capture to clipboard, edit, draw, pick colors, copy text."
         case .archives: "Open RAR, 7z, zip and more, right from Finder."
-        case .corner: "Click or tap a trackpad corner to right-click."
+        case .corner: "Click or tap a trackpad corner to right-click; click with three fingers to middle-click."
         case .wordCounter: "Words, characters and reading time of any text."
         case .sound: "Mute any app at the speakers; it still plays to recorders."
         case .switcher: "⌘Tab shows every window, not just every app."

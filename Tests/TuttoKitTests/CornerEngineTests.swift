@@ -374,19 +374,110 @@ struct MultiTrackpadTests {
     }
 }
 
+@Suite("Three-finger middle click: which fingers count")
+struct MiddleClickTests {
+    private func middle(_ frames: [(UInt64, [Contact])], at t: UInt64) -> Bool {
+        var tracker = TouchTracker()
+        for (time, contacts) in frames { tracker.update(touching: contacts, now: time * ms) }
+        return ClickDecider.isMiddleClick(trackers: [tracker], rules: RuleSet(middleClick: true))
+    }
+
+    @Test func threeFingersLandingTogether() {
+        #expect(middle([(0, [finger(1, 0.3, 0.5)]),
+                        (80, [finger(1, 0.3, 0.5), finger(2, 0.45, 0.55), finger(3, 0.6, 0.5)]),
+                        (900, [finger(1, 0.3, 0.5), finger(2, 0.45, 0.55), finger(3, 0.6, 0.5)])], at: 920))
+    }
+
+    @Test func aRestingThumbPlusTwoFingersIsNot() {
+        // The thumb lay at the bottom for a second and a half before two fingers came down to click.
+        #expect(!middle([(0, [finger(1, 0.5, 0.05)]),
+                         (1500, [finger(1, 0.5, 0.05), finger(2, 0.4, 0.5), finger(3, 0.55, 0.5)])], at: 1600))
+    }
+
+    @Test func aRestingThumbPlusThreeFingersIsNot() {
+        // Four contacts: not exactly three, so it stays an ordinary click (as macOS would make it).
+        #expect(!middle([(0, [finger(1, 0.5, 0.05)]),
+                         (1500, [finger(1, 0.5, 0.05), finger(2, 0.3, 0.5), finger(3, 0.45, 0.55), finger(4, 0.6, 0.5)])],
+                        at: 1600))
+    }
+
+    @Test func fingersPlacedOneByOneSlowlyAreNot() {
+        #expect(!middle([(0, [finger(1, 0.3, 0.5)]),
+                         (700, [finger(1, 0.3, 0.5), finger(2, 0.45, 0.55)]),
+                         (1400, [finger(1, 0.3, 0.5), finger(2, 0.45, 0.55), finger(3, 0.6, 0.5)])], at: 1500))
+    }
+
+    @Test func offMeansNever() {
+        var tracker = TouchTracker()
+        tracker.update(touching: [finger(1, 0.3, 0.5), finger(2, 0.45, 0.55), finger(3, 0.6, 0.5)], now: 0)
+        #expect(!ClickDecider.isMiddleClick(trackers: [tracker], rules: RuleSet()))
+    }
+}
+
 @Suite("Engine: real CGEvents through the tap handler")
 struct EngineCoreTests {
     /// Pretends macOS "Tap to click" is on and never posts real clicks from a test.
-    private func makeCore(tapToClick: Bool = true, posted: Counter = Counter()) -> EngineCore {
+    private func makeCore(tapToClick: Bool = true, posted: Counter = Counter(), middleClick: Bool = false,
+                          threeFingerDrag: Bool = false) -> EngineCore {
         var system = EngineCore.System()
         system.tapToClickEnabled = { _ in tapToClick }
         system.recentlyTyped = { false }
         system.postRightClick = { posted.increment(); return true }
         system.menuUnderPointer = { _ in false }
+        system.threeFingerDragEnabled = { threeFingerDrag }
         let core = EngineCore(system: system) { _ in }
         core.resetTouches(sizes: [.macBookPro14])
-        core.setRules(RuleSet())
+        core.setRules(RuleSet(middleClick: middleClick))
         return core
+    }
+
+    // MARK: Three-finger middle click
+
+    @Test func threeFingerClickBecomesMiddleDownDragUp() {
+        let core = makeCore(middleClick: true)
+        touch(core, [(0.3, 0.5, 4), (0.45, 0.55, 4), (0.6, 0.5, 4)])
+        let down = core.handleMouseEvent(type: .leftMouseDown, event: mouse(.leftMouseDown))
+        #expect(down.type == .otherMouseDown)
+        #expect(button(down) == 2)
+        let drag = core.handleMouseEvent(type: .leftMouseDragged, event: mouse(.leftMouseDragged))
+        #expect(drag.type == .otherMouseDragged)
+        #expect(button(drag) == 2)
+        let up = core.handleMouseEvent(type: .leftMouseUp, event: mouse(.leftMouseUp))
+        #expect(up.type == .otherMouseUp)
+        #expect(button(up) == 2)
+        // The next one-finger click is an ordinary click again.
+        touch(core, [(0.4, 0.5, 4)])
+        #expect(core.handleMouseEvent(type: .leftMouseDown, event: mouse(.leftMouseDown)).type == .leftMouseDown)
+        #expect(core.handleMouseEvent(type: .leftMouseUp, event: mouse(.leftMouseUp)).type == .leftMouseUp)
+    }
+
+    @Test func threeFingersInTheCornerAreStillAMiddleClick() {
+        let core = makeCore(middleClick: true)
+        touch(core, [(0.9, 0.1, 4), (0.8, 0.15, 4), (0.7, 0.12, 4)])
+        #expect(core.handleMouseEvent(type: .leftMouseDown, event: mouse(.leftMouseDown)).type == .otherMouseDown)
+    }
+
+    @Test func twoOrFourFingersAreNotAMiddleClick() {
+        let core = makeCore(middleClick: true)
+        touch(core, [(0.3, 0.5, 4), (0.45, 0.55, 4)])
+        #expect(core.handleMouseEvent(type: .leftMouseDown, event: mouse(.leftMouseDown)).type == .leftMouseDown)
+        _ = core.handleMouseEvent(type: .leftMouseUp, event: mouse(.leftMouseUp))
+        touch(core, [(0.3, 0.5, 4), (0.45, 0.55, 4), (0.6, 0.5, 4), (0.75, 0.45, 4)])
+        #expect(core.handleMouseEvent(type: .leftMouseDown, event: mouse(.leftMouseDown)).type == .leftMouseDown)
+    }
+
+    @Test func middleClickIsOffUntilSwitchedOn() {
+        let core = makeCore()
+        touch(core, [(0.3, 0.5, 4), (0.45, 0.55, 4), (0.6, 0.5, 4)])
+        #expect(core.handleMouseEvent(type: .leftMouseDown, event: mouse(.leftMouseDown)).type == .leftMouseDown)
+    }
+
+    @Test func threeFingerDragLeavesThreeFingersAlone() {
+        // macOS's three-finger drag starts with a three-finger "click"; it must stay a drag.
+        let core = makeCore(middleClick: true, threeFingerDrag: true)
+        touch(core, [(0.3, 0.5, 4), (0.45, 0.55, 4), (0.6, 0.5, 4)])
+        #expect(core.handleMouseEvent(type: .leftMouseDown, event: mouse(.leftMouseDown)).type == .leftMouseDown)
+        #expect(core.handleMouseEvent(type: .leftMouseDragged, event: mouse(.leftMouseDragged)).type == .leftMouseDragged)
     }
 
     /// Sends one raw trackpad frame, exactly as MultitouchSupport would.

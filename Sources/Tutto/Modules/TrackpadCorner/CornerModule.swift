@@ -21,6 +21,10 @@ final class CornerModule: ModuleController {
     var isEnabled: Bool { didSet { save(); applyEnabled() } }
     var clickEnabled: Bool { didSet { save(); pushRules() } }
     var tapEnabled: Bool { didSet { save(); pushRules() } }
+    /// A three-finger click anywhere is a middle click (off until switched on).
+    var middleClick: Bool { didSet { save(); pushRules() } }
+    /// macOS's three-finger drag is on, which takes the three-finger gesture (read when shown).
+    private(set) var threeFingerDragOn = SystemTrackpad.threeFingerDragEnabled()
     var zone: CornerZone { didSet { save(); pushRules() } }
     /// The user chose their own width and height instead of S, M or L.
     var zoneIsCustom: Bool { didSet { defaults.set(zoneIsCustom, forKey: Keys.custom) } }
@@ -52,6 +56,7 @@ final class CornerModule: ModuleController {
         isEnabled = defaults.bool(forKey: Keys.enabled)
         clickEnabled = defaults.bool(forKey: Keys.click)
         tapEnabled = defaults.bool(forKey: Keys.tap)
+        middleClick = defaults.bool(forKey: Keys.middle)
         if let data = defaults.data(forKey: Keys.zone),
            let saved = try? JSONDecoder().decode(CornerZone.self, from: data) {
             zone = saved.clamped
@@ -122,7 +127,13 @@ final class CornerModule: ModuleController {
         let window = SystemTrackpad.tapToDragEnabled()
             ? ClickDecider.dragDelayedTapClickWindow
             : ClickDecider.standardTapClickWindow
-        engine.setRules(RuleSet(zone: zone, clickEnabled: clickEnabled, tapEnabled: tapEnabled, tapClickWindow: window))
+        engine.setRules(RuleSet(zone: zone, clickEnabled: clickEnabled, tapEnabled: tapEnabled, tapClickWindow: window,
+                                middleClick: middleClick))
+    }
+
+    /// Reads macOS's trackpad settings again (the page shows whether three-finger drag is in the way).
+    func refreshSystemSettings() {
+        threeFingerDragOn = SystemTrackpad.threeFingerDragEnabled()
     }
 
     private func applyEnabled() {
@@ -139,6 +150,7 @@ final class CornerModule: ModuleController {
         defaults.set(isEnabled, forKey: Keys.enabled)
         defaults.set(clickEnabled, forKey: Keys.click)
         defaults.set(tapEnabled, forKey: Keys.tap)
+        defaults.set(middleClick, forKey: Keys.middle)
         if let data = try? JSONEncoder().encode(zone) {
             defaults.set(data, forKey: Keys.zone)
         }
@@ -183,6 +195,7 @@ final class CornerModule: ModuleController {
         static let enabled = "corner.enabled"
         static let click = "corner.clickEnabled"
         static let tap = "corner.tapEnabled"
+        static let middle = "corner.middleClick"
         static let zone = "corner.zone.v4"
         static let custom = "corner.zoneIsCustom"
         static let diagnostics = "corner.diagnostics"

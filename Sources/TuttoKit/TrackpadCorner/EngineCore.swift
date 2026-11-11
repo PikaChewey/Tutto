@@ -38,6 +38,8 @@ public final class EngineCore: @unchecked Sendable {
         var trackers: [TouchTracker] = []
         var rules = RuleSet()
         var converting = false
+        /// A three-finger click became a middle click; its drags and release follow.
+        var convertingMiddle = false
         var observing = false
         var diagnostics = false
         var lastPublish: UInt64 = 0
@@ -54,6 +56,8 @@ public final class EngineCore: @unchecked Sendable {
         var recentlyTyped: @Sendable () -> Bool = { SystemTrackpad.recentlyTyped() }
         var postRightClick: @Sendable () -> Bool = { EngineCore.postRightClick() }
         var menuUnderPointer: @Sendable (CGPoint) -> Bool = { SystemTrackpad.menuContains($0) }
+        /// Read only when three fingers click, so the common click never pays for it.
+        var threeFingerDragEnabled: @Sendable () -> Bool = { SystemTrackpad.threeFingerDragEnabled() }
 
         public init() {}
     }
@@ -94,6 +98,7 @@ public final class EngineCore: @unchecked Sendable {
                 return tracker
             }
             state.converting = false
+            state.convertingMiddle = false
         }
     }
 
@@ -184,6 +189,22 @@ public final class EngineCore: @unchecked Sendable {
                 }
                 if stale { report(.touchStreamStale) }
             }
+            // Three fingers down: a middle click (unless macOS's three-finger drag owns that gesture).
+            let threeFingers = shared.withLock { state -> Bool in
+                state.convertingMiddle = false
+                return sender != .other && ClickDecider.isMiddleClick(trackers: state.trackers, rules: state.rules)
+            }
+            if threeFingers, !system.threeFingerDragEnabled() {
+                let snapshot = shared.withLock { state -> String? in
+                    state.converting = false
+                    state.convertingMiddle = true
+                    for i in state.trackers.indices { state.trackers[i].markPressed(rightClick: false) }
+                    return state.diagnostics ? Self.describe(state.trackers, now: monotonicNanoseconds()) : nil
+                }
+                if let snapshot { report(.diagnostic("sender=\(sender) decided=middle \(snapshot)")) }
+                Self.makeMiddle(event, .otherMouseDown)
+                return event
+            }
             let (decision, snapshot): (ClickDecider.Decision, String?) = shared.withLock { state in
                 state.converting = false
                 let now = monotonicNanoseconds()
@@ -236,13 +257,23 @@ public final class EngineCore: @unchecked Sendable {
             return event
 
         case .leftMouseDragged:
-            if shared.withLock({ $0.converting }) {
+            if shared.withLock({ $0.convertingMiddle }) {
+                Self.makeMiddle(event, .otherMouseDragged)
+            } else if shared.withLock({ $0.converting }) {
                 event.type = .rightMouseDragged
                 event.setIntegerValueField(.mouseEventButtonNumber, value: Int64(CGMouseButton.right.rawValue))
             }
             return event
 
         case .leftMouseUp:
+            let wasMiddle = shared.withLock { state -> Bool in
+                defer { state.convertingMiddle = false }
+                return state.convertingMiddle
+            }
+            if wasMiddle {
+                Self.makeMiddle(event, .otherMouseUp)
+                return event
+            }
             let wasConverting = shared.withLock { state -> Bool in
                 defer { state.converting = false }
                 return state.converting
@@ -262,6 +293,16 @@ public final class EngineCore: @unchecked Sendable {
     /// Called when macOS disabled the tap (it was too slow, or secure input).
     /// If a converted press was in flight, release the right button so nothing sticks.
     public func recoverFromTapInterruption() {
+        let wasMiddle = shared.withLock { state -> Bool in
+            defer { state.convertingMiddle = false }
+            return state.convertingMiddle
+        }
+        if wasMiddle, let location = CGEvent(source: nil)?.location,
+           let up = CGEvent(mouseEventSource: nil, mouseType: .otherMouseUp,
+                            mouseCursorPosition: location, mouseButton: .center) {
+            up.setIntegerValueField(.eventSourceUserData, value: Self.syntheticMarker)
+            up.post(tap: .cghidEventTap)
+        }
         let wasConverting = shared.withLock { state -> Bool in
             defer { state.converting = false }
             return state.converting
@@ -275,6 +316,13 @@ public final class EngineCore: @unchecked Sendable {
     }
 
     // MARK: Helpers
+
+    /// Turns a left-button event into the middle button's (button 2, as a mouse's wheel click sends).
+    private static func makeMiddle(_ event: CGEvent, _ type: CGEventType) {
+        event.type = type
+        event.setIntegerValueField(.mouseEventButtonNumber, value: Int64(CGMouseButton.center.rawValue))
+        if type != .otherMouseDragged { event.setIntegerValueField(.mouseEventClickState, value: 1) }
+    }
 
     /// Posts a right-click at the pointer. Used only when "Tap to click" is off.
     @discardableResult
@@ -368,6 +416,20 @@ public enum SystemTrackpad {
         let domain = "com.apple.AppleMultitouchTrackpad" as CFString
         CFPreferencesAppSynchronize(domain)
         return (CFPreferencesCopyAppValue("Clicking" as CFString, domain) as? NSNumber)?.boolValue ?? false
+    }
+
+    /// macOS's three-finger drag (Accessibility › Pointer Control › Trackpad Options): three fingers
+    /// down then drag. A three-finger click can't be a middle click while it's on, or every
+    /// three-finger drag would become a middle drag.
+    public static func threeFingerDragEnabled() -> Bool {
+        for domain in ["com.apple.AppleMultitouchTrackpad", "com.apple.driver.AppleBluetoothMultitouch.trackpad"] {
+            CFPreferencesAppSynchronize(domain as CFString)
+            if let value = CFPreferencesCopyAppValue("TrackpadThreeFingerDrag" as CFString, domain as CFString) as? NSNumber,
+               value.boolValue {
+                return true
+            }
+        }
+        return false
     }
 
     /// "Dragging" (double-tap drag) or drag lock makes macOS deliver tap clicks later.
