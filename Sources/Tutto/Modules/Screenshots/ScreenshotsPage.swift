@@ -12,7 +12,7 @@ struct ScreenshotsPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PageHeader(title: "Screenshots",
-                       subtitle: "Capture straight to the clipboard, or into an editor to draw, crop, pick colors and copy text.",
+                       subtitle: "Capture straight to the clipboard, or into an editor to draw, crop, pick colors and copy text. Record the screen to MP4.",
                        module: .screenshots)
             if let screenshots = model.screenshots {
                 ScreenshotSettings(screenshots: screenshots, model: model)
@@ -57,6 +57,7 @@ private struct ScreenshotSettings: View {
                     ShortcutRecorder(action: .captureAreaEdit, model: model)
                 }
             }
+            RecordingSettings(recorder: screenshots.recorder, model: model)
             InkGroup("While selecting") {
                 tip("Drag", "select an area; the pointer shows its position, then the size, in pixels")
                 tip("Click", "a window takes just that window; the desktop takes the whole screen")
@@ -111,5 +112,55 @@ private struct ScreenshotSettings: View {
         panel.canCreateDirectories = true
         panel.directoryURL = screenshots.saveFolder
         if panel.runModal() == .OK, let url = panel.url { screenshots.saveFolderPath = url.path }
+    }
+}
+
+
+/// Screen recording: its key, what goes into the movie, and the file it makes.
+private struct RecordingSettings: View {
+    @Bindable var recorder: ScreenRecorder
+    @Bindable var model: AppModel
+
+    var body: some View {
+        InkGroup("Screen recording") {
+            LabeledRow("Record", detail: ScreenRecorder.isSupported
+                       ? "Pick an area, a window or the whole screen; a 3-2-1, then it records. Press the keys again, or Stop in the menu bar, to finish: an MP4 lands in the screenshots folder."
+                       : "Needs macOS 15 or later.") {
+                ShortcutRecorder(action: .recordScreen, model: model)
+            }
+            Hairline().opacity(0.6)
+            LabeledRow("The Mac's sound", detail: "What apps play while you record (not Tutto's own sounds).") {
+                InkSwitch(isOn: $recorder.recordSystemAudio, label: "Record the Mac's sound")
+            }
+            Hairline().opacity(0.6)
+            LabeledRow("The microphone", detail: "Your voice over the recording. macOS asks the first time.") {
+                InkSwitch(isOn: $recorder.recordMicrophone, label: "Record the microphone")
+            }
+            Hairline().opacity(0.6)
+            LabeledRow("Show clicks", detail: "A ring where you click, so viewers can follow along.") {
+                InkSwitch(isOn: $recorder.showClicks, label: "Show clicks")
+            }
+            Hairline().opacity(0.6)
+            LabeledRow("Show the pointer") {
+                InkSwitch(isOn: $recorder.showPointer, label: "Show the pointer")
+            }
+            Hairline().opacity(0.6)
+            LabeledRow("Video", detail: recorder.codec == .h264
+                       ? "MP4, H.264: plays everywhere (messages, browsers, Windows)."
+                       : "MP4, HEVC: about half the size at the same quality; most current devices play it.") {
+                InkSegmented(selection: $recorder.codec, options: RecordingCodec.allCases.map { ($0, $0.title) })
+                    .fixedSize()
+            }
+            Hairline().opacity(0.6)
+            LabeledRow("Frames per second", detail: "60 for smooth scrolling and motion; 30 makes smaller files.") {
+                InkSegmented(selection: $recorder.framesPerSecond, options: [(30, "30"), (60, "60")])
+                    .fixedSize()
+            }
+            Hairline().opacity(0.6)
+            LabeledRow("Countdown", detail: "Time to get ready before it starts.") {
+                InkSegmented(selection: $recorder.countdownSeconds, options: [(0, "Off"), (3, "3 s"), (5, "5 s")])
+                    .fixedSize()
+            }
+        }
     }
 }

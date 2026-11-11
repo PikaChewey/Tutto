@@ -22,8 +22,11 @@ public enum DefaultShortcuts {
     /// The auto clicker on and off (or, in hold mode, clicking while held). "A" for auto, in Tutto's
     /// ⌃⇧ family; F-keys and single keys can be recorded instead, as clickers usually offer.
     public static let toggleClicker = KeyShortcut.ctrlShift(kVK_ANSI_A)
+    /// Screen recording on and off: "R" for record, in the ⌃⇧ family.
+    public static let recordScreen = KeyShortcut.ctrlShift(kVK_ANSI_R)
 
-    public static let all = [clipboardHistory, windowPalette, captureScreen, captureArea, captureAreaEdit, wordCounter, toggleClicker]
+    public static let all = [clipboardHistory, windowPalette, captureScreen, captureArea, captureAreaEdit, wordCounter, toggleClicker,
+                             recordScreen]
 
     /// Defaults that take a macOS shortcut on purpose.
     public static let takenFromMacOS: Set<KeyShortcut> = [captureScreen]

@@ -6,6 +6,8 @@
 	<string>Stay Awake's hotspot option needs to see Wi-Fi network names to find your hotspot, and macOS shows them only to apps with Location Services. Tutto never reads your location.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Stay Awake's hotspot option needs to see Wi-Fi network names to find your hotspot, and macOS shows them only to apps with Location Services. Tutto never reads your location.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Screen recordings can include your voice when you switch on "Record the microphone". Tutto uses it only while recording.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Tutto mutes the apps you choose by holding their sound back from your speakers and headphones. Nothing is recorded or saved.</string>
 	<key>ATSApplicationFontsPath</key>

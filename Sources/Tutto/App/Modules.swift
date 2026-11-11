@@ -76,7 +76,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .sensors: "Temperatures, fan speeds and fan control."
         case .clipboard: "Searchable history of text, images, files and links."
         case .windows: "Snap windows to halves, thirds and quarters from a palette."
-        case .screenshots: "Capture to clipboard, edit, draw, pick colors, copy text."
+        case .screenshots: "Capture to clipboard, edit, draw, pick colors, copy text; record the screen to MP4."
         case .archives: "Open RAR, 7z, zip and more, right from Finder."
         case .corner: "Click or tap a trackpad corner to right-click; click with three fingers to middle-click."
         case .wordCounter: "Words, characters and reading time of any text."
@@ -93,7 +93,8 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .system, .sensors: "Nothing. Readings are taken only while they're on screen."
         case .clipboard: "Checks the clipboard about once a second, coalesced with other system work."
-        case .windows, .screenshots, .wordCounter: "Nothing. Registered shortcuts wait for a key press."
+        case .windows, .wordCounter: "Nothing. Registered shortcuts wait for a key press."
+        case .screenshots: "Nothing. Registered shortcuts wait for a key press; a recording runs only while you record."
         case .archives: "Nothing in Tutto. Finder loads the small menu extension."
         case .corner: "Nothing until a finger touches the trackpad."
         case .sound: "Nothing until a muted app plays a sound."

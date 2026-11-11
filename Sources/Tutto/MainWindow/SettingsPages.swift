@@ -123,7 +123,8 @@ struct ShortcutsPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             PageHeader(title: "Shortcuts", subtitle: "Click a shortcut, then press the keys you want. Esc cancels, Delete removes it.")
-            group("Everyday", [.captureArea, .captureScreen, .captureAreaEdit, .clipboardHistory, .windowPalette, .wordCounter, .toggleClicker])
+            group("Everyday", [.captureArea, .captureScreen, .captureAreaEdit, .recordScreen, .clipboardHistory, .windowPalette, .wordCounter,
+                               .toggleClicker])
             if !model.plugins.plugins.isEmpty {
                 group("Your plugins", model.plugins.plugins.map { .plugin($0.id) })
             }

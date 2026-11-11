@@ -44,6 +44,8 @@ final class ScreenshotModule: ModuleController {
     var alsoSaveQuickCaptures: Bool { didSet { defaults.set(alsoSaveQuickCaptures, forKey: Keys.alsoSave) } }
 
     private(set) var isCapturing = false
+    /// Screen recording (⌃⇧R), with its own settings.
+    let recorder = ScreenRecorder()
     private(set) var lastLatency: TimeInterval?
 
     private weak var model: AppModel?
@@ -60,6 +62,7 @@ final class ScreenshotModule: ModuleController {
         alsoSaveQuickCaptures = defaults.bool(forKey: Keys.alsoSave)
         askWhereToSave = defaults.object(forKey: Keys.ask) as? Bool ?? true
         lastAskedFolderPath = defaults.string(forKey: Keys.lastAsked)
+        recorder.module = self
     }
 
     var saveFolder: URL { URL(fileURLWithPath: saveFolderPath, isDirectory: true) }
@@ -75,6 +78,7 @@ final class ScreenshotModule: ModuleController {
     func start() {}
 
     func stop() {
+        if recorder.recordingSince != nil { recorder.stop() } else { recorder.cancel() }
         editors.forEach { $0.close() }
         editors.removeAll()
         overlay = nil

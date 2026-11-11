@@ -321,6 +321,7 @@ final class AppModel {
         case .captureArea: screenshots?.capture(.areaToClipboard)
         case .captureScreen: screenshots?.capture(.screenToClipboard)
         case .captureAreaEdit: screenshots?.capture(.areaToEditor)
+        case .recordScreen: screenshots?.recorder.toggle()
         case .wordCounter: wordCounter?.togglePanel()
         case .muteFrontApp:
             if let result = sound?.toggleFrontmost() {

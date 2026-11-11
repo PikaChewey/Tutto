@@ -19,6 +19,7 @@ enum ShortcutAction: Hashable, Identifiable {
     case captureArea
     case captureScreen
     case captureAreaEdit
+    case recordScreen
     case wordCounter
     case muteFrontApp
     case openTutto
@@ -36,6 +37,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureArea: "screenshot.area"
         case .captureScreen: "screenshot.screen"
         case .captureAreaEdit: "screenshot.edit"
+        case .recordScreen: "screenshot.record"
         case .wordCounter: "wordcounter.open"
         case .muteFrontApp: "sound.muteFront"
         case .openTutto: "app.open"
@@ -54,6 +56,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureArea: "Capture area to clipboard"
         case .captureScreen: "Capture full screen to clipboard"
         case .captureAreaEdit: "Capture area and edit"
+        case .recordScreen: "Record the screen (again to stop)"
         case .wordCounter: "Word counter"
         case .muteFrontApp: "Mute or unmute the front app"
         case .openTutto: "Open Tutto"
@@ -69,7 +72,7 @@ enum ShortcutAction: Hashable, Identifiable {
         switch self {
         case .clipboardHistory: .clipboard
         case .windowPalette, .window: .windows
-        case .captureArea, .captureScreen, .captureAreaEdit: .screenshots
+        case .captureArea, .captureScreen, .captureAreaEdit, .recordScreen: .screenshots
         case .wordCounter: .wordCounter
         case .muteFrontApp: .sound
         case .toggleCorner: .corner
@@ -88,6 +91,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureArea: DefaultShortcuts.captureArea
         case .captureScreen: DefaultShortcuts.captureScreen
         case .captureAreaEdit: DefaultShortcuts.captureAreaEdit
+        case .recordScreen: DefaultShortcuts.recordScreen
         case .wordCounter: DefaultShortcuts.wordCounter
         case .toggleClicker: DefaultShortcuts.toggleClicker
         case .strip(let command): command.defaultShortcut
@@ -96,7 +100,8 @@ enum ShortcutAction: Hashable, Identifiable {
     }
 
     static var fixed: [ShortcutAction] {
-        [.clipboardHistory, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .wordCounter, .toggleClicker, .muteFrontApp, .openTutto, .toggleCorner]
+        [.clipboardHistory, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .recordScreen, .wordCounter, .toggleClicker,
+         .muteFrontApp, .openTutto, .toggleCorner]
     }
 
     static var all: [ShortcutAction] {

@@ -33,15 +33,25 @@ private struct MenuBarLabel: View {
         let awake = model.awake?.menuBarText
         let agents = model.awake?.isAgentSession == true
         let clicking = model.clicker?.isOn == true
-        if awake != nil || clicking || agents {
+        let recording = model.screenshots?.recorder.recordingSince
+        if awake != nil || clicking || agents || recording != nil {
             HStack(spacing: 3) {
                 Image(nsImage: MenuBarGlyph.image())
+                if let recording {
+                    // The time, a tick a second, only while recording.
+                    TimelineView(.periodic(from: recording, by: 1)) { context in
+                        HStack(spacing: 3) {
+                            Image(systemName: "record.circle")
+                            Text(RecordingRules.elapsed(context.date.timeIntervalSince(recording))).monospacedDigit()
+                        }
+                    }
+                }
                 if agents { Image(systemName: "cup.and.heat.waves") }
                 if clicking { Image(systemName: "cursorarrow.click.2") }
                 if let awake { Text(awake).monospacedDigit() }
             }
-            .accessibilityLabel(["Tutto", agents ? "staying awake while agents work" : nil, clicking ? "auto clicker on" : nil,
-                                 awake.map { "staying awake, \($0) left" }]
+            .accessibilityLabel(["Tutto", recording != nil ? "recording the screen" : nil, agents ? "staying awake while agents work" : nil,
+                                 clicking ? "auto clicker on" : nil, awake.map { "staying awake, \($0) left" }]
                 .compactMap { $0 }.joined(separator: ", "))
         } else {
             Image(nsImage: MenuBarGlyph.image())
@@ -70,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         if Snapshots.runIfRequested() { return NSApp.terminate(nil) }
         if AudioProbe.runIfRequested() { return NSApp.terminate(nil) }
+        if RecordingProbe.runIfRequested() { return NSApp.terminate(nil) }
         if SwitcherLab.runIfRequested() { return NSApp.terminate(nil) }
         if MemoryLab.runIfRequested() { return NSApp.terminate(nil) }
         #endif
@@ -150,7 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// `tutto://open/<page>` shows a page of the app; `tutto://do/<action>` runs an action, for
 /// automation (Shortcuts, scripts, Stream Deck…).
 ///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows switcher strip screenshots archives corner wordCounter sound shortcuts permissions general
-///   actions: capture-area capture-screen capture-edit clipboard windows word-counter mute-front-app quit
+///   actions: capture-area capture-screen capture-edit record-screen clipboard windows word-counter mute-front-app quit
 ///            stay-awake?for=2h30 (starts, or adds time)  stay-awake-end  agent-busy (an agent is working)
 ///            plugin?name=<name> (runs one of your plugins; or ?id=<uuid>)
 ///            clicker (starts or stops; ?cps=20&button=left|right|middle&double=1&at=x,y|pointer&for=30&clicks=100)
@@ -166,6 +177,7 @@ enum DeepLinks {
         case "capture-area": .captureArea
         case "capture-screen": .captureScreen
         case "capture-edit": .captureAreaEdit
+        case "record-screen": .recordScreen
         case "clipboard": .clipboardHistory
         case "windows": .windowPalette
         case "word-counter": .wordCounter

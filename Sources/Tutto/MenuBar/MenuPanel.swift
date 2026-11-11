@@ -53,6 +53,9 @@ struct MenuPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: PanelGrid.gap) {
             PanelHeader(model: model)
+            if let recorder = model.screenshots?.recorder, let since = recorder.recordingSince {
+                RecordingBanner(recorder: recorder, since: since)
+            }
             // The cards in the order and sizes set on the Customize page.
             WidgetGrid(model: model, editing: editing)
             Notices(model: model)
@@ -67,6 +70,33 @@ struct MenuPanel: View {
         .watching(model.system, model.system?.panelFeeds ?? [])
         .background { if !preview { PanelWindowReader() } }
         .tint(Color.themeAccent)
+    }
+}
+
+/// While the screen is recording: how long, and Stop (the panel is where you'd look for it).
+private struct RecordingBanner: View {
+    var recorder: ScreenRecorder
+    var since: Date
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle().fill(Color.red).frame(width: 7, height: 7)
+            Text("Recording")
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(Color.ink)
+            TimelineView(.periodic(from: since, by: 1)) { context in
+                Text(RecordingRules.elapsed(context.date.timeIntervalSince(since)))
+                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .foregroundStyle(Color.ink3)
+            }
+            Spacer(minLength: 8)
+            Button("Stop") { afterPanelCloses { recorder.stop() } }
+                .buttonStyle(OutlineButtonStyle(compact: true))
+                .help("Stop and save the recording")
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 40)
+        .background(CardSurface(radius: 12))
     }
 }
 
@@ -1642,6 +1672,7 @@ enum ShortcutRows {
             rows.append(Row(action: .captureArea, title: "Capture Area", short: "Area", symbol: "rectangle.dashed"))
             rows.append(Row(action: .captureAreaEdit, title: "Capture and Edit", short: "Edit", symbol: "pencil.and.scribble"))
             rows.append(Row(action: .captureScreen, title: "Capture Screen", short: "Screen", symbol: "laptopcomputer"))
+            rows.append(Row(action: .recordScreen, title: "Record Screen", short: "Record", symbol: "record.circle"))
         }
         if model.clipboard != nil {
             rows.append(Row(action: .clipboardHistory, title: "Clipboard History", short: "History", symbol: "list.clipboard"))
