@@ -58,6 +58,7 @@ private struct ScreenshotSettings: View {
                 }
             }
             RecordingSettings(recorder: screenshots.recorder, model: model)
+            ScrollingSettings(scrolling: screenshots.scrolling, model: model)
             InkGroup("While selecting") {
                 tip("Drag", "select an area; the pointer shows its position, then the size, in pixels")
                 tip("Click", "a window takes just that window; the desktop takes the whole screen")
@@ -160,6 +161,25 @@ private struct RecordingSettings: View {
             LabeledRow("Countdown", detail: "Time to get ready before it starts.") {
                 InkSegmented(selection: $recorder.countdownSeconds, options: [(0, "Off"), (3, "3 s"), (5, "5 s")])
                     .fixedSize()
+            }
+        }
+    }
+}
+
+/// Scrolling capture: its key, and whether the picture goes on the clipboard too.
+private struct ScrollingSettings: View {
+    @Bindable var scrolling: ScrollCapture
+    @Bindable var model: AppModel
+
+    var body: some View {
+        InkGroup("Scrolling capture") {
+            LabeledRow("Scrolling capture",
+                       detail: "Pick the part that scrolls; Tutto scrolls it and stitches one tall picture (a header that stays put is kept once). If it can't scroll it, you scroll and it follows. Return finishes, Esc cancels.") {
+                ShortcutRecorder(action: .scrollingCapture, model: model)
+            }
+            Hairline().opacity(0.6)
+            LabeledRow("Also copy it", detail: "It's always saved in the screenshots folder; this puts it on the clipboard too.") {
+                InkSwitch(isOn: $scrolling.copiesToClipboard, label: "Copy scrolling captures")
             }
         }
     }

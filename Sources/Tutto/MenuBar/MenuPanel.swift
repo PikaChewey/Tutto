@@ -1673,6 +1673,7 @@ enum ShortcutRows {
             rows.append(Row(action: .captureAreaEdit, title: "Capture and Edit", short: "Edit", symbol: "pencil.and.scribble"))
             rows.append(Row(action: .captureScreen, title: "Capture Screen", short: "Screen", symbol: "laptopcomputer"))
             rows.append(Row(action: .recordScreen, title: "Record Screen", short: "Record", symbol: "record.circle"))
+            rows.append(Row(action: .scrollingCapture, title: "Scrolling Capture", short: "Scroll", symbol: "arrow.down.to.line.compact"))
         }
         if model.clipboard != nil {
             rows.append(Row(action: .clipboardHistory, title: "Clipboard History", short: "History", symbol: "list.clipboard"))

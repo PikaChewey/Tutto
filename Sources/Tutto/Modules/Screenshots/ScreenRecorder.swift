@@ -528,8 +528,9 @@ struct CapturePromptView: View {
 
 // MARK: - The thumbnail after saving
 
-/// The finished movie in the corner of the screen for a few seconds: drag it into any app, click
-/// it to play, or Show in Finder, Copy or Delete. It stays while the pointer is on it.
+/// The finished movie (or tall scrolling capture) in the corner of the screen for a few seconds:
+/// drag it into any app, click it to open, or Show in Finder, Copy, Edit (a picture) or Delete.
+/// It stays while the pointer is on it.
 @MainActor
 final class RecordingThumbnail {
     static let shared = RecordingThumbnail()
@@ -538,10 +539,11 @@ final class RecordingThumbnail {
     private var hideWork: DispatchWorkItem?
     private let model = RecordingThumbnailModel()
 
-    func show(_ url: URL) {
+    func show(_ url: URL, image: CGImage? = nil) {
         model.url = url
-        model.poster = nil
+        model.poster = image.map { Self.poster(from: $0) }
         model.duration = nil
+        model.isPicture = image != nil
         let panel = self.panel ?? makePanel()
         self.panel = panel
         let size = panel.contentView?.fittingSize ?? NSSize(width: 236, height: 196)
@@ -557,6 +559,7 @@ final class RecordingThumbnail {
             panel.animator().alphaValue = 1
         }
         scheduleHide()
+        guard image == nil else { return }
         Task { @MainActor in
             let asset = AVURLAsset(url: url)
             if let seconds = try? await asset.load(.duration).seconds, seconds.isFinite {
@@ -569,6 +572,13 @@ final class RecordingThumbnail {
                 model.poster = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
             }
         }
+    }
+
+    /// A small copy for the card: the top of a tall picture, scaled to the card's width.
+    private static func poster(from image: CGImage) -> NSImage {
+        let visibleHeight = min(image.height, image.width * 120 / 212)
+        let top = image.cropping(to: CGRect(x: 0, y: 0, width: image.width, height: visibleHeight)) ?? image
+        return NSImage(cgImage: top, size: NSSize(width: top.width, height: top.height))
     }
 
     func hide() {
@@ -616,6 +626,8 @@ final class RecordingThumbnailModel {
     var poster: NSImage?
     var duration: String?
     var hovering = false
+    /// A picture (a scrolling capture) rather than a movie: it can be edited.
+    var isPicture = false
 }
 
 struct RecordingThumbnailView: View {
@@ -628,6 +640,7 @@ struct RecordingThumbnailView: View {
                 Group {
                     if let poster = model.poster {
                         Image(nsImage: poster).resizable().aspectRatio(contentMode: .fill)
+                            .frame(width: 212, height: 120, alignment: .top)
                     } else {
                         Rectangle().fill(Color.ink.opacity(0.08))
                     }
@@ -650,7 +663,7 @@ struct RecordingThumbnailView: View {
                 guard let url = model.url else { return NSItemProvider() }
                 return NSItemProvider(contentsOf: url) ?? NSItemProvider(object: url as NSURL)
             }
-            .help("Drag into any app, or click to play")
+            .help(model.isPicture ? "Drag into any app, or click to open" : "Drag into any app, or click to play")
             HStack(spacing: 6) {
                 Text(model.url?.deletingPathExtension().lastPathComponent ?? "")
                     .font(.system(size: 11, weight: .medium))
@@ -664,13 +677,23 @@ struct RecordingThumbnailView: View {
                     if let url = model.url { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                     close()
                 }
-                action("Copy", "doc.on.doc") {
-                    if let url = model.url {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.writeObjects([url as NSURL])
-                        Toast.shared.show("Copied", detail: "Paste it into a message or a folder")
+                if model.isPicture {
+                    action("Edit", "pencil.and.scribble") {
+                        if let url = model.url, let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                           let image = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+                            AppModel.shared.screenshots?.openEditor(with: image)
+                        }
+                        close()
                     }
-                    close()
+                } else {
+                    action("Copy", "doc.on.doc") {
+                        if let url = model.url {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.writeObjects([url as NSURL])
+                            Toast.shared.show("Copied", detail: "Paste it into a message or a folder")
+                        }
+                        close()
+                    }
                 }
                 action("Delete", "trash") {
                     if let url = model.url { try? FileManager.default.trashItem(at: url, resultingItemURL: nil) }

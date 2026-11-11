@@ -76,6 +76,26 @@ enum ScreenCapturer {
     }
 }
 
+extension ScreenCapturer {
+    /// One area of one display (`rect` in the display's points, top-left origin) at its own
+    /// resolution, without the pointer or Tutto's floating bits. Used by scrolling capture.
+    static func captureArea(display displayID: CGDirectDisplayID, rect: CGRect, scale: CGFloat) async throws -> CGImage {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard let display = content.displays.first(where: { $0.displayID == displayID }) else { throw CaptureError.noDisplays }
+        let own = Bundle.main.bundleIdentifier
+        let floating = content.windows.filter { $0.owningApplication?.bundleIdentifier == own && $0.windowLayer != 0 }
+        let configuration = SCStreamConfiguration()
+        configuration.sourceRect = rect
+        configuration.width = Int((rect.width * scale).rounded())
+        configuration.height = Int((rect.height * scale).rounded())
+        configuration.showsCursor = false
+        configuration.captureResolution = .best
+        configuration.colorSpaceName = CGColorSpace.sRGB
+        return try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(display: display, excludingWindows: floating),
+                                                          configuration: configuration)
+    }
+}
+
 extension NSScreen {
     var displayID: CGDirectDisplayID {
         (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0

@@ -20,6 +20,7 @@ enum ShortcutAction: Hashable, Identifiable {
     case captureScreen
     case captureAreaEdit
     case recordScreen
+    case scrollingCapture
     case wordCounter
     case muteFrontApp
     case openTutto
@@ -38,6 +39,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureScreen: "screenshot.screen"
         case .captureAreaEdit: "screenshot.edit"
         case .recordScreen: "screenshot.record"
+        case .scrollingCapture: "screenshot.scrolling"
         case .wordCounter: "wordcounter.open"
         case .muteFrontApp: "sound.muteFront"
         case .openTutto: "app.open"
@@ -57,6 +59,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureScreen: "Capture full screen to clipboard"
         case .captureAreaEdit: "Capture area and edit"
         case .recordScreen: "Record the screen (again to stop)"
+        case .scrollingCapture: "Scrolling capture"
         case .wordCounter: "Word counter"
         case .muteFrontApp: "Mute or unmute the front app"
         case .openTutto: "Open Tutto"
@@ -72,7 +75,7 @@ enum ShortcutAction: Hashable, Identifiable {
         switch self {
         case .clipboardHistory: .clipboard
         case .windowPalette, .window: .windows
-        case .captureArea, .captureScreen, .captureAreaEdit, .recordScreen: .screenshots
+        case .captureArea, .captureScreen, .captureAreaEdit, .recordScreen, .scrollingCapture: .screenshots
         case .wordCounter: .wordCounter
         case .muteFrontApp: .sound
         case .toggleCorner: .corner
@@ -92,6 +95,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .captureScreen: DefaultShortcuts.captureScreen
         case .captureAreaEdit: DefaultShortcuts.captureAreaEdit
         case .recordScreen: DefaultShortcuts.recordScreen
+        case .scrollingCapture: DefaultShortcuts.scrollingCapture
         case .wordCounter: DefaultShortcuts.wordCounter
         case .toggleClicker: DefaultShortcuts.toggleClicker
         case .strip(let command): command.defaultShortcut
@@ -100,7 +104,8 @@ enum ShortcutAction: Hashable, Identifiable {
     }
 
     static var fixed: [ShortcutAction] {
-        [.clipboardHistory, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .recordScreen, .wordCounter, .toggleClicker,
+        [.clipboardHistory, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .recordScreen, .scrollingCapture, .wordCounter,
+         .toggleClicker,
          .muteFrontApp, .openTutto, .toggleCorner]
     }
 

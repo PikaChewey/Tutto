@@ -24,9 +24,11 @@ public enum DefaultShortcuts {
     public static let toggleClicker = KeyShortcut.ctrlShift(kVK_ANSI_A)
     /// Screen recording on and off: "R" for record, in the ⌃⇧ family.
     public static let recordScreen = KeyShortcut.ctrlShift(kVK_ANSI_R)
+    /// Scrolling capture: "S" for scroll.
+    public static let scrollingCapture = KeyShortcut.ctrlShift(kVK_ANSI_S)
 
     public static let all = [clipboardHistory, windowPalette, captureScreen, captureArea, captureAreaEdit, wordCounter, toggleClicker,
-                             recordScreen]
+                             recordScreen, scrollingCapture]
 
     /// Defaults that take a macOS shortcut on purpose.
     public static let takenFromMacOS: Set<KeyShortcut> = [captureScreen]

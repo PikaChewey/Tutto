@@ -46,6 +46,8 @@ final class ScreenshotModule: ModuleController {
     private(set) var isCapturing = false
     /// Screen recording (⌃⇧R), with its own settings.
     let recorder = ScreenRecorder()
+    /// Scrolling screenshots (⌃⇧S).
+    let scrolling = ScrollCapture()
     private(set) var lastLatency: TimeInterval?
 
     private weak var model: AppModel?
@@ -63,6 +65,7 @@ final class ScreenshotModule: ModuleController {
         askWhereToSave = defaults.object(forKey: Keys.ask) as? Bool ?? true
         lastAskedFolderPath = defaults.string(forKey: Keys.lastAsked)
         recorder.module = self
+        scrolling.module = self
     }
 
     var saveFolder: URL { URL(fileURLWithPath: saveFolderPath, isDirectory: true) }
@@ -79,6 +82,7 @@ final class ScreenshotModule: ModuleController {
 
     func stop() {
         if recorder.recordingSince != nil { recorder.stop() } else { recorder.cancel() }
+        scrolling.cancel()
         editors.forEach { $0.close() }
         editors.removeAll()
         overlay = nil

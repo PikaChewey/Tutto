@@ -81,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Snapshots.runIfRequested() { return NSApp.terminate(nil) }
         if AudioProbe.runIfRequested() { return NSApp.terminate(nil) }
         if RecordingProbe.runIfRequested() { return NSApp.terminate(nil) }
+        if RecordingProbe.runScrollProbeIfRequested() { return NSApp.terminate(nil) }
         if SwitcherLab.runIfRequested() { return NSApp.terminate(nil) }
         if MemoryLab.runIfRequested() { return NSApp.terminate(nil) }
         #endif
@@ -161,7 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// `tutto://open/<page>` shows a page of the app; `tutto://do/<action>` runs an action, for
 /// automation (Shortcuts, scripts, Stream Deck…).
 ///   pages:   overview battery cpu gpu memory disk network sensors clipboard windows switcher strip screenshots archives corner wordCounter sound shortcuts permissions general
-///   actions: capture-area capture-screen capture-edit record-screen clipboard windows word-counter mute-front-app quit
+///   actions: capture-area capture-screen capture-edit record-screen scrolling-capture clipboard windows word-counter mute-front-app quit
 ///            stay-awake?for=2h30 (starts, or adds time)  stay-awake-end  agent-busy (an agent is working)
 ///            plugin?name=<name> (runs one of your plugins; or ?id=<uuid>)
 ///            clicker (starts or stops; ?cps=20&button=left|right|middle&double=1&at=x,y|pointer&for=30&clicks=100)
@@ -178,6 +179,7 @@ enum DeepLinks {
         case "capture-screen": .captureScreen
         case "capture-edit": .captureAreaEdit
         case "record-screen": .recordScreen
+        case "scrolling-capture": .scrollingCapture
         case "clipboard": .clipboardHistory
         case "windows": .windowPalette
         case "word-counter": .wordCounter
