@@ -180,7 +180,9 @@ enum DeepLinks {
         }
         if name == "agent-busy" { return model.awake?.noteAgentWork() ?? () }
         if name == "plugin" {
-            // ?name=Plain Text Clipboard (any case) or ?id=<uuid>
+            // ?name=Plain Text Clipboard (any case) or ?id=<uuid>. The folder is read again first,
+            // so a plugin added or edited by hand runs as it is now.
+            model.plugins.load()
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let wanted = items.first { $0.name == "name" }?.value ?? url.pathComponents.dropFirst(2).first
             if let id = items.first(where: { $0.name == "id" })?.value.flatMap(UUID.init(uuidString:)) {

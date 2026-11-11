@@ -202,6 +202,18 @@ Researched (2026-11-10): othyn/macos-auto-clicker (MIT, 488★), WorldOfBasti/Ma
 | CLICK-6 | Always a way out | A screen corner stops a run (checked before every click, any display); the pill and the menu bar icon show it's on | [x] `ClickerTests.testCornersOfEveryScreen`; live: the pointer pushed into the top-left corner stopped a run (0 clicks after) |
 | CLICK-7 | A cleaner panel | Stay awake, auto clicker and fan in one Controls card of one-line rows; General › Menu bar panel hides any part | [x] Offscreen renders: 734 pt with the clicker added (735 before it), four cards below the tiles down to three, every card the same width |
 
+## CUST — Customize and Plugins (2026-11-10)
+
+Bryan: "make it like customizeable with the GUI and plugins and stuff in the settings and whatever. think thoroughly about how to implement this and stuff and dont make it too much ... just make it something u can view in the settings of the app (not in the menu bar at all)".
+
+| ID | Requirement | Acceptance criteria | Status |
+|---|---|---|---|
+| CUST-1 | Arrange the menu bar panel from the settings | Customize page: the panel's parts, readings tiles, control rows and tools row, each shown or hidden and dragged into order (Move Up / Move Down in a row's menu and for VoiceOver too); Restore Defaults; nothing about customizing in the panel | [x] `ArrangementTests` (order, hide, drag-style moves, new items at their default spot, items that come and go, duplicates); page rendered side by side with the preview |
+| CUST-2 | See it while arranging | The real panel at 85 % beside the controls, updating as they change, not clickable there | [x] Rendered: the preview follows the default layout; sized by its own layout container, so nothing overlaps |
+| CUST-3 | The panel follows the arrangement | Parts in order, readings two to a row (an odd one takes the row), control rows in order, tools six to a row; temperatures read only while their tile shows; old "hide this part" choices carried over | [x] Default arrangement renders exactly as before (734 pt); `PanelLayout.rows` tested |
+| CUST-4 | Tools as plugins | Plugins page: every tool with its switch, what it does (idle cost as a tooltip) and a Settings link; the scrolling strip still switched on on its own page | [x] Rendered; General keeps links to both pages |
+| CUST-5 | Your own plugins | Name, SF Symbol, shell command (`zsh -l -c` in the home folder), clipboard as input, output shown / copied / ignored, time limit, shortcut, a place in the tools row (off by default), Try It before saving, four templates, one JSON file each (a name and a command are enough), `tutto://do/plugin?name=` | [x] `ScriptPluginTests` (hand-written files, ids stable from file names, save/edit/delete, input and output, failure, timeout, a command ignoring its input, output cap, home folder). Live (build 130): a hand-written file was picked up at launch, `tutto://do/plugin?name=tutto%20live%20test` ran it (exit 0 in 40 ms); links read the folder first |
+
 ## UX — design
 
 | ID | Requirement | Acceptance criteria | Status |
@@ -243,6 +255,7 @@ Every request in the specification (re-read in full 2026-10-10, 2,673 words) map
 
 | Spec says | Covered by |
 |---|---|
+| (2026-11-10) Customizable in the settings: the panel's layout, plugins, your own plugins; nothing in the menu bar | CUST-1 … CUST-5 |
 | (2026-11-10) Auto clicker toggled from the menu bar with its settings (CPS, timer, shortcut); a less cluttered panel | CLICK-1 … CLICK-7 |
 | (2026-11-10) Stay Awake: type a timer in the menu bar panel; lid closed, the Mac stays on and agents keep running; easy on the battery while closed; hotspot option in settings, off by default | AWAKE-1 … AWAKE-10 |
 | Battery and system monitor: click the menu bar icon to see readings; battery, health % (as macOS reports it), cycles, condition, power, top processes using battery | APP-1, SYS-1, SYS-2 |
