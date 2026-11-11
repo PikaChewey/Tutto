@@ -101,6 +101,7 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | TC-8 | Robustness: sleep/wake, hot-plug, stale stream, trust watchdog, menus, typing | — | [x] Engine's sleep/wake, hot-plug, stale-stream, watchdog, menu and typing rules kept; engine now also releases IOKit notifications when switched off |
 | TC-9 | Panel section more minimal (no right-click counter) | — | [-] Superseded 2026-10-26: Trackpad Corner left the menu bar panel (its controls are on its page; Pause is in ⋯) |
 | TC-10 | ~~One-time settings import; warning when another app is running~~ | — | [-] Removed by design: no settings import and no running-app warning; Trackpad Corner keeps its own settings (`corner.*`) |
+| TC-11 | Three-finger click is a middle click (2026-11-11: "add this as a setting") | A switch on the Trackpad Corner page, off by default; a physical click with exactly three fingers that landed together (within 0.5 s) becomes button 2 down/drag/up; a resting thumb, two or four fingers stay as they were; waits while macOS three-finger drag is on | [~] 10 tests (real CGEvents through the tap handler, timed finger scenarios) pass; a real three-finger press is a human check |
 
 ## WC — Word Counter (⌃⇧C)
 
@@ -122,6 +123,8 @@ Test machine: MacBook Pro 14" (Apple M5, 4 Super + 6 Efficiency cores, 10-core G
 | SND-4 | Costs nothing while a muted app is quiet | The device starts only when a muted app plays and is re-armed 0.5 s after it goes quiet | [x] No `PreventUserIdleSystemSleep` assertion and 0.0 % CPU while the muted app is silent; device stops/re-arms each ping (log) |
 | SND-5 | Compact, fits Tutto | Panel Sound card of app icons (muted = grey + slash badge, playing = speaker badge in the accent, `+N` menu past 8; "Unmute All" only while an app shown is muted, leaving apps muted while closed alone); Sound page with switches, muted-while-closed list, shortcut | [x] Live (build 86): a silent app's icon clicked → muted, clicked again → unmuted (the stored list read each time); "Unmute All" shown only while it was muted; the two apps muted while closed stayed muted. Found and fixed: "Unmute All" showed for apps muted while closed, with nothing greyed, and would have unmuted them |
 | SND-6 | Persistent | Muted apps stay muted after they relaunch and after Tutto restarts (bundle IDs in defaults) | [~] Stored and re-applied on process-list changes; live relaunch check was cut short |
+| SND-7 | Each app's own level, 0–300 % (2026-11-11: "set specific percentage of volume per app, boost quiet audio past 100%") | Per app: a VolumeRig (process tap `mutedWhenTapped` + private auto-start device on the output) runs GainStage: ramped gain, a peak limiter at 0.97 past 100 %; 100 % taps nothing; levels remembered | [~] 7 tests (unity bit-exact, halving, ramp without steps, 300 % full-scale sine limited and recovering, the slider curve, the output's stereo pair, only the tap's inputs on so a headset's microphone stays off); live tone probe (`--volume-probe`) pending an unlocked session |
+| SND-8 | Levels where you'd look | Panel Sound card: Levels opener with a slider per app (boost tinted, % in the accent past 100); a ring on icons not at 100 %; Sound page: a slider and a speaker button per app, Levels to 100 % | [x] Rendered light and dark |
 
 ## SW — Window Switcher (⌘Tab)
 
@@ -228,6 +231,43 @@ Bryan: "make the GUI customizeable in the same sense that the GUI in like vs cod
 | CUST-11 | Trust and safety | A plugin added by hand starts off ("New") until switched on; an approval holds for exactly what was approved (a fingerprint of the file and a folder plugin's scripts), so a change on disk shows "Changed" and waits; files claiming the same id are both left out; ones made or saved in Tutto are approved as saved; switching never rewrites a plugin's file and saving keeps what Tutto doesn't use; private copies never reach a plugin; a deleted plugin goes to the Trash with its settings, secrets and shortcut; renders never run plugins' triggers | [x] `PluginHardeningTests` (fingerprints change with the file or a script, hidden files ignored; duplicates left out; merge-saves keep other keys and unreadable triggers/settings). Live (build 137): an approved plugin edited on disk didn't run on its event |
 | CUST-13 | Robust against any plugin file | No crash from a file's numbers (card interval 2 s – 1 day, time limit 1–600 s, big setting defaults); a misspelt secret type is skipped, never stored as text; a timed-out command is stopped with everything it started; background children don't hold a run or its threads; event info capped; links run with TUTTO_REASON=link | [x] `PluginHardeningTests` (huge numbers, forgiving triggers and settings, null ids, timeout kills the process group, a background child doesn't hold the run). Found by an independent review of the change (14 findings, all fixed in 533c2b3) |
 | CUST-12 | Editor and guide | Plugin editor: the action, a card (refresh, size, background, Try Card), triggers with their parameters, its settings, recent runs with exit codes and errors; sections in the order that matters for the plugin's kind; "How plugins work" in the app; docs/PLUGINS.md | [x] Rendered: card and automation editors |
+
+## REC — Screen recording to MP4 (2026-11-11)
+
+| ID | Requirement | Acceptance criteria | Status |
+|---|---|---|---|
+| REC-1 | Record an area, a window or the whole screen to MP4 | ⌃⇧R, the Record tile or `tutto://do/record-screen`; the screenshot picker; countdown 0/3/5 s; ScreenCaptureKit + SCRecordingOutput, H.264 or HEVC, 30/60 fps, native resolution; macOS 15+ | [x] Probe (`--record-probe`): H.264 640×400 57.9 fps 3.13 s with AAC; HEVC 29.5 fps; frames show only the test window's moving bar |
+| REC-2 | Sound, voice, pointer and clicks as chosen | The Mac's sound (Tutto's own excluded), the microphone (asked before the countdown), pointer, click rings | [~] System audio track present in the probe; microphone and click rings not yet recorded live |
+| REC-3 | Clear while recording, easy to stop | Outline around the area (red while recording, left out of the video), dot and time by the icon, Stop in the panel, the keys again | [x] Built; outline excluded with Tutto's floating windows |
+| REC-4 | Easy to use the result | Saved as "Recording <date> at <time>.mp4" in the screenshots folder; a corner thumbnail to drag, play, show, copy or delete | [x] Built; thumbnail shows poster and duration |
+
+## SCROLL — Scrolling capture (2026-11-11)
+
+| ID | Requirement | Acceptance criteria | Status |
+|---|---|---|---|
+| SCROLL-1 | One tall picture of content that scrolls | ⌃⇧S; Tutto scrolls in steps (about 60 % of what's visible), waits for smooth scrolling to settle, stitches; manual scrolling when it can't scroll; ends at the bottom, Return or Done; Esc cancels | [~] 9 ScrollStitcher tests (plain, uneven steps and the end, sticky header and footer, blinking region, unrelated frames, repeating rows, cap, fingerprints); live probe (`--scroll-probe`) pending an unlocked session |
+| SCROLL-2 | Sticky headers and footers appear once | Rows that stay put at the top and bottom while content moves are kept once | [x] Tested |
+| SCROLL-3 | The result goes where you need it | PNG in the screenshots folder, on the clipboard (switch), corner thumbnail with Edit | [x] Built |
+
+## CONV — Convert and compress (2026-11-11)
+
+| ID | Requirement | Acceptance criteria | Status |
+|---|---|---|---|
+| CONV-1 | A menu bar way to convert files (2026-11-11: "click on something in the menu bar and then … open up a menu where you can convert files") | Convert tile (⌃⇧K) opens a window: drop or choose files, formats they can all become, Compress with its settings | [x] Rendered light/dark with real files |
+| CONV-2 | The zero-click way (Tangerine's wheel) | Tap ⇧ while dragging files anywhere: a wheel of formats at the pointer, Compress in the middle; drop converts; never takes the drag elsewhere | [~] Wheel rendered; a live drag-and-tap is a human check |
+| CONV-3 | Formats, native only | Pictures → JPEG/PNG/HEIC/AVIF/TIFF/GIF/BMP/PDF; video → MP4 (H.264/HEVC)/MOV/GIF/M4A; sound → M4A/ALAC/WAV/AIFF/FLAC; PDF → pages/text; documents → PDF/Word/RTF/ODT/HTML/text; SRT ↔ VTT | [x] Probe (`--convert-probe`): every path OK on generated files |
+| CONV-4 | Compression you control (2026-11-11: "settings on the compression about like how much it compresses") | Pictures: quality, longest side, target size, details removed; video: quality, size, codec; PDF: Light/Strong; sound: bit rate | [x] Photo 1.6 MB → 105 KB; target 80 KB → 70 KB; screenshot PNG 169 → 68 KB; PDF 3.2 MB → 1.9 MB / 418 KB; 720p clip → 187 KB |
+| CONV-5 | Safe results | Beside the original, never over anything ("name 2", "(compressed)"); progress pill; toast with savings and Show in Finder; Finder › Convert submenu | [x] OutputNames tests |
+
+## CLEAN — Clean Up (2026-11-11)
+
+| ID | Requirement | Acceptance criteria | Status |
+|---|---|---|---|
+| CLEAN-1 | Find leftovers of removed apps, caches, logs and the Trash (2026-11-11 request, verbatim in the plan) | Scan of ~/Library by bundle ID against installed apps, plug-ins, panes and JDKs; caches, logs, developer caches; the Trash with Full Disk Access | [x] Dry run on this Mac: 20.6 GB found in 5.6 s |
+| CLEAN-2 | "You review everything first and removed items go to the Trash" | Nothing changes before Move to Trash; each path checked again before it moves; Empty Trash separate with a warning | [x] Built; rule tests |
+| CLEAN-3 | Never remove what's in use | Nothing of Apple's (incl. plain-named caches, Shortcuts' old ID, CUPS); no cache of a running app or its maker; data of a removed app unticked if changed lately or holding sign-in data | [x] 6 tests; dry-run false positives fixed (team-ID group names, Java, a CLI's login) |
+| CLEAN-4 | In the menu bar | The Clean tile opens Clean Up and scans if the last scan is old | [x] Built |
+
 
 ## UX — design
 
