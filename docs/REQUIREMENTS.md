@@ -185,6 +185,22 @@ Bryan: "if I open the menu and then there's a basically insomnia equivalent and 
 | AWAKE-9 | For scripts and agents | `tutto://do/stay-awake?for=2h` starts or adds, `tutto://do/stay-awake-end` ends | [x] Live (build 114): started, extended (1h30 then +15m), ended |
 | AWAKE-10 | Costs nothing until used | No timer, observer or assertion without a session | [x] Build 115 idle, no session: 0.0 % CPU (`top`), no "Tutto Stay Awake" assertion |
 
+## CLICK — Auto Clicker (2026-11-10)
+
+Bryan: "include an auto clicker in this application that u can toggle on and off very easily in the GUI of the menu bar and have the respective settings for it ... adjust the cps and stuff and maybe a timer for how long its running for or like a keybind to like turn it on/off. Look at AutoClickers Online and see what features they have"; and "the menu bar is also getting pretty cluttered right now, maybe minimize some stuff to make it like cleaner".
+
+Researched (2026-11-10): othyn/macos-auto-clicker (MIT, 488★), WorldOfBasti/MaClicker (MIT), 404CoderFound/mac-autoclicker (MIT) read, not copied; opautoclicker.com, autoclicker.uk, autoclicker.com, murgaa.com, freemouseclicker.com, Speed AutoClicker (SourceForge), RapidClick and iAutoclicker App Store reviews, machow2 roundup, a Steam thread. "AutoClickers Online" itself didn't resolve. Taken: CPS, hotkey toggle, hold mode, button, single/double with a real click state (two of the three repos got it wrong), pointer or fixed spot, click limit, timer, start delay, random spread, a visible running state, a failsafe. Left out: multi-point sequences, image detection, key pressing.
+
+| ID | Requirement | Acceptance criteria | Status |
+|---|---|---|---|
+| CLICK-1 | Turn it on and off from the menu bar panel | A row in the Controls card: name, speed and shortcut, a switch; started there it waits 2 s after the panel closes; a chevron shows CPS and button | see TEST_RESULTS "Auto Clicker" |
+| CLICK-2 | Speed | 1–100 CPS (page stepper, panel stepper, link), on its own thread with `mach_wait_until` | `ClickerTests`; accuracy see TEST_RESULTS |
+| CLICK-3 | A shortcut from any app | ⌃⇧A by default, recordable (F-keys too); hold-to-click mode uses the key going up | see TEST_RESULTS |
+| CLICK-4 | A timer and other limits | Stop after N clicks or a time; start delay; random spread ±10/25 % | `ClickerTests` (limits, spread averages to the set speed) |
+| CLICK-5 | Button, double, where | Left/right/middle; double clicks posted with click state 1 then 2; at the pointer or a picked spot | see TEST_RESULTS |
+| CLICK-6 | Always a way out | A screen corner stops a run (checked before every click, any display); the pill and the menu bar icon show it's on | `ClickerTests.testCornersOfEveryScreen`; live see TEST_RESULTS |
+| CLICK-7 | A cleaner panel | Stay awake, auto clicker and fan in one Controls card of one-line rows; General › Menu bar panel hides any part | [x] Offscreen renders: 734 pt with the clicker added (735 before it), four cards below the tiles down to three, every card the same width |
+
 ## UX — design
 
 | ID | Requirement | Acceptance criteria | Status |
@@ -226,6 +242,7 @@ Every request in the specification (re-read in full 2026-10-10, 2,673 words) map
 
 | Spec says | Covered by |
 |---|---|
+| (2026-11-10) Auto clicker toggled from the menu bar with its settings (CPS, timer, shortcut); a less cluttered panel | CLICK-1 … CLICK-7 |
 | (2026-11-10) Stay Awake: type a timer in the menu bar panel; lid closed, the Mac stays on and agents keep running; easy on the battery while closed; hotspot option in settings, off by default | AWAKE-1 … AWAKE-10 |
 | Battery and system monitor: click the menu bar icon to see readings; battery, health % (as macOS reports it), cycles, condition, power, top processes using battery | APP-1, SYS-1, SYS-2 |
 | Temperatures and fans: view temperatures, edit fan power for heavy tasks | FAN-1 … FAN-4 |
