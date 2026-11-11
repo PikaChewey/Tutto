@@ -194,6 +194,17 @@ enum DeepLinks {
             }
             return
         }
+        if name == "theme" {
+            // ?name=Midnight: a built-in theme or one of your theme files (from a script or a plugin's schedule).
+            let wanted = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "name" }?.value ?? ""
+            let theme = ThemeStore.shared
+            theme.loadFiles()
+            guard let spec = (ThemeSpec.builtIn + theme.files.map(\.spec))
+                .first(where: { $0.name.caseInsensitiveCompare(wanted) == .orderedSame }) else {
+                return Toast.shared.show("No theme called “\(wanted)”", detail: "See Tutto › Appearance.", duration: 2.5)
+            }
+            return theme.apply(spec)
+        }
         if name == "event" {
             // ?name=build-done&info=… : runs the plugins with a custom-event trigger of that name.
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
