@@ -130,6 +130,8 @@ final class PluginsModel {
         }
         cards = cards.filter { id, _ in plugins.contains { $0.id == id } }
         publish()
+        // An offscreen render fills the cards once (nothing refreshes or runs by itself there).
+        if quiet { cardPlugins.forEach(refreshCard) }
     }
 
     /// Saves a new or edited plugin (made here, so it's yours and on); returns why it couldn't be.

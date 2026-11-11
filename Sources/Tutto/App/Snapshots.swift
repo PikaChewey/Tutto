@@ -166,12 +166,15 @@ struct SnapshotExtras {
         })
         // States live readings rarely show: the stats card's title calm, worth a look and alarmed,
         // and an app icon as it is, playing and muted.
-        extras.append(SnapshotExtras(name: "plugin-editor", inDefaultSet: false) { model in
-            var plugin = ScriptPlugin.templates[1]
-            plugin.id = UUID()
-            return AnyView(PluginEditor(model: model, draft: PluginDraft(plugin: plugin, isNew: true)) {}
-                .background(Color(nsColor: .windowBackgroundColor)))
-        })
+        for (name, template) in [("plugin-editor", "Uppercase Clipboard"), ("plugin-editor-card", "Git Changes"),
+                                 ("plugin-editor-automation", "Battery Low Notice")] {
+            extras.append(SnapshotExtras(name: name, inDefaultSet: false) { model in
+                var plugin = ScriptPlugin.templates.first { $0.name == template } ?? ScriptPlugin.templates[0]
+                plugin.id = UUID()
+                return AnyView(PluginEditor(model: model, draft: PluginDraft(plugin: plugin, isNew: true)) {}
+                    .background(Color(nsColor: .windowBackgroundColor)))
+            })
+        }
         extras.append(SnapshotExtras(name: "panel-states", inDefaultSet: false) { _ in
             let glances = [Glance("On battery", "4 h 9 min left"), Glance("Working hard", "CPU 91%", level: .notice),
                            Glance("Battery low", "18 min left", level: .alert)]
