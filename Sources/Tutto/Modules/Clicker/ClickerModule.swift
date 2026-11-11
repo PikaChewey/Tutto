@@ -8,7 +8,7 @@
 //  the panel closes so the first click lands where you put the pointer, not on the panel.
 //
 //  Nothing runs while it's off but the shortcut. While clicking: its own thread (ClickerEngine)
-//  and a pill at the top of the screen with the count and how to stop it.
+//  and a still pill at the top of the screen saying how to stop it.
 //
 
 import AppKit
@@ -26,9 +26,8 @@ final class ClickerModule: ModuleController {
     }
 
     private(set) var state: State = .idle
-    private(set) var clicks = 0
     private(set) var clickingSince: Date?
-    /// How the last run went, until the next one: "340 clicks in 34 s".
+    /// How the last run went, until the next one: "Done after 34 s".
     private(set) var lastRun: String?
     /// Why it couldn't start (Accessibility not allowed).
     private(set) var notice: String?
@@ -43,7 +42,6 @@ final class ClickerModule: ModuleController {
     @ObservationIgnored private var runID = 0
     @ObservationIgnored private var retuneWork: DispatchWorkItem?
     @ObservationIgnored private var countdownTimer: DispatchSourceTimer?
-    @ObservationIgnored private var progressTimer: DispatchSourceTimer?
     @ObservationIgnored private var pickMonitor: Any?
     @ObservationIgnored private let hud = ClickerHUD()
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -88,8 +86,6 @@ final class ClickerModule: ModuleController {
         old.stop()
         carriedClicks += old.progress.clicks
         engine = nil
-        progressTimer?.cancel()
-        progressTimer = nil
         run(continuing: true)
     }
 
@@ -148,7 +144,7 @@ final class ClickerModule: ModuleController {
         guard wait > 0 else { return run() }
         var left = Int(wait.rounded(.up))
         state = .countdown(left)
-        hud.show(countdown: left, settings: settings)
+        hud.show(countdown: left, shortcut: AppModel.shared.shortcuts.shortcut(for: .toggleClicker))
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + wait - Double(left - 1), repeating: 1)
         timer.setEventHandler { [weak self] in
@@ -161,7 +157,7 @@ final class ClickerModule: ModuleController {
                     self.run()
                 } else {
                     self.state = .countdown(left)
-                    self.hud.show(countdown: left, settings: self.settings)
+                    self.hud.show(countdown: left, shortcut: AppModel.shared.shortcuts.shortcut(for: .toggleClicker))
                 }
             }
         }
@@ -173,15 +169,11 @@ final class ClickerModule: ModuleController {
     private func run(continuing: Bool = false) {
         if !continuing {
             carriedClicks = 0
-            clicks = 0
             clickingSince = Date()
         }
         var current = settings
         let elapsed = clickingSince.map { Date().timeIntervalSince($0) } ?? 0
-        guard let left = ClickerRules.remainingStop(settings, clicks: carriedClicks, elapsed: elapsed) else {
-            clicks = carriedClicks
-            return end("Done")
-        }
+        guard let left = ClickerRules.remainingStop(settings, clicks: carriedClicks, elapsed: elapsed) else { return end("Done") }
         current.stop = left
         runID += 1
         let id = runID
@@ -200,21 +192,8 @@ final class ClickerModule: ModuleController {
         self.engine = engine
         state = .clicking
         engine.start()
-        hud.show(clicks: carriedClicks, settings: settings, shortcut: AppModel.shared.shortcuts.shortcut(for: .toggleClicker))
-        // The count, a few times a second, only while clicking.
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + 0.2, repeating: 0.2, leeway: .milliseconds(50))
-        timer.setEventHandler { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, let engine = self.engine else { return }
-                let count = self.carriedClicks + engine.progress.clicks
-                if count != self.clicks { self.clicks = count }
-                self.hud.show(clicks: count, settings: self.settings,
-                              shortcut: AppModel.shared.shortcuts.shortcut(for: .toggleClicker))
-            }
-        }
-        timer.resume()
-        progressTimer = timer
+        // Set once: nothing on screen changes while it clicks.
+        hud.show(clicking: settings, shortcut: AppModel.shared.shortcuts.shortcut(for: .toggleClicker))
     }
 
     /// Stops a countdown or a run. `reason` nil: quietly (module off, quit).
@@ -222,19 +201,14 @@ final class ClickerModule: ModuleController {
         guard state != .idle else { return }
         countdownTimer?.cancel()
         countdownTimer = nil
-        progressTimer?.cancel()
-        progressTimer = nil
         retuneWork?.cancel()
         retuneWork = nil
-        if let engine {
-            engine.stop()
-            clicks = carriedClicks + engine.progress.clicks
-        }
+        engine?.stop()
         engine = nil
         runID += 1
         let ran = clickingSince.map { Date().timeIntervalSince($0) } ?? 0
         if state == .clicking, let reason {
-            lastRun = "\(reason): \(clicks.formatted()) click\(clicks == 1 ? "" : "s") in \(ClickerRules.duration(max(ran, 1)))"
+            lastRun = "\(reason) after \(ClickerRules.duration(max(ran, 1)))"
         }
         state = .idle
         clickingSince = nil
@@ -263,9 +237,8 @@ final class ClickerModule: ModuleController {
 
     #if DEBUG
     /// Offscreen renders only: the clicker as the panel shows it mid-run, without clicking.
-    func previewClicking(_ clicks: Int, since: TimeInterval = 0) {
+    func previewClicking(since: TimeInterval = 0) {
         state = .clicking
-        self.clicks = clicks
         clickingSince = Date().addingTimeInterval(-since)
     }
 

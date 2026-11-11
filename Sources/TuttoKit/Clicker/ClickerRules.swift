@@ -177,17 +177,27 @@ public enum ClickerRules {
         }
     }
 
-    /// How far a run with a limit has got, for the panel: "of 2,000" (clicks) or "0:42 left" (time);
-    /// nil without a limit.
-    public static func progress(_ settings: ClickerSettings, elapsed: Double) -> String? {
+    /// The time left of a run that stops after a time, for the panel ("0:42 left"); nil for any other.
+    public static func timeLeft(_ settings: ClickerSettings, elapsed: Double) -> String? {
         switch settings.stop {
-        case .never: return nil
-        case .afterClicks(let n): return "of \(n.formatted())"
+        case .never, .afterClicks: return nil
         case .afterSeconds(let s):
             let left = max(Int((s - elapsed).rounded(.up)), 0)
             let h = left / 3600, m = (left % 3600) / 60, sec = left % 60
             let clock = h > 0 ? String(format: "%d:%02d:%02d", h, m, sec) : String(format: "%d:%02d", m, sec)
             return "\(clock) left"
+        }
+    }
+
+    /// The pill's words after the shortcut's keycaps, saying how to stop it: "stops it",
+    /// "or a corner stops it", "let go to stop"; without a shortcut, the whole sentence.
+    public static func howToStop(hasShortcut: Bool, holding: Bool, corner: Bool) -> String {
+        switch (hasShortcut, holding, corner) {
+        case (true, true, _): "let go to stop"
+        case (true, false, true): "or a corner stops it"
+        case (true, false, false): "stops it"
+        case (false, _, true): "a corner or the menu bar stops it"
+        case (false, _, false): "the menu bar stops it"
         }
     }
 

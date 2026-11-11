@@ -763,8 +763,8 @@ private struct RowLabel: View {
 
 /// The auto clicker. Closed, one line: its name and what it'll do (the speed, and the limit when
 /// there is one), which opens its settings, then its switch. Open: the speed, the click, when it
-/// stops and its shortcut, each set in one place. While it runs the line counts the clicks and
-/// what's left of the limit. Switched on here, it starts 2 s after the panel closes (so it doesn't
+/// stops and its shortcut, each set in one place. While it runs the line says so, with the time
+/// left when it stops after a time (no click count: nobody needs it). Switched on here, it starts 2 s after the panel closes (so it doesn't
 /// click the panel); changes made while it clicks apply at once.
 struct ClickerRow: View {
     @Bindable var clicker: ClickerModule
@@ -840,8 +840,8 @@ struct ClickerRow: View {
         }
     }
 
-    /// Idle: what it'll do. Counting down: when. Clicking: the count, and the limit's progress
-    /// (time left ticks each second while the panel shows it).
+    /// Idle: what it'll do. Counting down: when. Clicking: the time left when it stops after a
+    /// time (ticking each second while the panel shows it), otherwise the speed.
     @ViewBuilder
     private var status: some View {
         switch clicker.state {
@@ -854,12 +854,16 @@ struct ClickerRow: View {
         case .countdown(let n):
             detail("in \(n) s")
         case .clicking:
-            if case .afterSeconds = settings.stop, visible, let since = clicker.clickingSince {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    count(ClickerRules.progress(settings, elapsed: context.date.timeIntervalSince(since)))
+            if case .afterSeconds = settings.stop, let since = clicker.clickingSince {
+                if visible {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        detail(ClickerRules.timeLeft(settings, elapsed: context.date.timeIntervalSince(since)) ?? "")
+                    }
+                } else {
+                    detail(ClickerRules.timeLeft(settings, elapsed: Date().timeIntervalSince(since)) ?? "")
                 }
-            } else {
-                count(ClickerRules.progress(settings, elapsed: clicker.clickingSince.map { Date().timeIntervalSince($0) } ?? 0))
+            } else if !expanded {
+                detail(settings.speedLabel)
             }
         }
     }
@@ -870,17 +874,6 @@ struct ClickerRow: View {
             .foregroundStyle(Color.ink3)
             .lineLimit(1)
             .contentTransition(.numericText())
-    }
-
-    /// "1,240 of 2,000", "1,240 · 0:42 left", "1,240 · 10 CPS" (`progress`: the limit's, if any).
-    private func count(_ progress: String?) -> some View {
-        let tail = progress.map { $0.hasPrefix("of") ? " " + $0 : " · " + $0 }
-            ?? (expanded ? " click\(clicker.clicks == 1 ? "" : "s")" : " · " + settings.speedLabel)
-        return (Text(clicker.clicks.formatted()).foregroundStyle(Color.ink2) + Text(tail).foregroundStyle(Color.ink3))
-            .font(.system(size: 11.5, weight: .medium).monospacedDigit())
-            .lineLimit(1)
-            .contentTransition(.numericText())
-            .accessibilityLabel("\(clicker.clicks) clicks")
     }
 
     // MARK: Its settings

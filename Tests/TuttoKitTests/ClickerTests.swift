@@ -119,20 +119,29 @@ final class ClickerTests: XCTestCase {
     }
 
     /// Changing a setting mid-run carries on with what's left of the limit, not a fresh one.
-    func testRemainingStopAndProgress() {
+    func testRemainingStopAndTimeLeft() {
         var settings = ClickerSettings()
         XCTAssertEqual(ClickerRules.remainingStop(settings, clicks: 500, elapsed: 50), .never)
-        XCTAssertNil(ClickerRules.progress(settings, elapsed: 5))
+        XCTAssertNil(ClickerRules.timeLeft(settings, elapsed: 5))
         settings.stop = .afterClicks(2_000)
         XCTAssertEqual(ClickerRules.remainingStop(settings, clicks: 1_240, elapsed: 9), .afterClicks(760))
         XCTAssertNil(ClickerRules.remainingStop(settings, clicks: 2_000, elapsed: 9))
-        XCTAssertEqual(ClickerRules.progress(settings, elapsed: 9), "of 2,000")
+        XCTAssertNil(ClickerRules.timeLeft(settings, elapsed: 9))
         settings.stop = .afterSeconds(60)
         XCTAssertEqual(ClickerRules.remainingStop(settings, clicks: 0, elapsed: 18), .afterSeconds(42))
         XCTAssertNil(ClickerRules.remainingStop(settings, clicks: 0, elapsed: 60))
-        XCTAssertEqual(ClickerRules.progress(settings, elapsed: 17.5), "0:43 left")
-        XCTAssertEqual(ClickerRules.progress(settings, elapsed: 75), "0:00 left")
+        XCTAssertEqual(ClickerRules.timeLeft(settings, elapsed: 17.5), "0:43 left")
+        XCTAssertEqual(ClickerRules.timeLeft(settings, elapsed: 75), "0:00 left")
         settings.stop = .afterSeconds(3_700)
-        XCTAssertEqual(ClickerRules.progress(settings, elapsed: 0), "1:01:40 left")
+        XCTAssertEqual(ClickerRules.timeLeft(settings, elapsed: 0), "1:01:40 left")
+    }
+
+    /// The pill only says how to stop it.
+    func testHowToStop() {
+        XCTAssertEqual(ClickerRules.howToStop(hasShortcut: true, holding: false, corner: true), "or a corner stops it")
+        XCTAssertEqual(ClickerRules.howToStop(hasShortcut: true, holding: false, corner: false), "stops it")
+        XCTAssertEqual(ClickerRules.howToStop(hasShortcut: true, holding: true, corner: true), "let go to stop")
+        XCTAssertEqual(ClickerRules.howToStop(hasShortcut: false, holding: false, corner: true), "a corner or the menu bar stops it")
+        XCTAssertEqual(ClickerRules.howToStop(hasShortcut: false, holding: true, corner: false), "the menu bar stops it")
     }
 }

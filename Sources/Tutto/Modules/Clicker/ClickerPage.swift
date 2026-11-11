@@ -125,7 +125,7 @@ private struct ClickerSettingsView: View {
         switch clicker.state {
         case .idle: "Off"
         case .countdown(let n): "Clicking in \(n)…"
-        case .clicking: "Clicking: \(clicker.clicks.formatted()) so far"
+        case .clicking: "Clicking at \(clicker.settings.speedLabel)"
         }
     }
 

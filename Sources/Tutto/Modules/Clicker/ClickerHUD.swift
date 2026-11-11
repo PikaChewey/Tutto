@@ -3,8 +3,8 @@
 //  Tutto
 //
 //  What the auto clicker shows while it works: a small pill at the top of the screen with the
-//  pointer (the countdown, then the count and how to stop it), which clicks pass straight through,
-//  and the overlay that takes one click to set the spot to click at.
+//  pointer saying how to stop it (its keys, and a corner when that's on), set once when it starts,
+//  which clicks pass straight through; and the overlay that takes one click to set the spot.
 //
 
 import AppKit
@@ -16,6 +16,8 @@ import TuttoKit
 @Observable
 final class ClickerHUDModel {
     var text = ""
+    /// The keys shown as keycaps after `text`, then `detail`.
+    var keys: KeyShortcut?
     var detail = ""
     var live = false
 }
@@ -25,23 +27,26 @@ final class ClickerHUD {
     private let model = ClickerHUDModel()
     private var panel: NSPanel?
 
-    func show(countdown seconds: Int, settings: ClickerSettings) {
-        model.text = "Clicking in \(seconds)"
-        model.detail = settings.summary
+    func show(countdown seconds: Int, shortcut: KeyShortcut?) {
+        model.text = "Starts in \(seconds)"
+        model.keys = shortcut
+        model.detail = shortcut == nil ? "" : "cancels"
         model.live = false
         present()
     }
 
-    func show(clicks: Int, settings: ClickerSettings, shortcut: KeyShortcut?) {
-        model.text = "\(clicks.formatted()) click\(clicks == 1 ? "" : "s")"
-        let stops = [shortcut.map { $0.symbols.joined() }, settings.cornerStops ? "a corner" : nil].compactMap { $0 }
-        model.detail = settings.speedLabel + (stops.isEmpty ? "" : " · \(stops.joined(separator: " or ")) stops it")
+    /// While clicking: how to stop it, nothing else ("Auto clicker  ⌃⇧A or a corner stops it").
+    func show(clicking settings: ClickerSettings, shortcut: KeyShortcut?) {
+        model.text = "Auto clicker"
+        model.keys = shortcut
+        model.detail = ClickerRules.howToStop(hasShortcut: shortcut != nil, holding: settings.holdToClick, corner: settings.cornerStops)
         model.live = true
         present()
     }
 
     func showPicking() {
         model.text = "Click where it should click"
+        model.keys = nil
         model.detail = "Esc cancels"
         model.live = false
         present()
@@ -80,22 +85,27 @@ final class ClickerHUD {
     }
 }
 
-private struct ClickerPill: View {
+struct ClickerPill: View {
     var model: ClickerHUDModel
 
     var body: some View {
         HStack(spacing: 8) {
+            // Still: it stays up for the whole run, and motion there would cost the whole run.
             Image(systemName: "cursorarrow.click.2")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(model.live ? Color.themeAccent : Color.ink2)
-                .symbolEffect(.pulse, isActive: model.live)
             Text(model.text)
                 .font(.system(size: 12.5, weight: .semibold).monospacedDigit())
                 .foregroundStyle(Color.ink)
                 .contentTransition(.numericText())
-            Text(model.detail)
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(Color.ink3)
+            HStack(spacing: 5) {
+                if let keys = model.keys { KeyCaps(shortcut: keys, compact: true) }
+                if !model.detail.isEmpty {
+                    Text(model.detail)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Color.ink3)
+                }
+            }
         }
         .lineLimit(1)
         .padding(.horizontal, 14)

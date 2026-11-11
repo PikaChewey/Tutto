@@ -48,7 +48,7 @@ enum Snapshots {
             model.awake?.previewSession(remaining: 47 * 60 + 12, lidSafe: true,
                                         lastClosed: .init(darkened: true, mute: .init(deviceUID: "x", wasMuted: false), pausedNames: ["Chat", "Game"]))
         }
-        if only.contains("clicker-on") { model.clicker?.previewClicking(1_240) }
+        if only.contains("clicker-on") { model.clicker?.previewClicking() }
         if only.contains("clicker-open") { ClickerRow.startsExpanded = true }
         // `clicker-long`: the longest labels, a time limit, and a run 18 s into it.
         if only.contains("clicker-long") {
@@ -58,7 +58,7 @@ enum Snapshots {
                 $0.target = .point(x: 640, y: 360)
                 $0.stop = .afterSeconds(60)
             }
-            if only.contains("clicker-on") { model.clicker?.previewClicking(180, since: 18) }
+            if only.contains("clicker-on") { model.clicker?.previewClicking(since: 18) }
         }
         if only.contains("awake-nohelper") { model.awake?.previewSession(remaining: 3600, lidSafe: false) }
 
@@ -121,6 +121,26 @@ struct SnapshotExtras {
                 AnyView(OnboardingView(model: model, start: step, close: {}))
             }
         }
+        // The pill while the auto clicker counts down, clicks (corner on, then held), and with no shortcut.
+        extras.append(SnapshotExtras(name: "clicker-pill", inDefaultSet: false) { model in
+            let keys = model.shortcuts.shortcut(for: .toggleClicker)
+            @MainActor func pill(_ text: String, _ keys: KeyShortcut?, _ detail: String, live: Bool) -> some View {
+                let state = ClickerHUDModel()
+                state.text = text
+                state.keys = keys
+                state.detail = detail
+                state.live = live
+                return ClickerPill(model: state).fixedSize()
+            }
+            return AnyView(VStack(alignment: .leading, spacing: 10) {
+                pill("Starts in 2", keys, "cancels", live: false)
+                pill("Auto clicker", keys, ClickerRules.howToStop(hasShortcut: true, holding: false, corner: true), live: true)
+                pill("Auto clicker", keys, ClickerRules.howToStop(hasShortcut: true, holding: true, corner: true), live: true)
+                pill("Auto clicker", nil, ClickerRules.howToStop(hasShortcut: false, holding: false, corner: true), live: true)
+            }
+            .padding(20)
+            .background(Color(white: 0.45)))
+        })
         extras.append(SnapshotExtras(name: "clipboard-palette") { model in
             guard let clipboard = model.clipboard else { return AnyView(EmptyView()) }
             let palette = ClipboardPaletteModel(module: clipboard)
