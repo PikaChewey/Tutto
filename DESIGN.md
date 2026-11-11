@@ -60,6 +60,8 @@ Kept from the house style: posts on one object and one number, a quiet bar, glas
 5. **The tools are a grid, keys included** (12, 2). One row of six tiles: a symbol, a short name and the keys as small keycaps. Clicking one lights its keys one after another, as if pressed, then the tool runs. The list is built from the live bindings, so it can't drift.
 6. **Show your own cost** (19, 24). The footer shows what Tutto itself uses right now ("31 MB · 0.1 % CPU"). The busiest-apps list reads the kernel directly (no `top`), so opening the panel starts no process.
 
+7. **The auto clicker is one line that opens** (13, 12, 23; Bryan 2026-11-11: "kind of scuffed … very cluttered"). Closed: "Auto clicker", what it'll do ("10 CPS · 1 min") with a small chevron, and its switch; the name and detail are one button that opens it. Open: a quiet well with three settings, each a name on the left and one control on the right (Speed: − 10 CPS +; Click: a pop-up for button, double-click and where; Stops: a pop-up of times and click counts), then its keys as keycaps and "All settings". While it runs the line counts ("Clicking 1,240 · 0:42 left", "1,240 of 2,000"), and changes apply at once. Version 1 said the speed three times when open (header, a bare stepper number, a summary line), floated the chevron far from what it opens, wrote the keys as text and left the timer to the app. Other Mac clickers ([Clicker](https://github.com/xentriom/Clicker), [Clakr](https://github.com/SenpaiHunters/Clakr), [Tapper](https://apps.apple.com/app/id6743667204), [Tap-Bot](https://apps.apple.com/us/app/tap-bot-auto-click-refresh/id6444782835), read 2026-11-11) agree on the same few things: speed, a hotkey, a run limit, a live count.
+
 ## 3. Tokens (panel)
 
 | Role | Value | Use |

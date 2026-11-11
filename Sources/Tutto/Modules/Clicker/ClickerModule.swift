@@ -37,6 +37,11 @@ final class ClickerModule: ModuleController {
     private(set) var isPicking = false
 
     @ObservationIgnored private var engine: ClickerEngine?
+    /// Clicks made by engines replaced mid-run (a setting changed while clicking), and which run
+    /// is current, so a replaced engine's ending is ignored.
+    @ObservationIgnored private var carriedClicks = 0
+    @ObservationIgnored private var runID = 0
+    @ObservationIgnored private var retuneWork: DispatchWorkItem?
     @ObservationIgnored private var countdownTimer: DispatchSourceTimer?
     @ObservationIgnored private var progressTimer: DispatchSourceTimer?
     @ObservationIgnored private var pickMonitor: Any?
@@ -64,6 +69,28 @@ final class ClickerModule: ModuleController {
         guard changed != settings else { return }
         settings = changed
         if let data = try? JSONEncoder().encode(settings) { defaults.set(data, forKey: Keys.settings) }
+        if state == .clicking { scheduleRetune() }
+    }
+
+    /// A change made while clicking takes effect at once: the engine is swapped for one with the new
+    /// settings, carrying on the count and what's left of the limit. Held − or + changes the speed
+    /// many times a second, so the swap waits for a quarter-second pause.
+    private func scheduleRetune() {
+        retuneWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.retune() } }
+        retuneWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    private func retune() {
+        retuneWork = nil
+        guard state == .clicking, let old = engine else { return }
+        old.stop()
+        carriedClicks += old.progress.clicks
+        engine = nil
+        progressTimer?.cancel()
+        progressTimer = nil
+        run(continuing: true)
     }
 
     /// Settings from a `tutto://do/clicker?…` link (scripts, agents).
@@ -142,31 +169,45 @@ final class ClickerModule: ModuleController {
         countdownTimer = timer
     }
 
-    private func run() {
-        let engine = ClickerEngine(settings: settings) { [weak self] ending in
+    /// `continuing`: settings changed mid-run; the count and the limit carry on.
+    private func run(continuing: Bool = false) {
+        if !continuing {
+            carriedClicks = 0
+            clicks = 0
+            clickingSince = Date()
+        }
+        var current = settings
+        let elapsed = clickingSince.map { Date().timeIntervalSince($0) } ?? 0
+        guard let left = ClickerRules.remainingStop(settings, clicks: carriedClicks, elapsed: elapsed) else {
+            clicks = carriedClicks
+            return end("Done")
+        }
+        current.stop = left
+        runID += 1
+        let id = runID
+        let engine = ClickerEngine(settings: current) { [weak self] ending in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
+                    guard let self, self.runID == id else { return }
                     switch ending {
                     case .asked: break
-                    case .done: self?.end("Done")
-                    case .corner: self?.end("Stopped at a corner")
+                    case .done: self.end("Done")
+                    case .corner: self.end("Stopped at a corner")
                     }
                 }
             }
         }
         self.engine = engine
-        clicks = 0
-        clickingSince = Date()
         state = .clicking
         engine.start()
-        hud.show(clicks: 0, settings: settings, shortcut: AppModel.shared.shortcuts.shortcut(for: .toggleClicker))
+        hud.show(clicks: carriedClicks, settings: settings, shortcut: AppModel.shared.shortcuts.shortcut(for: .toggleClicker))
         // The count, a few times a second, only while clicking.
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + 0.2, repeating: 0.2, leeway: .milliseconds(50))
         timer.setEventHandler { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, let engine = self.engine else { return }
-                let count = engine.progress.clicks
+                let count = self.carriedClicks + engine.progress.clicks
                 if count != self.clicks { self.clicks = count }
                 self.hud.show(clicks: count, settings: self.settings,
                               shortcut: AppModel.shared.shortcuts.shortcut(for: .toggleClicker))
@@ -183,11 +224,14 @@ final class ClickerModule: ModuleController {
         countdownTimer = nil
         progressTimer?.cancel()
         progressTimer = nil
+        retuneWork?.cancel()
+        retuneWork = nil
         if let engine {
             engine.stop()
-            clicks = engine.progress.clicks
+            clicks = carriedClicks + engine.progress.clicks
         }
         engine = nil
+        runID += 1
         let ran = clickingSince.map { Date().timeIntervalSince($0) } ?? 0
         if state == .clicking, let reason {
             lastRun = "\(reason): \(clicks.formatted()) click\(clicks == 1 ? "" : "s") in \(ClickerRules.duration(max(ran, 1)))"
@@ -219,10 +263,15 @@ final class ClickerModule: ModuleController {
 
     #if DEBUG
     /// Offscreen renders only: the clicker as the panel shows it mid-run, without clicking.
-    func previewClicking(_ clicks: Int) {
+    func previewClicking(_ clicks: Int, since: TimeInterval = 0) {
         state = .clicking
         self.clicks = clicks
-        clickingSince = Date()
+        clickingSince = Date().addingTimeInterval(-since)
+    }
+
+    /// Offscreen renders only: settings shown without saving them.
+    func previewSettings(_ change: (inout ClickerSettings) -> Void) {
+        change(&settings)
     }
     #endif
 

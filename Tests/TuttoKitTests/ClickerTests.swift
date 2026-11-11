@@ -94,4 +94,45 @@ final class ClickerTests: XCTestCase {
         XCTAssertEqual(ClickerRules.duration(3600), "1 h")
         XCTAssertEqual(ClickerRules.duration(5400), "1 h 30 min")
     }
+
+    func testPanelLabels() {
+        var settings = ClickerSettings()
+        XCTAssertEqual(settings.clickLabel, "Left click")
+        XCTAssertEqual(settings.stopLabel, "Never")
+        XCTAssertNil(settings.stopShort)
+        settings.button = .right
+        settings.double = true
+        settings.stop = .afterClicks(1_000)
+        XCTAssertEqual(settings.clickLabel, "Right double-click")
+        XCTAssertEqual(settings.stopLabel, "After 1,000 clicks")
+        XCTAssertEqual(settings.stopShort, "1,000 clicks")
+        settings.stop = .afterSeconds(90)
+        XCTAssertEqual(settings.stopLabel, "After 1 min 30 s")
+        XCTAssertEqual(settings.stopShort, "1 min 30 s")
+        // Every preset is distinct and survives the panel's own clean-up.
+        XCTAssertEqual(Set(ClickerSettings.stopPresets).count, ClickerSettings.stopPresets.count)
+        for preset in ClickerSettings.stopPresets {
+            settings.stop = preset
+            settings.normalize()
+            XCTAssertEqual(settings.stop, preset)
+        }
+    }
+
+    /// Changing a setting mid-run carries on with what's left of the limit, not a fresh one.
+    func testRemainingStopAndProgress() {
+        var settings = ClickerSettings()
+        XCTAssertEqual(ClickerRules.remainingStop(settings, clicks: 500, elapsed: 50), .never)
+        XCTAssertNil(ClickerRules.progress(settings, elapsed: 5))
+        settings.stop = .afterClicks(2_000)
+        XCTAssertEqual(ClickerRules.remainingStop(settings, clicks: 1_240, elapsed: 9), .afterClicks(760))
+        XCTAssertNil(ClickerRules.remainingStop(settings, clicks: 2_000, elapsed: 9))
+        XCTAssertEqual(ClickerRules.progress(settings, elapsed: 9), "of 2,000")
+        settings.stop = .afterSeconds(60)
+        XCTAssertEqual(ClickerRules.remainingStop(settings, clicks: 0, elapsed: 18), .afterSeconds(42))
+        XCTAssertNil(ClickerRules.remainingStop(settings, clicks: 0, elapsed: 60))
+        XCTAssertEqual(ClickerRules.progress(settings, elapsed: 17.5), "0:43 left")
+        XCTAssertEqual(ClickerRules.progress(settings, elapsed: 75), "0:00 left")
+        settings.stop = .afterSeconds(3_700)
+        XCTAssertEqual(ClickerRules.progress(settings, elapsed: 0), "1:01:40 left")
+    }
 }

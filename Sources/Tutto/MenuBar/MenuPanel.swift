@@ -244,13 +244,14 @@ private extension View {
 /// Text button that brightens on hover, for the few quiet actions on the panel.
 private struct QuietLink: View {
     var title: String
+    var size: CGFloat = 12
     var action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: size, weight: .medium))
                 .foregroundStyle(hovering ? Color.ink : Color.ink3)
                 .contentShape(Rectangle())
         }
@@ -760,62 +761,28 @@ private struct RowLabel: View {
     }
 }
 
-/// The auto clicker on one line: its name, what it'll do, a chevron for the speed and button, and
-/// its switch. Switched on here, it starts 2 s after the panel closes (so it doesn't click the panel).
-private struct ClickerRow: View {
+/// The auto clicker. Closed, one line: its name and what it'll do (the speed, and the limit when
+/// there is one), which opens its settings, then its switch. Open: the speed, the click, when it
+/// stops and its shortcut, each set in one place. While it runs the line counts the clicks and
+/// what's left of the limit. Switched on here, it starts 2 s after the panel closes (so it doesn't
+/// click the panel); changes made while it clicks apply at once.
+struct ClickerRow: View {
     @Bindable var clicker: ClickerModule
     var model: AppModel
-    @State private var expanded = false
+    @State private var expanded = ClickerRow.startsExpanded
+    @State private var hovering = false
+    @State private var visible = false
+    /// Snapshots render it open (`clicker-open`).
+    nonisolated(unsafe) static var startsExpanded = false
+
+    private var settings: ClickerSettings { clicker.settings }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                RowLabel(symbol: ModuleID.clicker.symbol, title: clicker.state == .clicking ? "Clicking" : "Auto clicker",
-                         live: clicker.isOn)
-                Text(detail)
-                    .font(.system(size: 11.5, weight: .medium).monospacedDigit())
-                    .foregroundStyle(Color.ink3)
-                    .lineLimit(1)
-                    .contentTransition(.numericText())
-                Spacer(minLength: 4)
-                Button {
-                    withAnimation(Motion.snappy) { expanded.toggle() }
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.ink3)
-                        .rotationEffect(.degrees(expanded ? 180 : 0))
-                        .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(expanded ? "Fewer settings" : "Speed and button")
-                InkSwitch(isOn: Binding(get: { clicker.isOn }, set: { on in
-                    if on { afterPanelCloses { clicker.begin(fromPanel: true) } } else { clicker.end("Stopped") }
-                }), label: "Auto clicker")
-                .help(clicker.isOn ? "Stop clicking" : "Start clicking 2 s after the panel closes")
-            }
-            .frame(height: 26)
+            header
             if expanded {
-                HStack(spacing: 8) {
-                    InkStepper(label: "CPS", value: Int(clicker.settings.clicksPerSecond.rounded()), range: 1...100) { value in
-                        clicker.update { $0.clicksPerSecond = Double(value) }
-                    }
-                    Spacer(minLength: 4)
-                    InkSegmented(selection: Binding(get: { clicker.settings.button }, set: { value in clicker.update { $0.button = value } }),
-                                 options: ClickButton.allCases.map { ($0, $0.title) })
-                        .fixedSize()
-                }
-                .transition(.opacity)
-                HStack {
-                    Text(clicker.settings.summary)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.ink3)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    QuietLink(title: "More…") { showInApp(.clicker) }
-                }
-                .transition(.opacity)
+                options
+                    .transition(.opacity.combined(with: .offset(y: -4)))
             }
             if let notice = clicker.notice {
                 Text(notice)
@@ -824,15 +791,247 @@ private struct ClickerRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .background(VisibilityReader { visible = $0 })
     }
 
-    private var detail: String {
-        let keys = model.shortcuts.shortcut(for: .toggleClicker)?.displayString
-        switch clicker.state {
-        case .idle: return [clicker.settings.speedLabel, keys].compactMap { $0 }.joined(separator: " · ")
-        case .countdown(let n): return "in \(n)…"
-        case .clicking: return "\(clicker.clicks.formatted()) · \(clicker.settings.speedLabel)"
+    // MARK: The line
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Button {
+                withAnimation(Motion.snappy) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    RowLabel(symbol: ModuleID.clicker.symbol, title: title, live: clicker.isOn, help: clicker.lastRun)
+                    status
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(hovering ? Color.ink2 : Color.ink4)
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
+                }
+                // The hover reaches past the text, so nothing moves.
+                .padding(.horizontal, 6)
+                .frame(height: 26)
+                .background(RoundedRectangle(cornerRadius: Radius.of(8), style: .continuous)
+                    .fill(Color.ink.opacity(hovering ? 0.08 : 0)))
+                .padding(.horizontal, -6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .animation(Motion.micro, value: hovering)
+            .help(expanded ? "Hide its settings" : "Speed, click, when it stops")
+            .accessibilityLabel("Auto clicker settings")
+            .accessibilityValue(expanded ? "Shown" : "Hidden")
+            Spacer(minLength: 4)
+            InkSwitch(isOn: Binding(get: { clicker.isOn }, set: { on in
+                if on { afterPanelCloses { clicker.begin(fromPanel: true) } } else { clicker.end("Stopped") }
+            }), label: "Auto clicker")
+            .help(clicker.isOn ? "Stop clicking" : "Start clicking 2 s after the panel closes")
         }
+        .frame(height: 26)
+    }
+
+    private var title: String {
+        switch clicker.state {
+        case .idle: "Auto clicker"
+        case .countdown: "Starting"
+        case .clicking: "Clicking"
+        }
+    }
+
+    /// Idle: what it'll do. Counting down: when. Clicking: the count, and the limit's progress
+    /// (time left ticks each second while the panel shows it).
+    @ViewBuilder
+    private var status: some View {
+        switch clicker.state {
+        case .idle:
+            // Open, the settings say it below.
+            if !expanded {
+                detail([settings.speedLabel, settings.stopShort].compactMap { $0 }.joined(separator: " · "))
+                    .transition(.opacity)
+            }
+        case .countdown(let n):
+            detail("in \(n) s")
+        case .clicking:
+            if case .afterSeconds = settings.stop, visible, let since = clicker.clickingSince {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    count(ClickerRules.progress(settings, elapsed: context.date.timeIntervalSince(since)))
+                }
+            } else {
+                count(ClickerRules.progress(settings, elapsed: clicker.clickingSince.map { Date().timeIntervalSince($0) } ?? 0))
+            }
+        }
+    }
+
+    private func detail(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+            .foregroundStyle(Color.ink3)
+            .lineLimit(1)
+            .contentTransition(.numericText())
+    }
+
+    /// "1,240 of 2,000", "1,240 · 0:42 left", "1,240 · 10 CPS" (`progress`: the limit's, if any).
+    private func count(_ progress: String?) -> some View {
+        let tail = progress.map { $0.hasPrefix("of") ? " " + $0 : " · " + $0 }
+            ?? (expanded ? " click\(clicker.clicks == 1 ? "" : "s")" : " · " + settings.speedLabel)
+        return (Text(clicker.clicks.formatted()).foregroundStyle(Color.ink2) + Text(tail).foregroundStyle(Color.ink3))
+            .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+            .lineLimit(1)
+            .contentTransition(.numericText())
+            .accessibilityLabel("\(clicker.clicks) clicks")
+    }
+
+    // MARK: Its settings
+
+    private var options: some View {
+        VStack(spacing: 4) {
+            OptionRow(title: "Speed") {
+                InkStepper(label: "CPS", value: Int(settings.clicksPerSecond.rounded()), range: 1...100, showsUnit: true) { value in
+                    clicker.update { $0.clicksPerSecond = Double(value) }
+                }
+                .fixedSize()
+                .help("Clicks per second, up to 100. Click the number to type one.")
+            }
+            OptionRow(title: "Click") { clickMenu }
+            OptionRow(title: "Stops") { stopMenu }
+            HStack(spacing: 6) {
+                KeyCaps(shortcut: model.shortcuts.shortcut(for: .toggleClicker), compact: true)
+                Text("starts or stops it")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.ink3)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                QuietLink(title: "All settings", size: 11) { showInApp(.clicker) }
+            }
+            .frame(height: 22)
+            .padding(.top, 2)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous).fill(Color.ink.opacity(0.045)))
+    }
+
+    /// The button, single or double, and where: one menu, since they're picked together and rarely.
+    private var clickMenu: some View {
+        Menu {
+            Picker("Button", selection: Binding(get: { settings.button }, set: { value in clicker.update { $0.button = value } })) {
+                ForEach(ClickButton.allCases, id: \.self) { button in Text("\(button.title) Click").tag(button) }
+            }
+            .pickerStyle(.inline)
+            Toggle("Double-Click", isOn: Binding(get: { settings.double }, set: { value in clicker.update { $0.double = value } }))
+            Section("Where") {
+                Toggle("At the Pointer", isOn: Binding(get: { settings.target == .pointer }, set: { on in
+                    if on { clicker.update { $0.target = .pointer } }
+                }))
+                if case .point(let x, let y) = settings.target {
+                    Toggle("At \(Int(x)), \(Int(y))", isOn: .constant(true))
+                }
+                Button(settings.target == .pointer ? "Pick a Spot…" : "Pick Another Spot…") {
+                    afterPanelCloses { clicker.pickPoint() }
+                }
+            }
+        } label: {
+            MenuValue(text: settings.clickLabel + (settings.target == .pointer ? "" : " · spot"))
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Which button, and where it clicks")
+        .accessibilityLabel("Click: \(settings.clickLabel)\(settings.target == .pointer ? "" : ", at a set spot")")
+    }
+
+    /// When it stops by itself: never, after a time or after a number of clicks.
+    private var stopMenu: some View {
+        let presets = ClickerSettings.stopPresets
+        let times = presets.filter { if case .afterSeconds = $0 { true } else { false } }
+        let counts = presets.filter { if case .afterClicks = $0 { true } else { false } }
+        let binding = Binding(get: { settings.stop }, set: { value in clicker.update { $0.stop = value } })
+        return Menu {
+            Picker("Stops", selection: binding) {
+                Text("Never").tag(ClickStop.never)
+                if !presets.contains(settings.stop), settings.stop != .never {
+                    Text(settings.stopLabel).tag(settings.stop)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+            Section("After a Time") {
+                Picker("After a Time", selection: binding) {
+                    ForEach(times, id: \.self) { stop in Text(label(stop)).tag(stop) }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            }
+            Section("After a Number of Clicks") {
+                Picker("After a Number of Clicks", selection: binding) {
+                    ForEach(counts, id: \.self) { stop in Text(label(stop)).tag(stop) }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            }
+            Divider()
+            Button("Other…") { showInApp(.clicker) }
+        } label: {
+            MenuValue(text: settings.stopLabel)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Stop by itself after a time or a number of clicks")
+        .accessibilityLabel("Stops: \(settings.stopLabel)")
+    }
+
+    private func label(_ stop: ClickStop) -> String {
+        var probe = settings
+        probe.stop = stop
+        return probe.stopShort ?? "Never"
+    }
+}
+
+/// One of the clicker's settings: its name on the left, its control on the right.
+private struct OptionRow<Control: View>: View {
+    var title: String
+    @ViewBuilder var control: Control
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.ink2)
+            Spacer(minLength: 8)
+            control
+        }
+        .frame(height: 28)
+    }
+}
+
+/// A menu's current value with the up-down chevrons macOS puts on pop-up buttons, on the same
+/// wash as the panel's chips.
+private struct MenuValue: View {
+    var text: String
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(text)
+                .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                .foregroundStyle(Color.ink)
+                .lineLimit(1)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(Color.ink3)
+        }
+        .padding(.leading, 9)
+        .padding(.trailing, 7)
+        .frame(height: 24)
+        .background(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink.opacity(hovering ? 0.12 : 0.07)))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(Motion.micro, value: hovering)
     }
 }
 

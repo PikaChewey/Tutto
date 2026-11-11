@@ -30,7 +30,7 @@ public enum ClickTarget: Codable, Equatable, Sendable {
 }
 
 /// When a run stops by itself.
-public enum ClickStop: Codable, Equatable, Sendable {
+public enum ClickStop: Codable, Hashable, Sendable {
     case never
     case afterClicks(Int)
     case afterSeconds(Double)
@@ -97,6 +97,35 @@ public struct ClickerSettings: Codable, Equatable, Sendable {
         return "\(text) CPS"
     }
 
+    /// "Left click", "Right double-click".
+    public var clickLabel: String {
+        "\(button.title) \(double ? "double-click" : "click")"
+    }
+
+    /// When it stops by itself, for the panel's menu: "Never", "After 30 s", "After 500 clicks".
+    public var stopLabel: String {
+        switch stop {
+        case .never: "Never"
+        case .afterClicks(let n): "After \(n.formatted()) click\(n == 1 ? "" : "s")"
+        case .afterSeconds(let s): "After \(ClickerRules.duration(s))"
+        }
+    }
+
+    /// The limit in a word or two for the panel's line ("30 s", "500 clicks"); none without one.
+    public var stopShort: String? {
+        switch stop {
+        case .never: nil
+        case .afterClicks(let n): "\(n.formatted()) click\(n == 1 ? "" : "s")"
+        case .afterSeconds(let s): ClickerRules.duration(s)
+        }
+    }
+
+    /// The limits the panel offers in one click; any other is set in the app.
+    public static let stopPresets: [ClickStop] = [
+        .afterSeconds(10), .afterSeconds(30), .afterSeconds(60), .afterSeconds(300), .afterSeconds(600),
+        .afterClicks(100), .afterClicks(500), .afterClicks(1_000), .afterClicks(10_000),
+    ]
+
     /// One line for the panel: "12 CPS · left · at the pointer".
     public var summary: String {
         var parts = [speedLabel, (double ? "double " : "") + button.title.lowercased()]
@@ -135,6 +164,30 @@ public enum ClickerRules {
             let left = point.x <= s.minX + margin, right = point.x >= s.maxX - 1 - margin
             let top = point.y <= s.minY + margin, bottom = point.y >= s.maxY - 1 - margin
             return s.insetBy(dx: -1, dy: -1).contains(point) && (left || right) && (top || bottom)
+        }
+    }
+
+    /// What's left of a run's limit after `clicks` clicks over `elapsed` seconds, as the limit a
+    /// fresh engine carries on with (settings changed mid-run); nil when the run is already done.
+    public static func remainingStop(_ settings: ClickerSettings, clicks: Int, elapsed: Double) -> ClickStop? {
+        switch settings.stop {
+        case .never: return .never
+        case .afterClicks(let n): return clicks < n ? .afterClicks(n - clicks) : nil
+        case .afterSeconds(let s): return elapsed < s ? .afterSeconds(s - elapsed) : nil
+        }
+    }
+
+    /// How far a run with a limit has got, for the panel: "of 2,000" (clicks) or "0:42 left" (time);
+    /// nil without a limit.
+    public static func progress(_ settings: ClickerSettings, elapsed: Double) -> String? {
+        switch settings.stop {
+        case .never: return nil
+        case .afterClicks(let n): return "of \(n.formatted())"
+        case .afterSeconds(let s):
+            let left = max(Int((s - elapsed).rounded(.up)), 0)
+            let h = left / 3600, m = (left % 3600) / 60, sec = left % 60
+            let clock = h > 0 ? String(format: "%d:%02d:%02d", h, m, sec) : String(format: "%d:%02d", m, sec)
+            return "\(clock) left"
         }
     }
 

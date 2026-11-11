@@ -49,6 +49,17 @@ enum Snapshots {
                                         lastClosed: .init(darkened: true, mute: .init(deviceUID: "x", wasMuted: false), pausedNames: ["Chat", "Game"]))
         }
         if only.contains("clicker-on") { model.clicker?.previewClicking(1_240) }
+        if only.contains("clicker-open") { ClickerRow.startsExpanded = true }
+        // `clicker-long`: the longest labels, a time limit, and a run 18 s into it.
+        if only.contains("clicker-long") {
+            model.clicker?.previewSettings {
+                $0.button = .middle
+                $0.double = true
+                $0.target = .point(x: 640, y: 360)
+                $0.stop = .afterSeconds(60)
+            }
+            if only.contains("clicker-on") { model.clicker?.previewClicking(180, since: 18) }
+        }
         if only.contains("awake-nohelper") { model.awake?.previewSession(remaining: 3600, lidSafe: false) }
 
         for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {

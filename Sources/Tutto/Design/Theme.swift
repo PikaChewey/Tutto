@@ -186,6 +186,8 @@ struct InkStepper: View {
     var label: String
     var value: Int
     var range: ClosedRange<Int>
+    /// Shows `label` after the number, inside the capsule ("10 CPS").
+    var showsUnit = false
     var onChange: (Int) -> Void
 
     @State private var text = ""
@@ -204,6 +206,14 @@ struct InkStepper: View {
                 .onSubmit(commit)
                 .onChange(of: editing) { _, focused in if !focused { commit() } }
                 .accessibilityLabel(label)
+            if showsUnit {
+                Text(label)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(Color.ink3)
+                    .padding(.leading, -2)
+                    .fixedSize()
+                    .accessibilityHidden(true)
+            }
             step("plus", by: 1)
         }
         .frame(height: 24)
@@ -212,7 +222,7 @@ struct InkStepper: View {
         .onAppear { text = "\(value)" }
         .onChange(of: value) { _, newValue in if !editing { text = "\(newValue)" } }
         .accessibilityElement(children: .combine)
-        .accessibilityValue("\(value) millimetres")
+        .accessibilityValue("\(value) \(label)")
         .accessibilityAdjustableAction { direction in
             set(value + (direction == .increment ? 1 : -1))
         }
