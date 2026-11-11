@@ -119,7 +119,7 @@ final class PanelLayoutStore {
         }
     }
 
-    var isCustomized: Bool { layout != PanelLayout() }
+    var isCustomized: Bool { layout.isCustomized }
 
     func update(_ change: (inout PanelLayout) -> Void) {
         var changed = layout
@@ -130,11 +130,8 @@ final class PanelLayoutStore {
     }
 
     func reset() {
-        // Plugins stay out of the tools row unless you put them there.
-        let plugins = layout.tools.hidden.filter { $0.hasPrefix("plugin.") }
-        layout = PanelLayout()
-        layout.tools.hidden = plugins
-        save()
+        // Plugins stay in or out of the tools row as they are.
+        update { $0 = $0.restored() }
     }
 
     // MARK: What the panel shows

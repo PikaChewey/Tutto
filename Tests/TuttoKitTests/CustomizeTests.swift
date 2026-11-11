@@ -65,6 +65,29 @@ final class ArrangementTests: XCTestCase {
         XCTAssertEqual(PanelLayout.rows([Int](), perRow: 2), [])
     }
 
+    func testRestoreDefaultsKeepsYourPluginsInOrOutOfTheToolsRow() {
+        let outside = ScriptPlugin(name: "Out", command: "true").toolID
+        let inside = ScriptPlugin(name: "In", command: "true").toolID
+        var layout = PanelLayout()
+        layout.tools.set(outside, shown: false)  // where a new plugin starts
+        XCTAssertFalse(layout.isCustomized, "nothing for Restore Defaults to undo")
+        XCTAssertTrue(ScriptPlugin.isToolID(outside))
+        XCTAssertFalse(ScriptPlugin.isToolID("capture"))
+
+        layout.sections.set("sound", shown: false)
+        layout.readings.move(fromOffsets: IndexSet(integer: 5), toOffset: 0, available: PanelLayout.readingIDs)
+        layout.tools.set("capture", shown: false)
+        layout.tools.move(fromOffsets: IndexSet(integer: 2), toOffset: 0, available: ["capture", "colors", inside])
+        XCTAssertTrue(layout.isCustomized)
+
+        let restored = layout.restored()
+        XCTAssertFalse(restored.isCustomized, "pressing it once is enough")
+        XCTAssertEqual(restored.sections, Arrangement())
+        XCTAssertEqual(restored.readings, Arrangement())
+        XCTAssertEqual(restored.tools.hidden, [outside], "the plugin stays out; Tutto's tools come back")
+        XCTAssertEqual(restored.tools.all(["capture", "colors", inside]), ["capture", "colors", inside])
+    }
+
     func testLayoutRoundTripsAndOldOnesDecode() throws {
         var layout = PanelLayout()
         layout.sections.set("sound", shown: false)

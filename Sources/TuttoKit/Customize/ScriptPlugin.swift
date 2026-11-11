@@ -71,7 +71,12 @@ public struct ScriptPlugin: Codable, Identifiable, Equatable, Sendable {
     }
 
     /// Its id in the tools row and among the shortcuts.
-    public var toolID: String { "plugin.\(id.uuidString)" }
+    public var toolID: String { Self.toolPrefix + id.uuidString }
+
+    public static let toolPrefix = "plugin."
+
+    /// Whether a tools-row id is a plugin's (rather than one of Tutto's tools).
+    public static func isToolID(_ id: String) -> Bool { id.hasPrefix(toolPrefix) }
 
     /// The name trimmed, or nil when it's empty; the command must have something in it too.
     public var isValid: Bool {

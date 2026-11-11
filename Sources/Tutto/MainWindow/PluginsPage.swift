@@ -46,9 +46,15 @@ struct PluginsPage: View {
                     Spacer(minLength: 12)
                     QuietButton(title: "Settings") { MainWindowController.shared.show(page: module.page) }
                     if module == .strip {
-                        // It rearranges every window, so it's switched on where that's explained.
-                        Text(model.isEnabled(.strip) ? "On" : "Off").font(.system(size: 12)).foregroundStyle(Color.ink2)
-                            .frame(minWidth: 38)
+                        // It rearranges every window, so it's switched on where that's explained. Its
+                        // state reads like the others, with the switch's room kept so the columns line up.
+                        HStack(spacing: 6) {
+                            Text(model.isEnabled(.strip) ? "On" : "Off")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Color.ink3)
+                            InkSwitch(isOn: .constant(false), label: "").hidden().accessibilityHidden(true)
+                        }
+                        .help("It rearranges every window, so it's switched on from its own page, where that's explained.")
                     } else {
                         ModuleSwitch(model: model, module: module)
                     }
@@ -166,7 +172,10 @@ private struct PluginRow: View {
                 }
             }
             Spacer(minLength: 12)
-            KeyCaps(shortcut: model.shortcuts.shortcut(for: .plugin(plugin.id)))
+            // Its keys when it has some (one is set in its editor).
+            if let shortcut = model.shortcuts.shortcut(for: .plugin(plugin.id)) {
+                KeyCaps(shortcut: shortcut)
+            }
             Button {
                 model.plugins.run(plugin)
             } label: {

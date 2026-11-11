@@ -101,6 +101,17 @@ public struct PanelLayout: Codable, Equatable, Sendable {
         tools = try c.decodeIfPresent(Arrangement.self, forKey: .tools) ?? Arrangement()
     }
 
+    /// What Restore Defaults gives: the default arrangement, with each of your plugins still in or
+    /// out of the tools row as it is now (a new plugin starts out of it).
+    public func restored() -> PanelLayout {
+        var layout = PanelLayout()
+        layout.tools.hidden = tools.hidden.filter(ScriptPlugin.isToolID)
+        return layout
+    }
+
+    /// Whether Restore Defaults would change anything (a plugin kept out of the tools row doesn't count).
+    public var isCustomized: Bool { self != restored() }
+
     /// The readings tiles laid two to a row: an odd one out takes the whole last row.
     public static func rows<T>(_ items: [T], perRow: Int) -> [[T]] {
         guard perRow > 0 else { return [items] }

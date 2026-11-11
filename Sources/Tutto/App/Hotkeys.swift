@@ -41,7 +41,7 @@ enum ShortcutAction: Hashable, Identifiable {
         case .openTutto: "app.open"
         case .toggleCorner: "corner.toggle"
         case .toggleClicker: "clicker.toggle"
-        case .plugin(let id): "plugin.\(id.uuidString)"
+        case .plugin(let id): ScriptPlugin.toolPrefix + id.uuidString
         case .window(let action): "windows.\(action.rawValue)"
         case .strip(let command): command.id
         }
