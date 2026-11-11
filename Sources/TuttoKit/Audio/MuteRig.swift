@@ -83,10 +83,13 @@ public final class MuteRig {
         }
         // The callback does nothing: being called is what keeps the tap, and so the mute, in force.
         status = AudioDeviceCreateIOProcIDWithBlock(&ioProc, aggregate, nil) { _, _, _, _, _ in }
-        guard status == noErr else {
+        guard status == noErr, let ioProc else {
             teardown()
             throw MuteRigError(stage: "Preparing the audio device", status: status)
         }
+        // An output with a microphone of its own (a headset, an audio interface) mustn't have it
+        // switched on: only the tap's stream is used.
+        AudioDevices.useOnlyTrailingInputs(of: aggregate, ioProc: ioProc, keeping: 1)
         status = AudioDeviceStart(aggregate, ioProc)
         guard status == noErr else {
             teardown()
@@ -162,7 +165,10 @@ public enum AudioDevices {
     }
 
     public static func defaultOutputUID() -> String? {
-        guard let device = defaultOutputID() else { return nil }
+        defaultOutputID().flatMap(uid(of:))
+    }
+
+    public static func uid(of device: AudioObjectID) -> String? {
         var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceUID,
                                                  mScope: kAudioObjectPropertyScopeGlobal,
                                                  mElement: kAudioObjectPropertyElementMain)
@@ -170,5 +176,85 @@ public enum AudioDevices {
         var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
         guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &uid) == noErr, let uid else { return nil }
         return uid.takeRetainedValue() as String
+    }
+
+    /// How many streams a device has in one direction.
+    public static func streamCount(of device: AudioObjectID, scope: AudioObjectPropertyScope) -> Int {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: scope,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(device, &address, 0, nil, &size) == noErr else { return 0 }
+        return Int(size) / MemoryLayout<AudioStreamID>.size
+    }
+
+    /// Channels in each output stream, in order ([2] for built-in speakers).
+    public static func outputChannelsPerStream(of device: AudioObjectID) -> [Int] {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration,
+                                                 mScope: kAudioObjectPropertyScopeOutput,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(device, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
+        let raw = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { raw.deallocate() }
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, raw) == noErr else { return [] }
+        let list = UnsafeMutableAudioBufferListPointer(raw.assumingMemoryBound(to: AudioBufferList.self))
+        return list.map { Int($0.mNumberChannels) }
+    }
+
+    /// The device's channels for stereo (1-based; the user's choice in Audio MIDI Setup), [1, 2]
+    /// when it doesn't say.
+    public static func preferredStereoChannels(of device: AudioObjectID) -> (left: Int, right: Int) {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyPreferredChannelsForStereo,
+                                                 mScope: kAudioObjectPropertyScopeOutput,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var channels: (UInt32, UInt32) = (1, 2)
+        var size = UInt32(MemoryLayout<(UInt32, UInt32)>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &channels) == noErr,
+              channels.0 > 0, channels.1 > 0 else { return (1, 2) }
+        return (Int(channels.0), Int(channels.1))
+    }
+
+    /// Where a device channel (1-based, counted across every stream) lives: which stream, which
+    /// channel in it. Nil when the device has fewer channels.
+    public static func locate(channel: Int, in streams: [Int]) -> (stream: Int, channel: Int)? {
+        guard channel > 0 else { return nil }
+        var remaining = channel - 1
+        for (index, count) in streams.enumerated() {
+            if remaining < count { return (index, remaining) }
+            remaining -= count
+        }
+        return nil
+    }
+
+    /// The `mStreamIsOn` flags that leave only the last `keeping` input streams on, or nil when
+    /// there's nothing to switch off. An aggregate lists its sub-devices' streams first and its
+    /// taps' last.
+    public static func streamUsage(inputStreams: Int, keeping: Int) -> [UInt32]? {
+        guard keeping > 0, inputStreams > keeping else { return nil }
+        return (0..<inputStreams).map { $0 >= inputStreams - keeping ? 1 : 0 }
+    }
+
+    /// Tells Core Audio that `ioProc` reads only the tap's streams, so an output device's own
+    /// microphone (a headset, an audio interface) stays off: no orange dot, no microphone prompt,
+    /// no headset dropping to call quality. Does nothing when the device has no other inputs.
+    @discardableResult
+    public static func useOnlyTrailingInputs(of device: AudioObjectID, ioProc: AudioDeviceIOProcID, keeping: Int) -> OSStatus {
+        guard let flags = streamUsage(inputStreams: streamCount(of: device, scope: kAudioObjectPropertyScopeInput),
+                                      keeping: keeping) else { return noErr }
+        // AudioHardwareIOProcStreamUsage: the IO proc, the stream count, then one flag per stream.
+        let countOffset = MemoryLayout<UnsafeMutableRawPointer>.size
+        let flagsOffset = countOffset + MemoryLayout<UInt32>.size
+        let size = flagsOffset + flags.count * MemoryLayout<UInt32>.size
+        let raw = UnsafeMutableRawPointer.allocate(byteCount: size, alignment: MemoryLayout<UnsafeMutableRawPointer>.alignment)
+        defer { raw.deallocate() }
+        raw.storeBytes(of: unsafeBitCast(ioProc, to: UnsafeMutableRawPointer.self), as: UnsafeMutableRawPointer.self)
+        raw.storeBytes(of: UInt32(flags.count), toByteOffset: countOffset, as: UInt32.self)
+        for (index, flag) in flags.enumerated() {
+            raw.storeBytes(of: flag, toByteOffset: flagsOffset + index * MemoryLayout<UInt32>.size, as: UInt32.self)
+        }
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyIOProcStreamUsage,
+                                                 mScope: kAudioObjectPropertyScopeInput,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        return AudioObjectSetPropertyData(device, &address, 0, nil, UInt32(size), raw)
     }
 }

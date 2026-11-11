@@ -56,6 +56,15 @@ enum Snapshots {
             while cleaner.state != .ready, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
         }
         if only.contains("clicker-open") { ClickerRow.startsExpanded = true }
+        // `sound-levels`: the Sound card's levels open, with some apps turned down and up.
+        if only.contains("sound-levels"), let sound = model.sound {
+            SoundCard.startsShowingLevels = true
+            let ids = sound.apps.map(\.bundleID)
+            var levels: [String: Double] = [:]
+            if ids.count > 0 { levels[ids[0]] = 180 }
+            if ids.count > 1 { levels[ids[1]] = 45 }
+            sound.previewVolumes(levels)
+        }
         // `clicker-long`: the longest labels, a time limit, and a run 18 s into it.
         if only.contains("clicker-long") {
             model.clicker?.previewSettings {

@@ -8,6 +8,7 @@
 
 import AppKit
 import SwiftUI
+import TuttoKit
 
 // MARK: - App icon
 
@@ -17,6 +18,8 @@ struct SoundAppButton: View {
     var app: SoundApp
     var muted: Bool
     var usingAudio: Bool
+    /// The app's level when it isn't 100 % (a thin ring shows it).
+    var level: Double? = nil
     var size: CGFloat = 20
     var action: () -> Void
     @State private var hovering = false
@@ -36,6 +39,17 @@ struct SoundAppButton: View {
                         badge("speaker.wave.2.fill", fill: .themeAccent)
                     }
                 }
+                .background {
+                    if let level, !muted {
+                        // A ring around the icon: part of a circle when it's turned down, the
+                        // accent all round when it's boosted.
+                        Circle()
+                            .trim(from: 0, to: level >= 100 ? 1 : max(level / 100, 0.04))
+                            .stroke(level > 100 ? Color.themeAccent : Color.ink.opacity(0.45), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: size + 5, height: size + 5)
+                    }
+                }
                 .scaleEffect(hovering ? 1.06 : 1)
                 .frame(width: size + 4, height: size + 4)
                 .contentShape(Rectangle())
@@ -44,7 +58,7 @@ struct SoundAppButton: View {
         .onHover { hovering = $0 }
         .animation(Motion.micro, value: hovering)
         .animation(Motion.micro, value: muted)
-        .help(muted ? "Unmute \(app.name)" : "Mute \(app.name)")
+        .help(muted ? "Unmute \(app.name)" : "Mute \(app.name)" + (level.map { " · level \(VolumeCurve.label($0))" } ?? ""))
         .accessibilityLabel(app.name)
         .accessibilityValue(muted ? "Muted" : (usingAudio ? "Playing" : "Not muted"))
         .accessibilityHint(muted ? "Unmute" : "Mute at the speakers")
@@ -62,6 +76,70 @@ struct SoundAppButton: View {
     }
 }
 
+// MARK: - Level slider
+
+/// An app's level, 0–300 %. The first 60 % of the track is 0–100 % (where most changes happen);
+/// the rest is the boost, tinted. Let go near 100 % and it lands on it; double-click resets it.
+struct VolumeSlider: View {
+    var value: Double
+    var width: CGFloat = 150
+    var set: (Double) -> Void
+    @State private var dragging = false
+
+    private static let unityAt: CGFloat = 0.6
+
+    static func position(_ value: Double) -> CGFloat {
+        let v = min(max(value, 0), VolumeCurve.maximum)
+        return v <= 100 ? CGFloat(v / 100) * unityAt : unityAt + CGFloat((v - 100) / (VolumeCurve.maximum - 100)) * (1 - unityAt)
+    }
+
+    static func value(at position: CGFloat) -> Double {
+        let p = min(max(position, 0), 1)
+        return p <= unityAt ? Double(p / unityAt) * 100 : 100 + Double((p - unityAt) / (1 - unityAt)) * (VolumeCurve.maximum - 100)
+    }
+
+    var body: some View {
+        let x = Self.position(value) * width
+        let unity = Self.unityAt * width
+        ZStack(alignment: .leading) {
+            Capsule().fill(Color.ink.opacity(0.1)).frame(height: 4)
+            // The boost zone, faintly tinted even when unused.
+            Capsule().fill(Color.themeAccent.opacity(0.14)).frame(width: width - unity, height: 4).offset(x: unity)
+            Capsule().fill(Color.ink.opacity(0.75)).frame(width: min(x, unity), height: 4)
+            if x > unity {
+                Capsule().fill(Color.themeAccent).frame(width: x - unity, height: 4).offset(x: unity)
+            }
+            Rectangle().fill(Color.ink.opacity(0.35)).frame(width: 1, height: 9).offset(x: unity - 0.5)
+            Circle()
+                .fill(Color.white)
+                .overlay(Circle().strokeBorder(Color.black.opacity(0.15)))
+                .shadow(color: .black.opacity(0.18), radius: 1.5, y: 0.5)
+                .frame(width: dragging ? 15 : 13, height: dragging ? 15 : 13)
+                .offset(x: x - (dragging ? 7.5 : 6.5))
+        }
+        .frame(width: width, height: 18)
+        .contentShape(Rectangle())
+        .gesture(DragGesture(minimumDistance: 0)
+            .onChanged { drag in
+                dragging = true
+                set(Self.value(at: drag.location.x / width))
+            }
+            .onEnded { drag in
+                dragging = false
+                set(VolumeCurve.snapped(Self.value(at: drag.location.x / width)))
+            })
+        .simultaneousGesture(TapGesture(count: 2).onEnded { set(100) })
+        .animation(Motion.micro, value: dragging)
+        .help("Drag to set the level; past the mark is boost. Double-click for 100 %.")
+        .accessibilityElement()
+        .accessibilityLabel("Level")
+        .accessibilityValue(VolumeCurve.label(value))
+        .accessibilityAdjustableAction { direction in
+            set(VolumeCurve.snapped(value + (direction == .increment ? 5 : -5)))
+        }
+    }
+}
+
 // MARK: - Page
 
 struct SoundPage: View {
@@ -70,7 +148,7 @@ struct SoundPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             PageHeader(title: "Sound",
-                       subtitle: "Mute any app at your speakers and headphones. It keeps playing for anything that records it.",
+                       subtitle: "Set any app's own level, up to 300 % for quiet ones, or mute it at your speakers and headphones. It keeps playing for anything that records it.",
                        module: .sound)
             if !SoundModule.isSupported {
                 Text("Muting single apps needs macOS 14.2 or later.")
@@ -98,9 +176,17 @@ private struct SoundSettings: View {
                     }
                 }
             }
-            InkGroup("Apps", trailing: sound.muted.isEmpty ? nil : AnyView(
-                Button("Unmute All") { withAnimation(Motion.micro) { sound.unmuteAll() } }
-                    .buttonStyle(OutlineButtonStyle(compact: true)))) {
+            InkGroup("Apps", trailing: sound.muted.isEmpty && sound.volumes.isEmpty ? nil : AnyView(
+                HStack(spacing: 6) {
+                    if !sound.volumes.isEmpty {
+                        Button("Levels to 100 %") { withAnimation(Motion.micro) { sound.resetVolumes() } }
+                            .buttonStyle(OutlineButtonStyle(compact: true))
+                    }
+                    if !sound.muted.isEmpty {
+                        Button("Unmute All") { withAnimation(Motion.micro) { sound.unmuteAll() } }
+                            .buttonStyle(OutlineButtonStyle(compact: true))
+                    }
+                })) {
                 if sound.apps.isEmpty {
                     Text("No apps open.").font(.system(size: 12)).foregroundStyle(Color.ink3)
                         .padding(.vertical, Metrics.rowPadding)
@@ -133,7 +219,9 @@ private struct SoundSettings: View {
                 Hairline().opacity(0.6)
                 note("Helpers included", "Sound from an app's helper processes, like Discord's or a browser's, is muted with the app. Muted apps stay muted when they restart.")
                 Hairline().opacity(0.6)
-                note("Costs nothing while quiet", "Nothing runs until a muted app plays a sound, and it stops half a second after.")
+                note("Levels and boost", "Each app's own level, from silent to 300 %. Past 100 % a limiter keeps boosted sound from distorting. An app at 100 % goes straight to the speakers, untouched.")
+                Hairline().opacity(0.6)
+                note("Costs nothing while quiet", "Nothing runs until a muted or adjusted app plays a sound, and it stops half a second after. While one plays, macOS shows its audio-in-use dot.")
             }
         }
         .background(VisibilityReader { visible in
@@ -158,9 +246,26 @@ private struct SoundSettings: View {
                     .foregroundStyle(Color.ink3)
             }
             Spacer()
-            InkSwitch(isOn: Binding(get: { muted }, set: { sound.setMuted(app.bundleID, $0) }), label: "Mute \(app.name)",
-                      active: sound.problem == nil)
-                .help(muted ? "Unmute \(app.name)" : "Mute \(app.name)")
+            VolumeSlider(value: sound.volume(of: app.bundleID), width: 170) { sound.setVolume(app.bundleID, $0) }
+                .disabled(muted)
+                .opacity(muted ? 0.4 : 1)
+            Text(VolumeCurve.label(sound.volume(of: app.bundleID)))
+                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .foregroundStyle(sound.volume(of: app.bundleID) > 100 ? Color.themeAccent : Color.ink2)
+                .frame(width: 46, alignment: .trailing)
+            Button {
+                withAnimation(Motion.micro) { sound.setMuted(app.bundleID, !muted) }
+            } label: {
+                Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(muted ? Color.ink : Color.ink3)
+                    .frame(width: 30, height: 26)
+                    .background(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink.opacity(muted ? 0.1 : 0)))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(muted ? "Unmute \(app.name)" : "Mute \(app.name)")
+            .accessibilityLabel(muted ? "Unmute \(app.name)" : "Mute \(app.name)")
         }
         .padding(.vertical, Metrics.rowPadding - 2)
     }

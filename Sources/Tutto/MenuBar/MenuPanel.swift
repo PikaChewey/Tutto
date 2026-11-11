@@ -1371,9 +1371,13 @@ private struct FanRow: View {
     }
 }
 
-private struct SoundCard: View {
+struct SoundCard: View {
     @Bindable var sound: SoundModule
     @State private var order: [String] = []
+    /// The levels, opened from the title.
+    @State private var showLevels = SoundCard.startsShowingLevels
+    /// Snapshots render it open (`sound-levels`).
+    nonisolated(unsafe) static var startsShowingLevels = false
 
     /// Icons that fit across the card before the rest go into a menu.
     private static let capacity = 8
@@ -1381,9 +1385,28 @@ private struct SoundCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             CardTitle(title: "Sound") {
-                // Only for an app you can see muted here; apps muted while closed stay muted.
-                if sound.apps.contains(where: { sound.isMuted($0.bundleID) }) {
-                    QuietLink(title: "Unmute All") { withAnimation(Motion.micro) { sound.unmuteOpen() } }
+                HStack(spacing: 10) {
+                    // Only for an app you can see muted here; apps muted while closed stay muted.
+                    if sound.apps.contains(where: { sound.isMuted($0.bundleID) }) {
+                        QuietLink(title: "Unmute All") { withAnimation(Motion.micro) { sound.unmuteOpen() } }
+                    }
+                    if !sound.apps.isEmpty && SoundModule.isSupported {
+                        Button {
+                            withAnimation(Motion.snappy) { showLevels.toggle() }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("Levels")
+                                    .font(.system(size: 12, weight: .medium))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8.5, weight: .bold))
+                                    .rotationEffect(.degrees(showLevels ? 180 : 0))
+                            }
+                            .foregroundStyle(Color.ink3)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(showLevels ? "Hide the levels" : "Each app's level, with boost past 100 %")
+                    }
                 }
             }
             if sound.apps.isEmpty {
@@ -1395,7 +1418,7 @@ private struct SoundCard: View {
                 HStack(spacing: 0) {
                     ForEach(visible) { app in
                         SoundAppButton(app: app, muted: sound.isMuted(app.bundleID), usingAudio: sound.usingAudio.contains(app.bundleID),
-                                       size: 30) {
+                                       level: sound.volumes[app.bundleID], size: 30) {
                             withAnimation(Motion.micro) { sound.toggle(app) }
                         }
                         .frame(width: 34.5, alignment: .leading)
@@ -1406,6 +1429,7 @@ private struct SoundCard: View {
                 // Each button is 2 pt wider than its icon, and an app icon's artwork sits about 3 pt
                 // inside its square at this size: pull the row left so the artwork lines up with the text.
                 .padding(.leading, -5)
+                if showLevels { levels.transition(.opacity.combined(with: .offset(y: -4))) }
             }
             if let problem = sound.problem {
                 HStack(spacing: 8) {
@@ -1427,6 +1451,46 @@ private struct SoundCard: View {
         })
         .onAppear { fixOrder(reset: true) }
         .onChange(of: sound.apps.map(\.bundleID)) { fixOrder(reset: false) }
+    }
+
+    /// A slider per app (the strip's order: muted, playing, then the rest), six at most here.
+    private var levels: some View {
+        VStack(spacing: 4) {
+            ForEach(ordered.prefix(6)) { app in
+                let muted = sound.isMuted(app.bundleID)
+                let level = sound.volume(of: app.bundleID)
+                HStack(spacing: 8) {
+                    Image(nsImage: app.icon)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: 18, height: 18)
+                        .saturation(muted ? 0 : 1)
+                        .opacity(muted ? 0.45 : 1)
+                    Text(app.name)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.ink2)
+                        .lineLimit(1)
+                        .frame(width: 70, alignment: .leading)
+                    VolumeSlider(value: level, width: 128) { sound.setVolume(app.bundleID, $0) }
+                        .disabled(muted)
+                        .opacity(muted ? 0.4 : 1)
+                    Text(muted ? "Muted" : VolumeCurve.label(level))
+                        .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                        .foregroundStyle(level > 100 && !muted ? Color.themeAccent : Color.ink3)
+                        .frame(width: 40, alignment: .trailing)
+                }
+                .frame(height: 24)
+            }
+            if ordered.count > 6 {
+                HStack {
+                    Spacer()
+                    QuietLink(title: "All apps", size: 11) { showInApp(.sound) }
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous).fill(Color.ink.opacity(0.045)))
     }
 
     private var ordered: [SoundApp] {

@@ -13,6 +13,7 @@
 #if DEBUG
 import AppKit
 import AudioToolbox
+import AVFoundation
 import CoreAudio
 import TuttoKit
 
@@ -126,7 +127,7 @@ enum AudioProbe {
 
 /// RMS of whatever a tap delivers, collected off the IO thread.
 @available(macOS 14.2, *)
-private final class TapMeter: @unchecked Sendable {
+final class TapMeter: @unchecked Sendable {
     private let lock = NSLock()
     private var sum: Float = 0, count = 0
     private var tap = AudioObjectID(kAudioObjectUnknown)
@@ -162,6 +163,13 @@ private final class TapMeter: @unchecked Sendable {
         status = AudioDeviceStart(device, proc)
     }
 
+    /// dBFS since the last call, as a number (nil when nothing arrived).
+    func takeDB() -> Float? {
+        lock.lock(); defer { sum = 0; count = 0; lock.unlock() }
+        guard count > 0 else { return nil }
+        return 20 * log10(max(sqrt(sum / Float(count)), 1e-9))
+    }
+
     /// dBFS since the last call, or "—" when nothing arrived at all.
     func take() -> String {
         lock.lock(); defer { sum = 0; count = 0; lock.unlock() }
@@ -176,6 +184,74 @@ private final class TapMeter: @unchecked Sendable {
         if tap != kAudioObjectUnknown { AudioHardwareDestroyProcessTap(tap) }
         device = AudioObjectID(kAudioObjectUnknown)
         tap = AudioObjectID(kAudioObjectUnknown)
+    }
+}
+#endif
+
+#if DEBUG
+/// `Tutto --volume-probe DIR`: plays a quiet 1 kHz tone with afplay, measures it straight from
+/// afplay, then through a VolumeRig at 50 % and at 200 % (measured off Tutto's own output), and
+/// writes DIR/volume.txt. About five seconds of a quiet tone.
+@available(macOS 14.2, *)
+enum VolumeProbe {
+    static func runIfRequested() -> Bool {
+        let args = CommandLine.arguments
+        guard let flag = args.firstIndex(of: "--volume-probe"), args.count > flag + 1 else { return false }
+        let dir = URL(fileURLWithPath: args[flag + 1], isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var lines: [String] = []
+        func say(_ line: String) {
+            lines.append(line)
+            try? lines.joined(separator: "\n").write(to: dir.appendingPathComponent("volume.txt"), atomically: true, encoding: .utf8)
+        }
+        func wait(_ seconds: Double) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
+
+        // The tone: 1 kHz at -34 dBFS, 8 s.
+        let tone = dir.appendingPathComponent("tone.wav")
+        if let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2),
+           let file = try? AVAudioFile(forWriting: tone, settings: format.settings),
+           let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 384_000) {
+            buffer.frameLength = 384_000
+            for i in 0..<384_000 {
+                let v = Float(sin(2 * Double.pi * 1000 * Double(i) / 48_000) * 0.02)
+                buffer.floatChannelData![0][i] = v
+                buffer.floatChannelData![1][i] = v
+            }
+            try? file.write(from: buffer)
+        }
+        let player = Process()
+        player.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+        player.arguments = [tone.path]
+        do { try player.run() } catch { say("afplay: \(error)"); return true }
+        defer { player.terminate() }
+        wait(0.8)
+        guard let source = AudioProcessList.read().first(where: { $0.pid == player.processIdentifier })?.objectID else {
+            say("no audio process for afplay"); return true
+        }
+
+        let direct = TapMeter(CATapDescription(stereoMixdownOfProcesses: [source]))
+        wait(0.3); _ = direct.takeDB(); wait(0.8)
+        let reference = direct.takeDB()
+        direct.stop()
+        say(String(format: "afplay alone: %.1f dBFS", reference ?? -999))
+
+        let rig: VolumeRig
+        do { rig = try VolumeRig(processes: [source], gain: VolumeCurve.gain(percent: 50)) } catch { say("rig: \(error)"); return true }
+        wait(0.6)
+        guard let own = AudioProcessList.read().first(where: { $0.pid == getpid() })?.objectID else {
+            say("no audio process for Tutto"); rig.stop(); return true
+        }
+        let out = TapMeter(CATapDescription(stereoMixdownOfProcesses: [own]))
+        wait(0.3); _ = out.takeDB(); wait(0.8)
+        let half = out.takeDB()
+        say(String(format: "through the rig at 50 %%: %.1f dBFS (expected about %.1f)", half ?? -999, (reference ?? 0) - 12.04))
+        rig.setGain(VolumeCurve.gain(percent: 200))
+        wait(0.3); _ = out.takeDB(); wait(0.8)
+        let boosted = out.takeDB()
+        say(String(format: "through the rig at 200 %%: %.1f dBFS (expected about %.1f)", boosted ?? -999, (reference ?? 0) + 6.02))
+        out.stop()
+        rig.stop()
+        return true
     }
 }
 #endif
