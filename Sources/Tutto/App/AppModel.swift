@@ -42,6 +42,7 @@ final class AppModel {
     private(set) var strip: StripModule?
     private(set) var awake: StayAwakeModule?
     private(set) var clicker: ClickerModule?
+    private(set) var converter: ConverterModule?
 
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
     /// On notched MacBooks a crowded menu bar puts new icons behind the notch, where they can't be clicked.
@@ -173,6 +174,7 @@ final class AppModel {
             case .sound: if sound == nil { sound = SoundModule() }
             case .awake: if awake == nil { awake = StayAwakeModule() }
             case .clicker: if clicker == nil { clicker = ClickerModule() }
+            case .converter: if converter == nil { converter = ConverterModule() }
             case .switcher, .strip, .system, .sensors: break
             }
             return
@@ -218,6 +220,9 @@ final class AppModel {
         case .clicker:
             if clicker == nil { clicker = ClickerModule() }
             clicker?.start()
+        case .converter:
+            if converter == nil { converter = ConverterModule() }
+            converter?.start()
         }
     }
 
@@ -265,6 +270,9 @@ final class AppModel {
         case .clicker:
             clicker?.stop()
             clicker = nil
+        case .converter:
+            converter?.stop()
+            converter = nil
         }
     }
 
@@ -323,6 +331,7 @@ final class AppModel {
         case .captureAreaEdit: screenshots?.capture(.areaToEditor)
         case .recordScreen: screenshots?.recorder.toggle()
         case .scrollingCapture: screenshots?.scrolling.toggle()
+        case .convertFiles: if let converter { ConvertWindowController.shared.show(module: converter) }
         case .wordCounter: wordCounter?.togglePanel()
         case .muteFrontApp:
             if let result = sound?.toggleFrontmost() {

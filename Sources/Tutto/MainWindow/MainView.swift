@@ -12,7 +12,7 @@ import TuttoKit
 enum MainPage: String, Hashable, CaseIterable, Identifiable {
     case overview
     case battery, cpu, gpu, memory, disk, network, sensors
-    case clipboard, windows, switcher, strip, screenshots, archives, corner, wordCounter, sound, awake, clicker
+    case clipboard, windows, switcher, strip, screenshots, archives, corner, wordCounter, sound, awake, clicker, converter
     case customize, appearance, plugins, shortcuts, permissions, general
 
     var id: String { rawValue }
@@ -36,6 +36,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .sound: "Sound"
         case .awake: "Stay Awake"
         case .clicker: "Auto Clicker"
+        case .converter: "Convert"
         case .switcher: "Window Switcher"
         case .strip: "Scrolling Strip"
         case .customize: "Customize"
@@ -66,6 +67,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .sound: ModuleID.sound.symbol
         case .awake: ModuleID.awake.symbol
         case .clicker: ModuleID.clicker.symbol
+        case .converter: ModuleID.converter.symbol
         case .switcher: ModuleID.switcher.symbol
         case .strip: ModuleID.strip.symbol
         case .customize: "slider.horizontal.3"
@@ -90,6 +92,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .sound: .sound
         case .awake: .awake
         case .clicker: .clicker
+        case .converter: .converter
         case .switcher: .switcher
         case .strip: .strip
         case .overview, .customize, .appearance, .plugins, .shortcuts, .permissions, .general: nil
@@ -97,7 +100,8 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
     }
 
     static let systemPages: [MainPage] = [.battery, .cpu, .gpu, .memory, .disk, .network, .sensors]
-    static let toolPages: [MainPage] = [.awake, .clicker, .clipboard, .windows, .switcher, .strip, .screenshots, .archives, .corner, .wordCounter, .sound]
+    static let toolPages: [MainPage] = [.awake, .clicker, .clipboard, .windows, .switcher, .strip, .screenshots, .converter, .archives, .corner,
+                                        .wordCounter, .sound]
     static let settingsPages: [MainPage] = [.customize, .appearance, .plugins, .shortcuts, .permissions, .general]
 }
 
@@ -178,6 +182,7 @@ struct MainView: View {
         case .sound: SoundPage(model: model)
         case .awake: StayAwakePage(model: model)
         case .clicker: ClickerPage(model: model)
+        case .converter: ConverterPage(model: model)
         case .switcher: SwitcherPage(model: model)
         case .strip: StripPage(model: model)
         case .customize: CustomizePage(model: model)
@@ -288,6 +293,7 @@ extension ModuleID {
         case .strip: .strip
         case .awake: .awake
         case .clicker: .clicker
+        case .converter: .converter
         }
     }
 }

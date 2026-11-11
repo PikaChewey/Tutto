@@ -82,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if AudioProbe.runIfRequested() { return NSApp.terminate(nil) }
         if RecordingProbe.runIfRequested() { return NSApp.terminate(nil) }
         if RecordingProbe.runScrollProbeIfRequested() { return NSApp.terminate(nil) }
+        if ConvertProbe.runIfRequested() { return NSApp.terminate(nil) }
         if SwitcherLab.runIfRequested() { return NSApp.terminate(nil) }
         if MemoryLab.runIfRequested() { return NSApp.terminate(nil) }
         #endif
@@ -132,6 +133,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for request in requests {
             switch request.host {
             case "archive": ArchiveRequests.handle(request, model: model)
+            case "convert":
+                if let converter = model.converter {
+                    converter.handle(request)
+                } else {
+                    Toast.shared.show("Convert is off", detail: "Switch it on in Tutto › General", duration: 3)
+                }
             case "open", "do": DeepLinks.handle(request, model: model)
             default: break
             }

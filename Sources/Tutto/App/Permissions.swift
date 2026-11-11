@@ -47,7 +47,7 @@ enum Permission: String, CaseIterable, Identifiable {
 
     var modules: [ModuleID] {
         switch self {
-        case .accessibility: [.corner, .windows, .switcher, .strip, .clipboard, .clicker]
+        case .accessibility: [.corner, .windows, .switcher, .strip, .clipboard, .clicker, .converter]
         case .screenRecording: [.screenshots, .switcher]
         case .systemAudio: [.sound]
         case .finderExtension: [.archives]

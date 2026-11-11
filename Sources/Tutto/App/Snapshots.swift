@@ -141,6 +141,19 @@ struct SnapshotExtras {
             .padding(20)
             .background(Color(white: 0.45)))
         })
+        // The drag wheel for pictures, PNG lit.
+        extras.append(SnapshotExtras(name: "convert-wheel", inDefaultSet: false) { _ in
+            let items = ConvertPlanner.targets(for: .image).map { WheelView.Item(title: $0.title, action: .convert($0)) }
+            return AnyView(WheelSnapshot(items: items).frame(width: 300, height: 300).padding(20).background(Color(white: 0.5)))
+        })
+        // The Convert window with files chosen (TUTTO_SNAPSHOT_FILES: paths joined by ":").
+        extras.append(SnapshotExtras(name: "convert-window", inDefaultSet: false) { model in
+            guard let converter = model.converter else { return AnyView(EmptyView()) }
+            let selection = ConvertSelection()
+            selection.files = (ProcessInfo.processInfo.environment["TUTTO_SNAPSHOT_FILES"] ?? "")
+                .split(separator: ":").map { URL(fileURLWithPath: String($0)) }
+            return AnyView(ConvertView(module: converter, selection: selection).frame(height: 760))
+        })
         extras.append(SnapshotExtras(name: "clipboard-palette") { model in
             guard let clipboard = model.clipboard else { return AnyView(EmptyView()) }
             let palette = ClipboardPaletteModel(module: clipboard)
@@ -256,4 +269,13 @@ struct SnapshotExtras {
         return rep.cgImage
     }
 }
+/// The drag wheel as a view, for snapshots.
+private struct WheelSnapshot: NSViewRepresentable {
+    var items: [WheelView.Item]
+    func makeNSView(context: Context) -> WheelView {
+        WheelView(frame: NSRect(x: 0, y: 0, width: 300, height: 300), items: items, center: .compress, highlighted: 1) { _, _ in }
+    }
+    func updateNSView(_ view: WheelView, context: Context) {}
+}
+
 #endif

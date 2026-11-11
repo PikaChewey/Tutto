@@ -22,6 +22,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
     case strip
     case awake
     case clicker
+    case converter
 
     var id: String { rawValue }
 
@@ -48,6 +49,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .strip: "Scrolling Strip"
         case .awake: "Stay Awake"
         case .clicker: "Auto Clicker"
+        case .converter: "Convert"
         }
     }
 
@@ -66,6 +68,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .strip: "rectangle.split.3x1"
         case .awake: "cup.and.heat.waves"
         case .clicker: "cursorarrow.click.2"
+        case .converter: "arrow.triangle.2.circlepath"
         }
     }
 
@@ -85,6 +88,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .strip: "Windows side by side on one strip that scrolls. ⌃⌥ ← → to move along it."
         case .awake: "Keep the Mac on for a time you type, lid closed included, easy on the battery."
         case .clicker: "Clicks for you at the speed you set. ⌃⇧A or a switch in the menu bar starts and stops it."
+        case .converter: "Pictures, video, sound, PDFs and documents into other formats, or smaller. Tap ⇧ while dragging files."
         }
     }
 
@@ -102,6 +106,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .strip: "Nothing while windows sit still: macOS tells it when one changes, and it moves only then."
         case .awake: "Nothing until you start a timer. During one, a tick a minute for the time left."
         case .clicker: "Nothing but its shortcut until you start it."
+        case .converter: "Nothing but a glance at each mouse press and modifier key, for the wheel. Work runs only when you convert."
         }
     }
 }

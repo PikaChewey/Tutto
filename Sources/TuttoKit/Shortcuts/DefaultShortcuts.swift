@@ -26,9 +26,11 @@ public enum DefaultShortcuts {
     public static let recordScreen = KeyShortcut.ctrlShift(kVK_ANSI_R)
     /// Scrolling capture: "S" for scroll.
     public static let scrollingCapture = KeyShortcut.ctrlShift(kVK_ANSI_S)
+    /// The Convert window: "K" for convert (C is the word counter's).
+    public static let convertFiles = KeyShortcut.ctrlShift(kVK_ANSI_K)
 
     public static let all = [clipboardHistory, windowPalette, captureScreen, captureArea, captureAreaEdit, wordCounter, toggleClicker,
-                             recordScreen, scrollingCapture]
+                             recordScreen, scrollingCapture, convertFiles]
 
     /// Defaults that take a macOS shortcut on purpose.
     public static let takenFromMacOS: Set<KeyShortcut> = [captureScreen]
