@@ -13,31 +13,29 @@ import SwiftUI
 // MARK: - Ink
 
 extension Color {
-    /// Text and marks. Black in light mode, white in dark mode.
+    /// Text and marks. Black in light mode, white in dark mode (or the theme's ink).
     /// Opacities are tuned so secondary (ink2) and tertiary (ink3) text pass WCAG AA (4.5:1)
-    /// even on the light menu material (about #ECECEC), not just on white.
-    static let ink = Color.primary
-    static let ink2 = Color.primary.opacity(0.84)
-    static let ink3 = Color.primary.opacity(0.74)
-    static let ink4 = Color.primary.opacity(0.30)
-    static let hairline = Color.primary.opacity(0.12)
-    static let wash = Color.primary.opacity(0.06)
+    /// even on the light menu material (about #ECECEC), not just on white; a high-contrast theme
+    /// raises them. Each reads the theme, so whatever uses it follows a change of theme.
+    @MainActor static var ink: Color { ThemeStore.shared.tokens.ink }
+    @MainActor static var ink2: Color { ThemeStore.shared.tokens.ink2 }
+    @MainActor static var ink3: Color { ThemeStore.shared.tokens.ink3 }
+    @MainActor static var ink4: Color { ThemeStore.shared.tokens.ink4 }
+    @MainActor static var hairline: Color { ThemeStore.shared.tokens.hairline }
+    @MainActor static var wash: Color { ThemeStore.shared.tokens.wash }
+
+    /// The theme's accent (macOS's own unless the theme picks one).
+    @MainActor static var themeAccent: Color { ThemeStore.shared.tokens.accent }
 
     /// Ink that ignores the menu bar material's vibrancy, for solid fills (vibrant `.primary`
     /// renders large filled shapes as a dim gray on the glass panel).
-    static let solidInk = Color(nsColor: NSColor(name: "solidInk") { appearance in
-        appearance.isDark ? NSColor(white: 0.96, alpha: 1) : NSColor(white: 0.08, alpha: 1)
-    })
+    @MainActor static var solidInk: Color { ThemeStore.shared.tokens.solidInk }
 
     /// The opposite of ink, for marks drawn on top of solid ink.
-    static let paper = Color(nsColor: NSColor(name: "paper") { appearance in
-        appearance.isDark ? .black : .white
-    })
+    @MainActor static var paper: Color { ThemeStore.shared.tokens.paper }
 
     /// Opaque window background (welcome window). Off-black and off-white, never pure.
-    static let canvas = Color(nsColor: NSColor(name: "canvas") { appearance in
-        appearance.isDark ? NSColor(white: 0.04, alpha: 1) : NSColor(white: 0.98, alpha: 1)
-    })
+    @MainActor static var canvas: Color { ThemeStore.shared.tokens.canvas }
 
     /// The trackpad surface: a shade off the panel so it reads as an object.
     static let surface = Color(nsColor: NSColor(name: "surface") { appearance in
@@ -257,9 +255,9 @@ struct InkCheck: View {
             withAnimation(Motion.micro) { isOn.toggle() }
         } label: {
             HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.of(3.5), style: .continuous)
                     .fill(isOn ? Color.ink : Color.clear)
-                    .overlay(RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.of(3.5), style: .continuous)
                         .strokeBorder(isOn ? Color.clear : Color.ink4, lineWidth: 1))
                     .overlay {
                         Image(systemName: "checkmark")

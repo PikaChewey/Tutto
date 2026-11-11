@@ -190,7 +190,7 @@ struct ClipboardPaletteView: View {
             footer
         }
         .background(PaletteBackground())
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hairline))
+        .overlay(RoundedRectangle(cornerRadius: Radius.of(14), style: .continuous).strokeBorder(Color.hairline))
         .onAppear { searchFocused = true }
         .onChange(of: model.module.revision) { _, _ in model.refresh() }
     }
@@ -328,7 +328,7 @@ private struct ClipRow: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 24, height: 24)
-                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.of(4), style: .continuous))
                 } else {
                     Image(systemName: symbol)
                         .font(.system(size: 12, weight: .medium))
@@ -353,7 +353,7 @@ private struct ClipRow: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 34)
-        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(selected ? Color.ink : .clear))
+        .background(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(selected ? Color.ink : .clear))
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(item.kind.title): \(item.title)")

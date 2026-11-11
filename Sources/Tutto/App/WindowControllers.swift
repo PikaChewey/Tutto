@@ -324,17 +324,17 @@ private struct ToastView: View {
         Button(action: click) {
             HStack(spacing: 10) {
                 if let swatch = content.swatch {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.of(6), style: .continuous)
                         .fill(Color(nsColor: swatch))
-                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.hairline))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.of(6), style: .continuous).strokeBorder(Color.hairline))
                         .frame(width: 28, height: 28)
                 } else if let image = content.image {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 32, height: 32)
-                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Color.hairline))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.of(5), style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.of(5), style: .continuous).strokeBorder(Color.hairline))
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(content.title.uppercased())
@@ -356,7 +356,7 @@ private struct ToastView: View {
             .padding(.trailing, 16)
             .frame(maxWidth: 420)
             .background(PaletteBackground())
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hairline))
+            .overlay(RoundedRectangle(cornerRadius: Radius.of(14), style: .continuous).strokeBorder(Color.hairline))
         }
         .buttonStyle(.plain)
         .offset(y: shown || reduceMotion ? 0 : 8)

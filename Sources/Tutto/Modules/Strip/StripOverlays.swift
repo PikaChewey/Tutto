@@ -410,7 +410,7 @@ private struct StripIndicatorView: View {
         .padding(StripIndicator.padding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(PaletteBackground())
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.hairline))
+        .overlay(RoundedRectangle(cornerRadius: Radius.of(16), style: .continuous).strokeBorder(Color.hairline))
     }
 
     /// The outline slides to the focused tile. When focus went round from one end of the strip to
@@ -644,9 +644,9 @@ struct StripTabBarView: View {
                     }
                     .padding(.horizontal, 10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .background(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous)
                         .fill(index == bar.active ? Color.wash : Color.clear))
-                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous)
                         .strokeBorder(index == bar.active ? Color.hairline : Color.clear))
                     .contentShape(Rectangle())
                 }
@@ -657,7 +657,7 @@ struct StripTabBarView: View {
         .padding(3)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(PaletteBackground())
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.hairline))
+        .overlay(RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous).strokeBorder(Color.hairline))
     }
 }
 

@@ -31,7 +31,7 @@ struct OverviewPage: View {
                         .buttonStyle(OutlineButtonStyle(compact: true))
                 }
                 .padding(14)
-                .background(Color.wash, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Color.wash, in: RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous))
             }
             if let system = model.system {
                 OverviewStats(monitor: system)
@@ -94,8 +94,8 @@ private struct OverviewStats: View {
             stat("Disk", free.0, free.1, detail: "free", page: .disk)
         }
         .padding(.vertical, 6)
-        .background(Color.wash.opacity(0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.hairline))
+        .background(Color.wash.opacity(0.7), in: RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous).strokeBorder(Color.hairline))
     }
 
     private func stat(_ caption: String, _ value: String, _ unit: String, detail: String, page: MainPage) -> some View {

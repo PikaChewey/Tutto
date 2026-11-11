@@ -221,8 +221,8 @@ private struct CoreGrid: View {
                     VStack(spacing: 4) {
                         GeometryReader { geo in
                             ZStack(alignment: .bottom) {
-                                RoundedRectangle(cornerRadius: 2.5, style: .continuous).fill(Color.wash)
-                                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                                RoundedRectangle(cornerRadius: Radius.of(2.5), style: .continuous).fill(Color.wash)
+                                RoundedRectangle(cornerRadius: Radius.of(2.5), style: .continuous)
                                     .fill(Color.ink)
                                     .frame(height: max(2, geo.size.height * value))
                             }
@@ -319,13 +319,13 @@ private struct MemoryBar: View {
                     Spacer(minLength: 0)
                 }
                 .background(Color.wash)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.of(4), style: .continuous))
             }
             .frame(height: 12)
             HStack(spacing: 18) {
                 ForEach(parts, id: \.0) { part in
                     HStack(spacing: 6) {
-                        RoundedRectangle(cornerRadius: 2).fill(Color.ink.opacity(part.2)).frame(width: 8, height: 8)
+                        RoundedRectangle(cornerRadius: Radius.of(2)).fill(Color.ink.opacity(part.2)).frame(width: 8, height: 8)
                         Text(part.0).font(.system(size: 11.5)).foregroundStyle(Color.ink2)
                         Text(Format.bytes(part.1)).font(.system(size: 11.5, weight: .medium).monospacedDigit())
                     }

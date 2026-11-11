@@ -65,38 +65,82 @@ final class ArrangementTests: XCTestCase {
         XCTAssertEqual(PanelLayout.rows([Int](), perRow: 2), [])
     }
 
-    func testRestoreDefaultsKeepsYourPluginsInOrOutOfTheToolsRow() {
-        let outside = ScriptPlugin(name: "Out", command: "true").toolID
+    func testRestoreDefaultsKeepsYourPluginsInOrOutOfThePanel() {
+        let outside = ScriptPlugin(name: "Out", command: "true")
         let inside = ScriptPlugin(name: "In", command: "true").toolID
         var layout = PanelLayout()
-        layout.tools.set(outside, shown: false)  // where a new plugin starts
+        layout.tools.set(outside.toolID, shown: false)  // where a new plugin starts
+        layout.widgets.set(outside.widgetID, shown: false)
         XCTAssertFalse(layout.isCustomized, "nothing for Restore Defaults to undo")
-        XCTAssertTrue(ScriptPlugin.isToolID(outside))
+        XCTAssertTrue(ScriptPlugin.isToolID(outside.toolID))
+        XCTAssertTrue(ScriptPlugin.isWidgetID(outside.widgetID))
+        XCTAssertFalse(ScriptPlugin.isToolID(outside.widgetID))
+        XCTAssertEqual(ScriptPlugin.pluginID(fromWidgetID: outside.widgetID), outside.id)
         XCTAssertFalse(ScriptPlugin.isToolID("capture"))
 
-        layout.sections.set("sound", shown: false)
-        layout.readings.move(fromOffsets: IndexSet(integer: 5), toOffset: 0, available: PanelLayout.readingIDs)
+        layout.widgets.set("sound", shown: false)
+        layout.widgets.move(fromOffsets: IndexSet(integer: 6), toOffset: 0, available: PanelLayout.widgetIDs)
+        layout.setSize(.wide, of: "cpu", default: .small)
         layout.tools.set("capture", shown: false)
         layout.tools.move(fromOffsets: IndexSet(integer: 2), toOffset: 0, available: ["capture", "colors", inside])
         XCTAssertTrue(layout.isCustomized)
 
         let restored = layout.restored()
         XCTAssertFalse(restored.isCustomized, "pressing it once is enough")
-        XCTAssertEqual(restored.sections, Arrangement())
-        XCTAssertEqual(restored.readings, Arrangement())
-        XCTAssertEqual(restored.tools.hidden, [outside], "the plugin stays out; Tutto's tools come back")
+        XCTAssertEqual(restored.widgets.hidden, [outside.widgetID], "the plugin's card stays out; Tutto's come back")
+        XCTAssertEqual(restored.widgets.all(PanelLayout.widgetIDs), PanelLayout.widgetIDs)
+        XCTAssertEqual(restored.sizes, [:])
+        XCTAssertEqual(restored.tools.hidden, [outside.toolID])
         XCTAssertEqual(restored.tools.all(["capture", "colors", inside]), ["capture", "colors", inside])
     }
 
-    func testLayoutRoundTripsAndOldOnesDecode() throws {
+    func testLayoutRoundTrips() throws {
         var layout = PanelLayout()
-        layout.sections.set("sound", shown: false)
+        layout.widgets.set("sound", shown: false)
+        layout.setSize(.wide, of: "memory", default: .small)
         layout.tools.move(fromOffsets: IndexSet(integer: 1), toOffset: 0, available: ["x", "y"])
-        let decoded = try JSONDecoder().decode(PanelLayout.self, from: JSONEncoder().encode(layout))
-        XCTAssertEqual(decoded, layout)
-        let partial = try JSONDecoder().decode(PanelLayout.self, from: Data(#"{"sections":{"order":[],"hidden":["tools"]}}"#.utf8))
-        XCTAssertEqual(partial.sections.hidden, ["tools"])
-        XCTAssertEqual(partial.readings, Arrangement())
+        let data = try JSONEncoder().encode(layout)
+        XCTAssertEqual(try JSONDecoder().decode(PanelLayout.self, from: data), layout)
+        let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any]).keys
+        XCTAssertEqual(Set(keys), ["widgets", "sizes", "tools"], "only the new form is written")
+    }
+
+    func testOldLayoutsBecomeOneList() throws {
+        // Version 1: parts, readings and controls arranged on their own.
+        let old = #"{"sections":{"order":["sound","battery","readings","controls","tools"],"hidden":["controls"]},"readings":{"order":["memory","cpu"],"hidden":["gpu"]},"controls":{"order":[],"hidden":[]},"tools":{"order":["x"],"hidden":[]}}"#
+        let layout = try JSONDecoder().decode(PanelLayout.self, from: Data(old.utf8))
+        XCTAssertEqual(layout.widgets.all(PanelLayout.widgetIDs),
+                       ["sound", "battery", "memory", "gpu", "disk", "network", "temperature", "cpu", "awake", "clicker", "fan", "tools"],
+                       "as the old panel showed them: GPU and the rest follow Memory, where they followed it before")
+        XCTAssertEqual(layout.widgets.hidden, ["awake", "clicker", "fan", "gpu"])
+        XCTAssertEqual(layout.tools.order, ["x"])
+        // An untouched old layout is the default, not a customization.
+        let untouched = try JSONDecoder().decode(PanelLayout.self, from: Data(#"{"sections":{"order":[],"hidden":[]}}"#.utf8))
+        XCTAssertEqual(untouched, PanelLayout())
+        // A size this Tutto doesn't know is ignored.
+        let future = try JSONDecoder().decode(PanelLayout.self, from: Data(#"{"widgets":{"order":[],"hidden":[]},"sizes":{"cpu":"huge","gpu":"wide"}}"#.utf8))
+        XCTAssertEqual(future.sizes, ["gpu": .wide])
+    }
+
+    func testSizesRememberOnlyChanges() {
+        var layout = PanelLayout()
+        layout.setSize(.wide, of: "cpu", default: .small)
+        XCTAssertEqual(layout.size(of: "cpu", default: .small), .wide)
+        layout.setSize(.small, of: "cpu", default: .small)
+        XCTAssertEqual(layout.sizes, [:])
+    }
+
+    func testLinesPairSmallCardsAndGroupRows() {
+        let slots = [WidgetSlot(id: "battery", size: .wide), WidgetSlot(id: "cpu", size: .small),
+                     WidgetSlot(id: "memory", size: .small), WidgetSlot(id: "gpu", size: .small),
+                     WidgetSlot(id: "awake", size: .wide, isRow: true), WidgetSlot(id: "clicker", size: .wide, isRow: true),
+                     WidgetSlot(id: "disk", size: .small), WidgetSlot(id: "network", size: .small),
+                     WidgetSlot(id: "sound", size: .wide), WidgetSlot(id: "fan", size: .wide, isRow: true)]
+        XCTAssertEqual(PanelLayout.lines(slots), [
+            .cards(["battery"]), .cards(["cpu", "memory"]), .cards(["gpu"]), .rows(["awake", "clicker"]),
+            .cards(["disk", "network"]), .cards(["sound"]), .rows(["fan"]),
+        ])
+        XCTAssertEqual(PanelLayout.lines([]), [])
     }
 }
 
@@ -116,7 +160,7 @@ final class ScriptPluginTests: XCTestCase {
         try #"{"name": "Hello", "command": "echo hi"}"#.write(to: folder.appendingPathComponent("hello.json"), atomically: true, encoding: .utf8)
         try #"{"name": "Broken"}"#.write(to: folder.appendingPathComponent("broken.json"), atomically: true, encoding: .utf8)
         try "not json".write(to: folder.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
-        let store = PluginStore(directory: folder)
+        let store = PluginStore(directory: folder, usesTrash: false)
         let first = store.load()
         XCTAssertEqual(first.plugins.map(\.name), ["Hello"])
         XCTAssertEqual(first.plugins.first?.output, .notice)
@@ -127,7 +171,7 @@ final class ScriptPluginTests: XCTestCase {
     }
 
     func testSaveEditDelete() throws {
-        let store = PluginStore(directory: folder)
+        let store = PluginStore(directory: folder, usesTrash: false)
         var plugin = ScriptPlugin(name: "Upper Case!", command: "tr a-z A-Z", input: .clipboard, output: .clipboard)
         let url = try store.save(plugin)
         XCTAssertEqual(url.lastPathComponent, "upper-case.json")
@@ -149,8 +193,11 @@ final class ScriptPluginTests: XCTestCase {
         XCTAssertTrue(ScriptPlugin(name: "A", command: "ls").isValid)
         XCTAssertEqual(PluginStore.slug("Plain Text — Clipboard"), "plain-text-clipboard")
         XCTAssertEqual(PluginStore.slug("!!!"), "plugin")
-        XCTAssertEqual(ScriptPlugin.templates.count, 4)
         XCTAssertTrue(ScriptPlugin.templates.allSatisfy(\.isValid))
+        let groups = ScriptPlugin.templateGroups
+        XCTAssertEqual(groups.map(\.title), ["Actions", "Cards", "Automations"])
+        XCTAssertTrue(groups.allSatisfy { !$0.plugins.isEmpty })
+        XCTAssertEqual(groups.map(\.plugins.count).reduce(0, +), ScriptPlugin.templates.count)
     }
 
     func testRunsWithInputAndOutput() {

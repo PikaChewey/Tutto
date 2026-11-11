@@ -13,7 +13,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
     case overview
     case battery, cpu, gpu, memory, disk, network, sensors
     case clipboard, windows, switcher, strip, screenshots, archives, corner, wordCounter, sound, awake, clicker
-    case customize, plugins, shortcuts, permissions, general
+    case customize, appearance, plugins, shortcuts, permissions, general
 
     var id: String { rawValue }
 
@@ -39,6 +39,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .switcher: "Window Switcher"
         case .strip: "Scrolling Strip"
         case .customize: "Customize"
+        case .appearance: "Appearance"
         case .plugins: "Plugins"
         case .shortcuts: "Shortcuts"
         case .permissions: "Permissions"
@@ -68,6 +69,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .switcher: ModuleID.switcher.symbol
         case .strip: ModuleID.strip.symbol
         case .customize: "slider.horizontal.3"
+        case .appearance: "paintpalette"
         case .plugins: "puzzlepiece.extension"
         case .shortcuts: "command"
         case .permissions: "lock.shield"
@@ -90,13 +92,13 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .clicker: .clicker
         case .switcher: .switcher
         case .strip: .strip
-        case .overview, .customize, .plugins, .shortcuts, .permissions, .general: nil
+        case .overview, .customize, .appearance, .plugins, .shortcuts, .permissions, .general: nil
         }
     }
 
     static let systemPages: [MainPage] = [.battery, .cpu, .gpu, .memory, .disk, .network, .sensors]
     static let toolPages: [MainPage] = [.awake, .clicker, .clipboard, .windows, .switcher, .strip, .screenshots, .archives, .corner, .wordCounter, .sound]
-    static let settingsPages: [MainPage] = [.customize, .plugins, .shortcuts, .permissions, .general]
+    static let settingsPages: [MainPage] = [.customize, .appearance, .plugins, .shortcuts, .permissions, .general]
 }
 
 struct MainView: View {
@@ -137,7 +139,10 @@ struct MainView: View {
             // toolbar: there it floated, faint, over the scrolling page under the page's own title.
             .navigationTitle(navigation.page.title)
             .modifier(HideToolbarTitle())
+            // A theme with a solid background paints the pages too.
+            .background(ThemeStore.shared.tokens.solidBackground ? Color.canvas : Color.clear)
         }
+        .tint(Color.themeAccent)
         .frame(minWidth: 780, minHeight: 520)
     }
 
@@ -176,6 +181,7 @@ struct MainView: View {
         case .switcher: SwitcherPage(model: model)
         case .strip: StripPage(model: model)
         case .customize: CustomizePage(model: model)
+        case .appearance: AppearancePage(model: model)
         case .plugins: PluginsPage(model: model)
         case .shortcuts: ShortcutsPage(model: model)
         case .permissions: PermissionsPage(model: model)
@@ -260,8 +266,8 @@ struct ModuleOffView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.wash, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.hairline))
+        .background(Color.wash, in: RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous).strokeBorder(Color.hairline))
     }
 }
 

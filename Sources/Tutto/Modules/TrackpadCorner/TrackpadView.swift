@@ -449,13 +449,13 @@ struct MiniContextMenu: View {
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2.5)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(selected ? Color.ink : .clear, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .background(selected ? Color.ink : .clear, in: RoundedRectangle(cornerRadius: Radius.of(4), style: .continuous))
                     .foregroundStyle(selected ? Color.paper : Color.ink)
             }
         }
         .padding(4)
         .frame(width: 96)
-        .background(Color.surface, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Color.hairline))
+        .background(Color.surface, in: RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).strokeBorder(Color.hairline))
     }
 }

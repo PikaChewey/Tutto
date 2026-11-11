@@ -275,7 +275,7 @@ struct WordCounterView: View {
             footer
         }
         .background(PaletteBackground())
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hairline))
+        .overlay(RoundedRectangle(cornerRadius: Radius.of(14), style: .continuous).strokeBorder(Color.hairline))
     }
 
     private var stats: some View {

@@ -114,6 +114,8 @@ final class StayAwakeModule: ModuleController {
     @ObservationIgnored private var sampledKeyboard: Float?
     @ObservationIgnored private var lowPowerOn = false
     @ObservationIgnored private let agentWatcher = AgentWatcher()
+    /// Plugins with Stay Awake triggers hear about sessions starting and ending.
+    @ObservationIgnored var onPluginEvent: ((PluginEvent, String?) -> Void)?
     @ObservationIgnored private var agentGate = AgentGate(grace: 600)
     @ObservationIgnored private var toolsTimer: DispatchSourceTimer?
     @ObservationIgnored private var reconnects = 0
@@ -183,6 +185,7 @@ final class StayAwakeModule: ModuleController {
                                         IOPMAssertionLevel(kIOPMAssertionLevelOn), "Tutto Stay Awake" as CFString, &assertion)
         }
         awakeLog.notice("session started for \(Int(seconds / 60)) min")
+        onPluginEvent?(.awakeStarted, String(Int(seconds / 60)))
         sampleBrightness()
         beginWatching()
         holdSleep(until: ends)
@@ -263,6 +266,7 @@ final class StayAwakeModule: ModuleController {
         }
         let closedAlone = lidClosed && !Displays.externalIsActive()
         session = nil
+        onPluginEvent?(.awakeEnded, reason)
         defaults.removeObject(forKey: Keys.session)
         endTimer?.cancel()
         endTimer = nil

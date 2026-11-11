@@ -33,7 +33,7 @@ struct SoundAppButton: View {
                     if muted {
                         badge("speaker.slash.fill", fill: .ink)
                     } else if usingAudio {
-                        badge("speaker.wave.2.fill", fill: .accentColor)
+                        badge("speaker.wave.2.fill", fill: .themeAccent)
                     }
                 }
                 .scaleEffect(hovering ? 1.06 : 1)

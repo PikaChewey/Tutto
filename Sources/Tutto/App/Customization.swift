@@ -12,101 +12,107 @@ import Observation
 import os
 import TuttoKit
 
-private let pluginLog = Logger(subsystem: "ca.bryanyao.Tutto", category: "plugins")
-
 // MARK: - The panel's arrangement
 
 @MainActor
 @Observable
 final class PanelLayoutStore {
-    enum Section: String, CaseIterable, Identifiable {
-        case battery, readings, controls, sound, tools
+    /// Tutto's own cards.
+    enum Card: String, CaseIterable, Identifiable {
+        case battery, cpu, memory, gpu, disk, network, temperature, awake, clicker, fan, sound, tools
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
-            case .battery: "Battery and busiest apps"
-            case .readings: "Readings"
-            case .controls: "Controls"
-            case .sound: "Sound"
-            case .tools: "Tools"
-            }
-        }
-
-        var detail: String {
-            switch self {
-            case .battery: "Charge, watts, health and the three apps using the processor most."
-            case .readings: "CPU, memory, GPU, disk, network and temperature, with the last minute."
-            case .controls: "Stay awake, the auto clicker and the fan, a line each."
-            case .sound: "Your apps, to mute one with a click."
-            case .tools: "Tools and plugins with their keys, to click instead of pressing them."
-            }
-        }
-
-        var symbol: String {
-            switch self {
-            case .battery: "battery.75percent"
-            case .readings: "square.grid.2x2"
-            case .controls: "switch.2"
-            case .sound: "speaker.wave.2"
-            case .tools: "command"
-            }
-        }
-    }
-
-    enum Reading: String, CaseIterable, Identifiable {
-        case cpu, memory, gpu, disk, network, temperature
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
+            case .battery: "Battery"
             case .cpu: "CPU"
             case .memory: "Memory"
             case .gpu: "GPU"
             case .disk: "Disk"
             case .network: "Network"
             case .temperature: "Temperature"
+            case .awake: "Stay awake"
+            case .clicker: "Auto clicker"
+            case .fan: "Fan"
+            case .sound: "Sound"
+            case .tools: "Tools"
+            }
+        }
+
+        /// What it shows, for the Customize page.
+        var detail: String {
+            switch self {
+            case .battery: "Wide: charge, watts, health and the busiest apps. Small: charge and watts."
+            case .cpu: "Processor load and the last minute."
+            case .memory: "Memory used and the last minute."
+            case .gpu: "Graphics load and the last minute."
+            case .disk: "Free space on the startup disk."
+            case .network: "Down and up, and the last minute."
+            case .temperature: "The processor's temperature."
+            case .awake: "A timer, and how long is left."
+            case .clicker: "Its speed, its keys and a switch."
+            case .fan: "Speed, and automatic or your own."
+            case .sound: "Your apps, to mute one with a click."
+            case .tools: "Tools and plugins with their keys."
             }
         }
 
         var symbol: String {
             switch self {
+            case .battery: "battery.75percent"
             case .cpu: "cpu"
             case .memory: "memorychip"
             case .gpu: "square.stack.3d.up"
             case .disk: "internaldrive"
             case .network: "arrow.up.arrow.down"
             case .temperature: "thermometer.medium"
-            }
-        }
-    }
-
-    enum Control: String, CaseIterable, Identifiable {
-        case awake, clicker, fan
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .awake: "Stay awake"
-            case .clicker: "Auto clicker"
-            case .fan: "Fan"
-            }
-        }
-
-        var symbol: String {
-            switch self {
             case .awake: ModuleID.awake.symbol
             case .clicker: ModuleID.clicker.symbol
             case .fan: "fan"
+            case .sound: "speaker.wave.2"
+            case .tools: "command"
+            }
+        }
+
+        /// The sizes it comes in, its default first.
+        var sizes: [WidgetSize] {
+            switch self {
+            case .battery: [.wide, .small]
+            case .cpu, .memory, .gpu, .disk, .network, .temperature: [.small, .wide]
+            case .awake, .clicker, .fan, .sound, .tools: [.wide]
+            }
+        }
+
+        /// A one-line control: next to others like it, it shares their card.
+        var isRow: Bool { self == .awake || self == .clicker || self == .fan }
+    }
+
+    /// A card on the panel: one of Tutto's, or a plugin's.
+    enum Widget: Hashable, Identifiable {
+        case card(Card)
+        case plugin(UUID)
+
+        var id: String {
+            switch self {
+            case .card(let card): card.rawValue
+            case .plugin(let id): ScriptPlugin.widgetPrefix + id.uuidString
+            }
+        }
+
+        init?(id: String) {
+            if let card = Card(rawValue: id) {
+                self = .card(card)
+            } else if let plugin = ScriptPlugin.pluginID(fromWidgetID: id) {
+                self = .plugin(plugin)
+            } else {
+                return nil
             }
         }
     }
 
     private(set) var layout: PanelLayout
-    private let defaults = UserDefaults.standard
+    @ObservationIgnored private let defaults = UserDefaults.standard
 
     init() {
         if let data = UserDefaults.standard.data(forKey: Keys.layout), let saved = try? JSONDecoder().decode(PanelLayout.self, from: data) {
@@ -114,7 +120,8 @@ final class PanelLayoutStore {
         } else {
             // Parts hidden on the General page before there was a Customize page.
             var layout = PanelLayout()
-            layout.sections.hidden = Set(UserDefaults.standard.stringArray(forKey: Keys.oldHidden) ?? [])
+            let hidden = Set(UserDefaults.standard.stringArray(forKey: Keys.oldHidden) ?? [])
+            layout.widgets = PanelLayout.migrate(sections: Arrangement(hidden: hidden), readings: Arrangement(), controls: Arrangement())
             self.layout = layout
         }
     }
@@ -129,26 +136,101 @@ final class PanelLayoutStore {
         save()
     }
 
+    /// Back to the default arrangement; plugins stay in or out of the panel as they are.
     func reset() {
-        // Plugins stay in or out of the tools row as they are.
         update { $0 = $0.restored() }
     }
 
-    // MARK: What the panel shows
+    // MARK: Cards
 
-    func sections() -> [Section] {
-        layout.sections.visible(PanelLayout.sectionIDs).compactMap(Section.init(rawValue:))
+    /// The cards this Mac and the tools switched on can show, in their default order (a plugin's
+    /// card after the readings).
+    func available(_ model: AppModel) -> [Widget] {
+        var cards: [Widget] = []
+        if model.system != nil { cards += [.card(.battery), .card(.cpu), .card(.memory), .card(.gpu), .card(.disk), .card(.network)] }
+        if model.sensors != nil { cards.append(.card(.temperature)) }
+        cards += model.plugins.cardPlugins.map { .plugin($0.id) }
+        if model.awake != nil { cards.append(.card(.awake)) }
+        if model.clicker != nil { cards.append(.card(.clicker)) }
+        if model.sensors?.hasFans == true { cards.append(.card(.fan)) }
+        if model.sound != nil, SoundModule.isSupported { cards.append(.card(.sound)) }
+        if !ShortcutRows.rows(model).isEmpty { cards.append(.card(.tools)) }
+        return cards
     }
 
-    func shows(_ section: Section) -> Bool { layout.sections.isShown(section.rawValue) }
-
-    func readings(available: [Reading]) -> [Reading] {
-        layout.readings.visible(available.map(\.rawValue)).compactMap(Reading.init(rawValue:))
+    /// Every card that can show, in the panel's order (the hidden ones too, for the editor).
+    func all(_ model: AppModel) -> [Widget] {
+        let available = available(model)
+        let byID = Dictionary(available.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return layout.widgets.all(available.map(\.id)).compactMap { byID[$0] }
     }
 
-    func controls(available: [Control]) -> [Control] {
-        layout.controls.visible(available.map(\.rawValue)).compactMap(Control.init(rawValue:))
+    /// The cards the panel shows, in order, with their sizes.
+    func slots(_ model: AppModel) -> [WidgetSlot] {
+        all(model).filter { layout.widgets.isShown($0.id) }
+            .map { WidgetSlot(id: $0.id, size: size(of: $0, model), isRow: isRow($0)) }
     }
+
+    func isShown(_ widget: Widget) -> Bool { layout.widgets.isShown(widget.id) }
+
+    func sizes(of widget: Widget) -> [WidgetSize] {
+        switch widget {
+        case .card(let card): card.sizes
+        case .plugin: [.small, .wide]
+        }
+    }
+
+    func defaultSize(of widget: Widget, _ model: AppModel) -> WidgetSize {
+        switch widget {
+        case .card(let card): card.sizes[0]
+        case .plugin(let id): model.plugins.plugin(id)?.widget?.size ?? .small
+        }
+    }
+
+    func size(of widget: Widget, _ model: AppModel) -> WidgetSize {
+        let fallback = defaultSize(of: widget, model)
+        let size = layout.size(of: widget.id, default: fallback)
+        return sizes(of: widget).contains(size) ? size : fallback
+    }
+
+    func setSize(_ size: WidgetSize, of widget: Widget, _ model: AppModel) {
+        let fallback = defaultSize(of: widget, model)
+        update { $0.setSize(size, of: widget.id, default: fallback) }
+    }
+
+    func isRow(_ widget: Widget) -> Bool {
+        if case .card(let card) = widget { card.isRow } else { false }
+    }
+
+    /// Moves a card to where another is (after it when moving down, before it when moving up).
+    func move(_ moving: String, onto target: String, _ model: AppModel) {
+        let ids = all(model).map(\.id)
+        guard let from = ids.firstIndex(of: moving), let to = ids.firstIndex(of: target), from != to else { return }
+        update { $0.widgets.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to, available: ids) }
+    }
+
+    func title(of widget: Widget, _ model: AppModel) -> String {
+        switch widget {
+        case .card(let card): card.title
+        case .plugin(let id): model.plugins.plugin(id)?.name ?? "Plugin"
+        }
+    }
+
+    func detail(of widget: Widget) -> String {
+        switch widget {
+        case .card(let card): card.detail
+        case .plugin: "Your plugin's card. Wide shows its list too."
+        }
+    }
+
+    func symbol(of widget: Widget, _ model: AppModel) -> String {
+        switch widget {
+        case .card(let card): card.symbol
+        case .plugin(let id): model.plugins.plugin(id)?.symbol ?? ScriptPlugin.defaultSymbol
+        }
+    }
+
+    // MARK: Tools row
 
     func tools(available ids: [String]) -> [String] { layout.tools.visible(ids) }
 
@@ -160,159 +242,5 @@ final class PanelLayoutStore {
     private enum Keys {
         static let layout = "panel.layout"
         static let oldHidden = "panel.hidden"
-    }
-}
-
-// MARK: - Your plugins
-
-/// Names of the plugins for their shortcuts (Shortcuts page, conflicts), read off the main actor.
-enum PluginShortcuts {
-    nonisolated(unsafe) static var names: [UUID: String] = [:]
-    nonisolated(unsafe) static var ids: [UUID] = []
-    nonisolated(unsafe) static var enabled: Set<UUID> = []
-}
-
-@MainActor
-@Observable
-final class PluginsModel {
-    private(set) var plugins: [ScriptPlugin] = []
-    /// Files in the folder that couldn't be read.
-    private(set) var problems: [String] = []
-    private(set) var running: Set<UUID> = []
-    private(set) var lastResults: [UUID: PluginResult] = [:]
-
-    let store = PluginStore(directory: PluginStore.defaultDirectory)
-    private let defaults = UserDefaults.standard
-    private var model: AppModel { AppModel.shared }
-
-    var folder: URL { store.directory }
-
-    func plugin(_ id: UUID) -> ScriptPlugin? { plugins.first { $0.id == id } }
-
-    func plugin(named name: String) -> ScriptPlugin? {
-        plugins.first { $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
-    }
-
-    /// Reads the folder again (a file added or edited by hand shows up).
-    func load() {
-        let loaded = store.load()
-        plugins = loaded.plugins
-        problems = loaded.problems
-        // A plugin new to Tutto stays out of the tools row until you put it there.
-        var seen = Set(defaults.stringArray(forKey: Keys.seen) ?? [])
-        let unseen = plugins.map(\.toolID).filter { !seen.contains($0) }
-        if !unseen.isEmpty {
-            model.layout.update { layout in
-                for id in unseen where !layout.tools.order.contains(id) { layout.tools.hidden.insert(id) }
-            }
-            seen.formUnion(unseen)
-            defaults.set(Array(seen).sorted(), forKey: Keys.seen)
-        }
-        publish()
-    }
-
-    /// Saves a new or edited plugin; returns why it couldn't be saved.
-    @discardableResult
-    func save(_ plugin: ScriptPlugin, inPanel: Bool? = nil) -> String? {
-        guard plugin.isValid else { return "A plugin needs a name and a command." }
-        do {
-            try store.save(plugin)
-        } catch {
-            return error.localizedDescription
-        }
-        let isNew = !plugins.contains { $0.id == plugin.id }
-        if let index = plugins.firstIndex(where: { $0.id == plugin.id }) { plugins[index] = plugin } else { plugins.append(plugin) }
-        plugins.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        if isNew {
-            var seen = Set(defaults.stringArray(forKey: Keys.seen) ?? [])
-            seen.insert(plugin.toolID)
-            defaults.set(Array(seen).sorted(), forKey: Keys.seen)
-        }
-        if let inPanel {
-            model.layout.update { $0.tools.set(plugin.toolID, shown: inPanel) }
-        } else if isNew {
-            model.layout.update { $0.tools.set(plugin.toolID, shown: false) }
-        }
-        publish()
-        return nil
-    }
-
-    func delete(_ plugin: ScriptPlugin) {
-        try? store.delete(plugin)
-        plugins.removeAll { $0.id == plugin.id }
-        lastResults[plugin.id] = nil
-        model.shortcuts.reset(.plugin(plugin.id))
-        model.layout.update { layout in
-            layout.tools.order.removeAll { $0 == plugin.toolID }
-            layout.tools.hidden.remove(plugin.toolID)
-        }
-        publish()
-    }
-
-    func setEnabled(_ plugin: ScriptPlugin, _ on: Bool) {
-        var changed = plugin
-        changed.enabled = on
-        save(changed)
-    }
-
-    func isInPanel(_ plugin: ScriptPlugin) -> Bool { model.layout.layout.tools.isShown(plugin.toolID) }
-
-    /// Shortcuts and names follow the list.
-    private func publish() {
-        PluginShortcuts.names = Dictionary(uniqueKeysWithValues: plugins.map { ($0.id, $0.name) })
-        PluginShortcuts.ids = plugins.map(\.id)
-        PluginShortcuts.enabled = Set(plugins.filter(\.enabled).map(\.id))
-        model.bindShortcuts()
-    }
-
-    // MARK: Running
-
-    func run(_ id: UUID) {
-        guard let plugin = plugin(id) else { return }
-        run(plugin)
-    }
-
-    /// Runs it in its own process: off the main thread, at most one run of a plugin at a time.
-    func run(_ plugin: ScriptPlugin) {
-        guard plugin.enabled, !running.contains(plugin.id) else { return }
-        running.insert(plugin.id)
-        let input = plugin.input == .clipboard ? (NSPasteboard.general.string(forType: .string) ?? "") : nil
-        pluginLog.notice("run \(plugin.name, privacy: .public)")
-        Task.detached(priority: .userInitiated) { [self] in
-            let result = PluginRunner.run(plugin.command, input: input, timeout: min(plugin.timeout, ScriptPlugin.longestTimeout),
-                                          name: plugin.name)
-            await MainActor.run { self.finished(plugin, result) }
-        }
-    }
-
-    private func finished(_ plugin: ScriptPlugin, _ result: PluginResult) {
-        running.remove(plugin.id)
-        lastResults[plugin.id] = result
-        pluginLog.notice("\(plugin.name, privacy: .public): exit \(result.status) in \(Int(result.seconds * 1000)) ms\(result.timedOut ? ", timed out" : "", privacy: .public)")
-        if result.timedOut {
-            return Toast.shared.show("\(plugin.name) stopped", detail: "It ran longer than \(Int(plugin.timeout)) s.", duration: 3)
-        }
-        guard result.succeeded else {
-            let why = result.summary()
-            return Toast.shared.show("\(plugin.name) failed", detail: why.isEmpty ? "It exited with \(result.status)." : why, duration: 3)
-        }
-        switch plugin.output {
-        case .notice:
-            let text = result.summary()
-            Toast.shared.show(plugin.name, detail: text.isEmpty ? "Done" : text, duration: text.count > 60 ? 3 : 1.8)
-        case .clipboard:
-            // One trailing newline (what most commands end with) isn't part of the result.
-            var text = result.output
-            if text.hasSuffix("\n") { text.removeLast() }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            Toast.shared.show(plugin.name, detail: "Copied \(text.count.formatted()) character\(text.count == 1 ? "" : "s")")
-        case .silent:
-            break
-        }
-    }
-
-    private enum Keys {
-        static let seen = "plugins.seen"
     }
 }

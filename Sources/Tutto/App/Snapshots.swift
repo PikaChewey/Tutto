@@ -24,6 +24,10 @@ enum Snapshots {
         let model = AppModel.shared
         AppModel.rendersOffscreen = true
         model.launch(quietly: true)
+        // Tutto's own theme, or `theme:Paper` for a built-in one; renders don't change the theme kept.
+        let themeName = only.first(where: { $0.hasPrefix("theme:") }).map { String($0.dropFirst(6)) } ?? "Tutto"
+        let spec = ThemeSpec.builtIn.first { $0.name.caseInsensitiveCompare(themeName) == .orderedSame } ?? .tutto
+        ThemeStore.shared.apply(spec, remember: false)
         model.system?.begin([.load, .volumes, .apps, .energyProcesses, .cpuProcesses, .memoryProcesses])
         model.sensors?.begin()
         model.sound?.begin()   // lists apps and reads which play; mutes nothing
@@ -177,7 +181,7 @@ struct SnapshotExtras {
                 ForEach(glances, id: \.title) { glance in
                     VerdictLine(glance: glance)
                         .padding(12)
-                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.055)))
+                        .background(RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous).fill(Color.primary.opacity(0.055)))
                 }
                 HStack(spacing: 0) {
                     ForEach(Array([(false, false), (false, true), (true, false)].enumerated()), id: \.offset) { _, state in
@@ -187,7 +191,7 @@ struct SnapshotExtras {
                     Spacer(minLength: 0)
                 }
                 .padding(12)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.055)))
+                .background(RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous).fill(Color.primary.opacity(0.055)))
             }
             .padding(10)
             .frame(width: 320)

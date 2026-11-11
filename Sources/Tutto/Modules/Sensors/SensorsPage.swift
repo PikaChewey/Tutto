@@ -167,7 +167,7 @@ private struct FanControlView: View {
                 .buttonStyle(InkButtonStyle(compact: true))
             }
             .padding(12)
-            .background(Color.wash, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(Color.wash, in: RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous))
         } else if let message = sensors.helperMessage {
             Text(message).font(.system(size: 11.5)).foregroundStyle(Color.ink2)
         }

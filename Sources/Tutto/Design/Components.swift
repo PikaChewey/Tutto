@@ -86,8 +86,8 @@ struct KeyCaps: View {
                         .foregroundStyle(Color.ink2)
                         .frame(minWidth: compact ? 13 : 15, minHeight: compact ? 15 : 17)
                         .padding(.horizontal, symbol.count > 1 ? 3 : 0)
-                        .background(RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(Color.wash))
-                        .overlay(RoundedRectangle(cornerRadius: 3.5, style: .continuous).strokeBorder(Color.hairline))
+                        .background(RoundedRectangle(cornerRadius: Radius.of(3.5), style: .continuous).fill(Color.wash))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.of(3.5), style: .continuous).strokeBorder(Color.hairline))
                 }
             }
             .accessibilityElement(children: .ignore)
@@ -150,8 +150,8 @@ struct LabeledRow<Content: View>: View {
 
 /// Shared spacing for rows inside an `InkGroup`, so every list in the app breathes the same.
 enum Metrics {
-    /// Above and below each row's text, inside its separators.
-    static let rowPadding: CGFloat = 10
+    /// Above and below each row's text, inside its separators (scaled by the theme's density).
+    @MainActor static var rowPadding: CGFloat { (10 * ThemeStore.shared.tokens.densityScale).rounded() }
     /// Between a row's title and its one-line description.
     static let titleToDetail: CGFloat = 3
 }
@@ -212,8 +212,8 @@ struct InkGroup<Content: View>: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.wash.opacity(0.7)))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.hairline))
+            .background(RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous).fill(Color.wash.opacity(0.7)))
+            .overlay(RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous).strokeBorder(Color.hairline))
         }
     }
 }
@@ -232,7 +232,7 @@ struct IconButton: View {
                 .font(.system(size: size * 0.48, weight: .medium))
                 .foregroundStyle(hovering ? Color.ink : Color.ink2)
                 .frame(width: size, height: size)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hovering ? Color.wash : .clear))
+                .background(RoundedRectangle(cornerRadius: Radius.of(6), style: .continuous).fill(hovering ? Color.wash : .clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
@@ -289,7 +289,7 @@ struct StatusDot: View {
 extension Color {
     /// The only non-ink color in Tutto's chrome, reserved for real problems
     /// (critical battery, heat, failures).
-    static let alert = Color(nsColor: .systemRed)
+    @MainActor static var alert: Color { ThemeStore.shared.tokens.alert }
 }
 
 // MARK: - Entrance

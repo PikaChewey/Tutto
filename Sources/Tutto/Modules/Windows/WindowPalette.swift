@@ -192,7 +192,7 @@ struct WindowPaletteView: View {
             .frame(height: 32)
         }
         .background(PaletteBackground())
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hairline))
+        .overlay(RoundedRectangle(cornerRadius: Radius.of(14), style: .continuous).strokeBorder(Color.hairline))
         .onAppear { focused = true }
     }
 }
@@ -218,7 +218,7 @@ private struct WindowActionRow: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 36)
-        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(selected ? Color.ink : .clear))
+        .background(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(selected ? Color.ink : .clear))
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(action.title)
@@ -236,12 +236,12 @@ struct ScreenGlyph: View {
         Canvas { context, size in
             let ink = inverted ? Color.paper : Color.ink
             let outline = CGRect(origin: .zero, size: size).insetBy(dx: 0.75, dy: 0.75)
-            context.stroke(Path(roundedRect: outline, cornerRadius: 2.5), with: .color(ink.opacity(0.6)), lineWidth: 1.2)
+            context.stroke(Path(roundedRect: outline, cornerRadius: Radius.of(2.5)), with: .color(ink.opacity(0.6)), lineWidth: 1.2)
             if let region {
                 let inner = outline.insetBy(dx: 2, dy: 2)
                 let rect = CGRect(x: inner.minX + region.minX * inner.width, y: inner.minY + region.minY * inner.height,
                                   width: region.width * inner.width, height: region.height * inner.height)
-                context.fill(Path(roundedRect: rect, cornerRadius: 1), with: .color(ink))
+                context.fill(Path(roundedRect: rect, cornerRadius: Radius.of(1)), with: .color(ink))
             } else {
                 let symbol = action == .restore ? "arrow.uturn.backward" : (action == .nextDisplay ? "arrow.right" : "arrow.left")
                 context.draw(Text(Image(systemName: symbol)).font(.system(size: 7, weight: .bold)).foregroundStyle(ink),

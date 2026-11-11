@@ -87,7 +87,7 @@ private struct ClickerPill: View {
         HStack(spacing: 8) {
             Image(systemName: "cursorarrow.click.2")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(model.live ? Color.accentColor : Color.ink2)
+                .foregroundStyle(model.live ? Color.themeAccent : Color.ink2)
                 .symbolEffect(.pulse, isActive: model.live)
             Text(model.text)
                 .font(.system(size: 12.5, weight: .semibold).monospacedDigit())

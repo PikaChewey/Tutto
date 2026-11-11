@@ -3,8 +3,9 @@
 //  Tutto
 //
 //  How the menu bar panel is arranged, set on the Customize page (Bryan, 2026-11-10: "make it
-//  like customizeable with the GUI ... in the settings ... not in the menu bar at all"): which of
-//  its parts, readings, controls and tools show, and in what order.
+//  like customizeable with the GUI ... in the settings ... not in the menu bar at all"; then
+//  "panel cards you can move anywhere and resize"): every card in one order, which show, how big
+//  each is, and what the tools row holds.
 //
 
 import Foundation
@@ -74,45 +75,156 @@ public struct Arrangement: Codable, Equatable, Sendable {
     }
 }
 
-/// The panel's arrangement: its parts, the readings tiles, the control rows and the tools row.
+/// How big a card on the panel is: half its width, or all of it.
+public enum WidgetSize: String, Codable, CaseIterable, Sendable {
+    case small, wide
+}
+
+/// A card as the panel lays it out.
+public struct WidgetSlot: Equatable, Sendable {
+    public var id: String
+    public var size: WidgetSize
+    /// A one-line control (Stay awake, the auto clicker, the fan): next to others like it, it
+    /// shares their card, a line each.
+    public var isRow: Bool
+
+    public init(id: String, size: WidgetSize, isRow: Bool = false) {
+        self.id = id
+        self.size = size
+        self.isRow = isRow
+    }
+}
+
+/// One line of the panel: one card across, two side by side, or rows sharing a card.
+public enum WidgetLine: Hashable, Sendable {
+    case cards([String])
+    case rows([String])
+
+    /// The cards on the line, left to right or top to bottom.
+    public var ids: [String] {
+        switch self {
+        case .cards(let ids), .rows(let ids): ids
+        }
+    }
+}
+
+/// The panel's arrangement (Bryan, 2026-11-10: "panel cards you can move anywhere and resize"):
+/// every card in one order, which are hidden and how big each is, and the tools row's contents.
 public struct PanelLayout: Codable, Equatable, Sendable {
-    public var sections = Arrangement()
-    public var readings = Arrangement()
-    public var controls = Arrangement()
+    /// Every card, in order, and the hidden ones.
+    public var widgets = Arrangement()
+    /// Sizes chosen on the Customize page; a card not listed has its own default size.
+    public var sizes: [String: WidgetSize] = [:]
+    /// The tools row: which tools and plugins, in what order.
     public var tools = Arrangement()
 
     public init() {}
 
-    /// The panel's parts, top to bottom by default.
+    /// The panel's cards, top to bottom by default.
+    public static let widgetIDs = ["battery", "cpu", "memory", "gpu", "disk", "network", "temperature",
+                                   "awake", "clicker", "fan", "sound", "tools"]
+    /// Before cards moved freely (a version 1 layout): the panel's parts, its readings and its controls.
     public static let sectionIDs = ["battery", "readings", "controls", "sound", "tools"]
-    /// The readings tiles, two to a row by default.
     public static let readingIDs = ["cpu", "memory", "gpu", "disk", "network", "temperature"]
-    /// The control rows.
     public static let controlIDs = ["awake", "clicker", "fan"]
     /// Tools to a row before the row wraps.
     public static let toolsPerRow = 6
 
-    /// Layouts saved by an older Tutto, with parts since added, keep their defaults.
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        sections = try c.decodeIfPresent(Arrangement.self, forKey: .sections) ?? Arrangement()
-        readings = try c.decodeIfPresent(Arrangement.self, forKey: .readings) ?? Arrangement()
-        controls = try c.decodeIfPresent(Arrangement.self, forKey: .controls) ?? Arrangement()
-        tools = try c.decodeIfPresent(Arrangement.self, forKey: .tools) ?? Arrangement()
+    public func size(of id: String, default fallback: WidgetSize) -> WidgetSize { sizes[id] ?? fallback }
+
+    /// Remembers a size only when it differs from the card's default.
+    public mutating func setSize(_ size: WidgetSize, of id: String, default fallback: WidgetSize) {
+        sizes[id] = size == fallback ? nil : size
     }
 
-    /// What Restore Defaults gives: the default arrangement, with each of your plugins still in or
-    /// out of the tools row as it is now (a new plugin starts out of it).
+    enum CodingKeys: String, CodingKey {
+        case widgets, sizes, tools
+        case sections, readings, controls  // version 1
+    }
+
+    /// Reads this layout, or a version 1 layout (moved to one list of cards, with the same order
+    /// and the same things hidden). Anything unreadable keeps its default.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func arrangement(_ key: CodingKeys) -> Arrangement? { try? c.decodeIfPresent(Arrangement.self, forKey: key) }
+        tools = arrangement(.tools) ?? Arrangement()
+        let rawSizes = (try? c.decodeIfPresent([String: String].self, forKey: .sizes)) ?? [:]
+        sizes = rawSizes.compactMapValues(WidgetSize.init(rawValue:))
+        if let widgets = arrangement(.widgets) {
+            self.widgets = widgets
+        } else {
+            widgets = Self.migrate(sections: arrangement(.sections) ?? Arrangement(),
+                                   readings: arrangement(.readings) ?? Arrangement(),
+                                   controls: arrangement(.controls) ?? Arrangement())
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(widgets, forKey: .widgets)
+        if !sizes.isEmpty { try c.encode(sizes, forKey: .sizes) }
+        try c.encode(tools, forKey: .tools)
+    }
+
+    /// A version 1 layout as one list: each part in its place, its readings or controls in theirs.
+    public static func migrate(sections: Arrangement, readings: Arrangement, controls: Arrangement) -> Arrangement {
+        var order: [String] = []
+        var hidden = Set<String>()
+        for section in sections.all(sectionIDs) {
+            let members: [String]
+            switch section {
+            case "readings": members = readings.all(readingIDs)
+            case "controls": members = controls.all(controlIDs)
+            default: members = [section]
+            }
+            order += members
+            if sections.hidden.contains(section) { hidden.formUnion(members) }
+        }
+        hidden.formUnion(readings.hidden.intersection(readingIDs))
+        hidden.formUnion(controls.hidden.intersection(controlIDs))
+        return Arrangement(order: order == widgetIDs ? [] : order, hidden: hidden)
+    }
+
+    /// What Restore Defaults gives: the default arrangement, with each of your plugins' tiles and
+    /// cards still in or out of the panel as they are now (a new plugin's start out of it).
     public func restored() -> PanelLayout {
         var layout = PanelLayout()
         layout.tools.hidden = tools.hidden.filter(ScriptPlugin.isToolID)
+        layout.widgets.hidden = widgets.hidden.filter(ScriptPlugin.isWidgetID)
         return layout
     }
 
-    /// Whether Restore Defaults would change anything (a plugin kept out of the tools row doesn't count).
+    /// Whether Restore Defaults would change anything (a plugin kept out of the panel doesn't count).
     public var isCustomized: Bool { self != restored() }
 
-    /// The readings tiles laid two to a row: an odd one out takes the whole last row.
+    /// The cards laid out in lines: two small cards side by side, a wide card (or a small one
+    /// with no partner) across the panel, and one-line controls next to each other in one card.
+    public static func lines(_ slots: [WidgetSlot]) -> [WidgetLine] {
+        var lines: [WidgetLine] = []
+        var waiting = false  // the last line is one small card that a second can join
+        for slot in slots {
+            if slot.isRow {
+                if case .rows(let ids)? = lines.last {
+                    lines[lines.count - 1] = .rows(ids + [slot.id])
+                } else {
+                    lines.append(.rows([slot.id]))
+                }
+                waiting = false
+            } else if slot.size == .wide {
+                lines.append(.cards([slot.id]))
+                waiting = false
+            } else if waiting, case .cards(let ids)? = lines.last {
+                lines[lines.count - 1] = .cards(ids + [slot.id])
+                waiting = false
+            } else {
+                lines.append(.cards([slot.id]))
+                waiting = true
+            }
+        }
+        return lines
+    }
+
+    /// Items in rows of `perRow` (the tools row).
     public static func rows<T>(_ items: [T], perRow: Int) -> [[T]] {
         guard perRow > 0 else { return [items] }
         return stride(from: 0, to: items.count, by: perRow).map { Array(items[$0..<min($0 + perRow, items.count)]) }

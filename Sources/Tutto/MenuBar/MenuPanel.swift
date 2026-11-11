@@ -20,27 +20,41 @@ import AppKit
 import SwiftUI
 import TuttoKit
 
+/// The grid, its spacing scaled by the theme's density (the panel's width never changes).
+@MainActor
 private enum PanelGrid {
     static let width: CGFloat = 320
-    static let outer: CGFloat = 10
-    static let inset: CGFloat = 12
-    static let gap: CGFloat = 8
+    static var outer: CGFloat { (10 * ThemeStore.shared.tokens.densityScale).rounded() }
+    static var inset: CGFloat { (12 * ThemeStore.shared.tokens.densityScale).rounded() }
+    static var gap: CGFloat { (8 * ThemeStore.shared.tokens.densityScale).rounded() }
     /// A tile: half the cards' width.
-    static let tile: CGFloat = (width - 2 * outer - gap) / 2
+    static var tile: CGFloat { (width - 2 * outer - gap) / 2 }
+}
+
+/// The Customize page's preview while you arrange it: which card is selected, which is being
+/// dragged and over which, and what a drop does.
+@MainActor
+@Observable
+final class PanelEditing {
+    var selected: String?
+    var dragging: String?
+    var target: String?
+    /// Moves the first card to where the second is.
+    @ObservationIgnored var move: (String, String) -> Void = { _, _ in }
 }
 
 struct MenuPanel: View {
     @Bindable var model: AppModel
     /// Drawn on the Customize page: shown, not used (and not the menu bar's own window).
     var preview = false
+    /// On the Customize page: cards can be picked up, moved and selected.
+    var editing: PanelEditing?
 
     var body: some View {
         VStack(alignment: .leading, spacing: PanelGrid.gap) {
             PanelHeader(model: model)
-            // Its parts in the order set on the Customize page.
-            ForEach(model.layout.sections()) { section in
-                part(section)
-            }
+            // The cards in the order and sizes set on the Customize page.
+            WidgetGrid(model: model, editing: editing)
             Notices(model: model)
             PanelFooter(model: model)
         }
@@ -49,38 +63,123 @@ struct MenuPanel: View {
         .padding(.bottom, 6)
         .frame(width: PanelGrid.width)
         .fixedSize(horizontal: false, vertical: true)
+        .background { PanelBackdrop() }
         .watching(model.system, model.system?.panelFeeds ?? [])
         .background { if !preview { PanelWindowReader() } }
+        .tint(Color.themeAccent)
+    }
+}
+
+/// Over the panel's glass: the theme's tint, or its solid background instead of glass.
+private struct PanelBackdrop: View {
+    var body: some View {
+        let tokens = ThemeStore.shared.tokens
+        Rectangle()
+            .fill(tokens.solidBackground ? tokens.canvas : tokens.tint)
+            .ignoresSafeArea()
+    }
+}
+
+/// The cards in lines: two small ones side by side, a wide one (or a small one alone) across,
+/// one-line controls together in one card.
+private struct WidgetGrid: View {
+    var model: AppModel
+    var editing: PanelEditing?
+
+    var body: some View {
+        let lines = PanelLayout.lines(model.layout.slots(model))
+        VStack(spacing: PanelGrid.gap) {
+            ForEach(lines, id: \.self) { line in
+                switch line {
+                case .cards(let ids):
+                    HStack(spacing: PanelGrid.gap) {
+                        ForEach(ids, id: \.self) { id in
+                            Editable(id: id, editing: editing) { card(id, wide: ids.count == 1) }
+                        }
+                    }
+                case .rows(let ids):
+                    ControlRows(model: model, ids: ids, editing: editing)
+                }
+            }
+        }
+        .animation(Motion.snappy, value: lines)
     }
 
     @ViewBuilder
-    private func part(_ section: PanelLayoutStore.Section) -> some View {
-        switch section {
-        case .battery:
+    private func card(_ id: String, wide: Bool) -> some View {
+        switch PanelLayoutStore.Widget(id: id) {
+        case .card(.battery):
+            BatteryWidget(model: model, wide: wide)
+        case .card(let reading) where PanelLayout.readingIDs.contains(reading.rawValue):
             if let system = model.system {
-                if let battery = system.battery {
-                    BatteryCard(battery: battery, system: system)
-                } else {
-                    BusyAppsList(apps: system.busyApps, measured: system.busyAppsMeasured).panelCard()
-                }
+                ReadingTile(reading: reading, system: system, sensors: model.sensors, wide: wide)
             }
-        case .readings:
-            if let system = model.system {
-                StatTiles(system: system, sensors: model.sensors, layout: model.layout)
-            }
-        case .controls:
-            if !ControlsCard.rows(model).isEmpty {
-                ControlsCard(model: model)
-            }
-        case .sound:
-            if let sound = model.sound, SoundModule.isSupported {
-                SoundCard(sound: sound)
-            }
-        case .tools:
-            if !ShortcutRows.visible(model).isEmpty {
-                ToolsCard(model: model)
-            }
+        case .card(.sound):
+            if let sound = model.sound, SoundModule.isSupported { SoundCard(sound: sound) }
+        case .card(.tools):
+            ToolsCard(model: model)
+        case .plugin(let id):
+            PluginCard(model: model, id: id, wide: wide)
+        default:
+            EmptyView()
         }
+    }
+}
+
+/// On the Customize page, a card is something to pick up and move, or click to select; its
+/// own controls don't respond there.
+private struct Editable<Content: View>: View {
+    var id: String
+    var editing: PanelEditing?
+    var radius: CGFloat = 12
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if let editing {
+            let shape = RoundedRectangle(cornerRadius: Radius.of(radius), style: .continuous)
+            content
+                .allowsHitTesting(false)
+                .overlay {
+                    shape.fill(Color.white.opacity(0.001))
+                        .overlay(shape.strokeBorder(Color.themeAccent, lineWidth: editing.selected == id ? 2 : 0))
+                        .overlay(shape.strokeBorder(Color.themeAccent.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                            .opacity(editing.target == id && editing.dragging != id ? 1 : 0))
+                        .contentShape(shape)
+                        .onTapGesture { editing.selected = id }
+                        .onDrag {
+                            editing.dragging = id
+                            editing.selected = id
+                            return NSItemProvider(object: id as NSString)
+                        }
+                        .onDrop(of: [.plainText], delegate: CardDrop(id: id, editing: editing))
+                }
+                .opacity(editing.dragging == id ? 0.4 : 1)
+                .animation(Motion.micro, value: editing.selected)
+        } else {
+            content
+        }
+    }
+}
+
+/// Dropping a card on another moves it to that card's place.
+private struct CardDrop: DropDelegate {
+    var id: String
+    var editing: PanelEditing
+
+    func dropEntered(info: DropInfo) { editing.target = id }
+
+    func dropExited(info: DropInfo) { if editing.target == id { editing.target = nil } }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        defer {
+            editing.dragging = nil
+            editing.target = nil
+        }
+        guard let moving = editing.dragging, moving != id else { return false }
+        withAnimation(Motion.snappy) { editing.move(moving, id) }
+        return true
     }
 }
 
@@ -104,21 +203,22 @@ private struct PanelWindowReader: NSViewRepresentable {
 
 // MARK: - Pieces
 
+@MainActor
 private extension View {
     /// A group on the panel: a soft rounded surface instead of rules and captions. `vertical` trims
     /// a one-row card (the sides stay on the grid).
-    func panelCard(vertical: CGFloat = PanelGrid.inset) -> some View {
+    func panelCard(vertical: CGFloat? = nil) -> some View {
         padding(.horizontal, PanelGrid.inset)
-            .padding(.vertical, vertical)
+            .padding(.vertical, vertical ?? PanelGrid.inset)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.055)))
+            .background(CardSurface(radius: 12))
     }
 
     /// A hover background that reaches `x` and `y` past the content, so the content stays on the grid.
     func hoverBackground(_ on: Bool, x: CGFloat = 8, y: CGFloat = 0) -> some View {
         padding(.horizontal, x)
             .padding(.vertical, y)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(on ? Color.primary.opacity(0.08) : .clear))
+            .background(RoundedRectangle(cornerRadius: Radius.of(8), style: .continuous).fill(on ? Color.ink.opacity(0.08) : .clear))
             .padding(.horizontal, -x)
             .padding(.vertical, -y)
     }
@@ -273,7 +373,7 @@ private struct BatteryCard: View {
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(alignment: .firstTextBaseline, spacing: 1) {
                             Text("\(battery.percent)")
-                                .font(.system(size: 24, weight: .semibold).monospacedDigit())
+                                .font(.figure(24, weight: .semibold))
                                 .foregroundStyle(low ? Color.alert : Color.ink)
                             Text("%")
                                 .font(.system(size: 13, weight: .medium))
@@ -288,7 +388,7 @@ private struct BatteryCard: View {
                     VStack(alignment: .trailing, spacing: 2) {
                         HStack(alignment: .firstTextBaseline, spacing: 2) {
                             Text(Format.watts(battery.powerDraw))
-                                .font(.system(size: 17, weight: .medium).monospacedDigit())
+                                .font(.figure(17, weight: .medium))
                                 .foregroundStyle(Color.ink)
                             Text("W")
                                 .font(.system(size: 11, weight: .medium))
@@ -399,38 +499,31 @@ private struct BusyAppRow: View {
 /// an engraved caption, a detail and the last minute as a line (or a meter). Each opens its page.
 /// The Customize page sets which show and in what order; an odd one out takes the whole last row.
 /// With Sensors & Fans off there's no temperature tile.
-private struct StatTiles: View {
+/// One of the readings: CPU, memory, GPU, disk, network or temperature. Temperatures are read only
+/// while their tile is on screen.
+private struct ReadingTile: View {
+    var reading: PanelLayoutStore.Card
     var system: SystemMonitor
     var sensors: SensorsModule?
-    var layout: PanelLayoutStore
+    var wide: Bool
 
     var body: some View {
-        let tiles = layout.readings(available: PanelLayoutStore.Reading.allCases.filter { $0 != .temperature || sensors != nil })
-        let lines = PanelLayout.rows(tiles, perRow: 2)
-        VStack(spacing: PanelGrid.gap) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                HStack(spacing: PanelGrid.gap) {
-                    ForEach(line) { reading in
-                        tile(reading, wide: line.count == 1)
-                    }
+        tile(reading, wide: wide)
+            .background {
+                if reading == .temperature, let sensors {
+                    VisibilityReader { visible in visible ? sensors.begin() : sensors.end() }
                 }
             }
-        }
-        .background(VisibilityReader { visible in
-            // Temperatures are read only while their tile shows.
-            guard let sensors, tiles.contains(.temperature) else { return }
-            visible ? sensors.begin() : sensors.end()
-        })
     }
 
     @ViewBuilder
-    private func tile(_ reading: PanelLayoutStore.Reading, wide: Bool) -> some View {
+    private func tile(_ reading: PanelLayoutStore.Card, wide: Bool) -> some View {
         switch reading {
         case .cpu:
             StatTile(caption: "CPU", value: Format.percent(system.cpu.total), unit: "%", detail: loadText,
                      page: .cpu, help: "Processor load · load average \(loadValue)",
                      spokenName: "CPU", spokenValue: "\(Format.percent(system.cpu.total)) percent, load average \(loadValue)", wide: wide) {
-                Sparkline(values: system.cpuHistory, color: .accentColor, stretch: true)
+                Sparkline(values: system.cpuHistory, color: .themeAccent, stretch: true)
             }
         case .memory:
             StatTile(caption: "Memory", value: Format.percent(system.memory?.usedFraction ?? 0), unit: "%", detail: memoryUsed,
@@ -438,13 +531,13 @@ private struct StatTiles: View {
                      help: "Memory used · pressure \(system.memory?.pressure.label.lowercased() ?? "unknown")",
                      spokenName: "Memory", spokenValue: "\(Format.percent(system.memory?.usedFraction ?? 0)) percent, \(memoryUsed) used",
                      wide: wide) {
-                Sparkline(values: system.memoryHistory, color: .accentColor, stretch: true)
+                Sparkline(values: system.memoryHistory, color: .themeAccent, stretch: true)
             }
         case .gpu:
             StatTile(caption: "GPU", value: Format.percent(system.gpu?.utilization ?? 0), unit: "%", detail: gpuMemory,
                      page: .gpu, help: "Graphics load",
                      spokenName: "GPU", spokenValue: "\(Format.percent(system.gpu?.utilization ?? 0)) percent", wide: wide) {
-                Sparkline(values: system.gpuHistory, color: .accentColor, stretch: true)
+                Sparkline(values: system.gpuHistory, color: .themeAccent, stretch: true)
             }
         case .disk:
             let disk = system.rootVolume.map { Format.diskParts($0.available) } ?? ("—", "")
@@ -452,7 +545,7 @@ private struct StatTiles: View {
             StatTile(caption: "Disk", value: disk.0, unit: disk.1, detail: "free", alert: full, page: .disk,
                      help: "Free space on \(system.rootVolume?.name ?? "the startup disk")",
                      spokenName: "Disk", spokenValue: system.rootVolume == nil ? "unavailable" : "\(disk.0) \(disk.1) free", wide: wide) {
-                Meter(value: system.rootVolume?.usedFraction ?? 0, height: 4, alert: full, fill: .accentColor, track: Color.primary.opacity(0.1))
+                Meter(value: system.rootVolume?.usedFraction ?? 0, height: 4, alert: full, fill: .themeAccent, track: Color.ink.opacity(0.1))
                     .frame(height: 4)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, 4)
@@ -464,7 +557,7 @@ private struct StatTiles: View {
                      spokenName: "Network",
                      spokenValue: "download \(Format.spokenRate(system.networkIn)), upload \(Format.spokenRate(system.networkOut))",
                      wide: wide) {
-                Sparkline(values: system.networkHistory, color: .accentColor, stretch: true)
+                Sparkline(values: system.networkHistory, color: .themeAccent, stretch: true)
             }
         case .temperature:
             let hot = (temperature ?? 0) >= 95
@@ -473,11 +566,13 @@ private struct StatTiles: View {
                      spokenName: "Temperature",
                      spokenValue: temperature.map { "\(Int($0.rounded())) degrees Celsius" + ((sensors?.summary?.gpuAverage).map { ", graphics \(Int($0.rounded())) degrees" } ?? "") } ?? "unavailable",
                      wide: wide) {
-                Meter(value: ((temperature ?? 30) - 30) / 70, height: 4, alert: hot, fill: .accentColor, track: Color.primary.opacity(0.1))
+                Meter(value: ((temperature ?? 30) - 30) / 70, height: 4, alert: hot, fill: .themeAccent, track: Color.ink.opacity(0.1))
                     .frame(height: 4)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, 4)
             }
+        default:
+            EmptyView()
         }
     }
 
@@ -540,7 +635,10 @@ private struct StatTile<Graph: View>: View {
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
+                    // The caption keeps its width; the detail beside it gives way.
                     Caption(caption)
+                        .lineLimit(1)
+                        .fixedSize()
                     Spacer(minLength: 4)
                     Text(detail)
                         .font(.system(size: 10.5).monospacedDigit())
@@ -556,7 +654,7 @@ private struct StatTile<Graph: View>: View {
                                 .foregroundStyle(Color.ink3)
                         }
                         Text(value)
-                            .font(.system(size: 21, weight: .medium).monospacedDigit())
+                            .font(.figure(21, weight: .medium))
                             .foregroundStyle(alert ? Color.alert : Color.ink)
                         if !unit.isEmpty {
                             Text(unit)
@@ -577,8 +675,7 @@ private struct StatTile<Graph: View>: View {
             .padding(.horizontal, PanelGrid.inset)
             .padding(.vertical, 9)
             .frame(width: wide ? PanelGrid.tile * 2 + PanelGrid.gap : PanelGrid.tile, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(hovering ? 0.085 : 0.055)))
+            .background(CardSurface(radius: 10, hovering: hovering))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -592,34 +689,29 @@ private struct StatTile<Graph: View>: View {
 
 // MARK: - Controls
 
-/// The things you switch on from the menu bar, one line each, in one card: Stay awake, the auto
-/// clicker and the fan. A row grows only while it's in use (a session's countdown, the clicker's
-/// count, the fan's custom speed).
-private struct ControlsCard: View {
+/// The things you switch on from the menu bar, one line each: Stay awake, the auto clicker and the
+/// fan. Next to each other on the panel they share a card. A row grows only while it's in use (a
+/// session's countdown, the clicker's count, the fan's custom speed).
+private struct ControlRows: View {
     var model: AppModel
-
-    /// The rows whose tools are on, in the order set on the Customize page.
-    static func rows(_ model: AppModel) -> [PanelLayoutStore.Control] {
-        var available: [PanelLayoutStore.Control] = []
-        if model.awake != nil { available.append(.awake) }
-        if model.clicker != nil { available.append(.clicker) }
-        if model.sensors?.hasFans == true { available.append(.fan) }
-        return model.layout.controls(available: available)
-    }
+    var ids: [String]
+    var editing: PanelEditing?
 
     var body: some View {
-        let rows = Self.rows(model)
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.element) { index, row in
-                Group {
-                    switch row {
-                    case .awake: if let awake = model.awake { AwakeRow(awake: awake) }
-                    case .clicker: if let clicker = model.clicker { ClickerRow(clicker: clicker, model: model) }
-                    case .fan: if let sensors = model.sensors { FanRow(sensors: sensors) }
+            ForEach(Array(ids.enumerated()), id: \.element) { index, id in
+                Editable(id: id, editing: editing, radius: 8) {
+                    Group {
+                        switch id {
+                        case "awake": if let awake = model.awake { AwakeRow(awake: awake) }
+                        case "clicker": if let clicker = model.clicker { ClickerRow(clicker: clicker, model: model) }
+                        case "fan": if let sensors = model.sensors { FanRow(sensors: sensors) }
+                        default: EmptyView()
+                        }
                     }
+                    .padding(.vertical, 5)
                 }
-                .padding(.vertical, 5)
-                if index < rows.count - 1 { Hairline().opacity(0.5) }
+                if index < ids.count - 1 { Hairline().opacity(0.5) }
             }
         }
         .panelCard(vertical: 3)
@@ -637,7 +729,7 @@ private struct RowLabel: View {
     var body: some View {
         HStack(spacing: 5) {
             if live {
-                Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+                Circle().fill(Color.themeAccent).frame(width: 6, height: 6)
                     .transition(.scale.combined(with: .opacity))
             }
             Text(title)
@@ -819,7 +911,7 @@ private struct AwakeRow: View {
     private func countdownText(_ remaining: TimeInterval) -> some View {
         let parts = AwakeDuration.countdown(remaining)
         return (Text(parts.main).foregroundStyle(Color.ink) + Text(parts.seconds).foregroundStyle(Color.ink4))
-            .font(.system(size: 15, weight: .semibold).monospacedDigit())
+            .font(.figure(15, weight: .semibold))
             .contentTransition(.numericText(countsDown: true))
             .accessibilityLabel("\(AwakeDuration.menuBar(remaining)) left")
     }
@@ -834,7 +926,7 @@ private struct AwakeRow: View {
             .padding(.horizontal, 8)
             .frame(height: 24)
             .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(focused ? 0.09 : 0.06)))
+            .background(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink.opacity(focused ? 0.09 : 0.06)))
             .overlay(alignment: .trailing) {
                 if typedSeconds != nil {
                     Text("↩")
@@ -916,7 +1008,7 @@ private struct TimeChip: View {
                 .foregroundStyle(hovering ? Color.ink : Color.ink2)
                 .padding(.horizontal, 7)
                 .frame(height: 24)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(hovering ? 0.12 : 0.07)))
+                .background(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink.opacity(hovering ? 0.12 : 0.07)))
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
@@ -1137,7 +1229,7 @@ private struct SoundCard: View {
                 .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
                 .foregroundStyle(overflow.contains { sound.isMuted($0.bundleID) } ? Color.ink : Color.ink2)
                 .frame(width: 25, height: 25)   // the size of an icon's artwork, not its square
-                .background(Circle().fill(Color.primary.opacity(0.08)))
+                .background(Circle().fill(Color.ink.opacity(0.08)))
                 .frame(width: 34, height: 34)
                 .contentShape(Rectangle())
         }
@@ -1147,6 +1239,168 @@ private struct SoundCard: View {
         .fixedSize()
         .help("\(overflow.count) more apps")
         .accessibilityLabel("\(overflow.count) more apps")
+    }
+}
+
+// MARK: - Battery, small or wide
+
+/// The battery: the full card when wide, a tile with the charge and the watts when small. A Mac
+/// without a battery shows its busiest apps instead.
+private struct BatteryWidget: View {
+    var model: AppModel
+    var wide: Bool
+
+    var body: some View {
+        if let system = model.system {
+            if let battery = system.battery {
+                if wide {
+                    BatteryCard(battery: battery, system: system)
+                } else {
+                    let low = battery.percent <= 10 && !battery.isPluggedIn
+                    StatTile(caption: "Battery", value: "\(battery.percent)", unit: "%",
+                             detail: Format.watts(battery.powerDraw) + " W", alert: low, page: .battery,
+                             help: "Battery · \(battery.stateText)",
+                             spokenName: "Battery", spokenValue: "\(battery.percent) percent, \(battery.stateText)", wide: false) {
+                        BatteryGlyph(level: Double(battery.percent) / 100, charging: battery.isCharging, alert: low)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
+            } else {
+                BusyAppsList(apps: system.busyApps, measured: system.busyAppsMeasured).panelCard()
+            }
+        }
+    }
+}
+
+// MARK: - Plugins' cards
+
+/// A plugin's card: what its command printed, drawn like Tutto's own tiles in the theme's colours.
+/// It refreshes while it's on screen (the panel, the Customize preview). Clicking it opens its
+/// link, or runs the plugin, or refreshes the card.
+private struct PluginCard: View {
+    var model: AppModel
+    var id: UUID
+    var wide: Bool
+    @State private var hovering = false
+
+    var body: some View {
+        if let plugin = model.plugins.plugin(id) {
+            let state = model.plugins.cards[id] ?? PluginCardState()
+            Button {
+                click(plugin, state.content)
+            } label: {
+                card(plugin, state)
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help(state.failure.map { "\(plugin.name) failed: \($0)" } ?? help(plugin, state.content))
+            .accessibilityLabel(state.content?.title ?? plugin.name)
+            .accessibilityValue([state.content?.value, state.content?.unit, state.content?.detail].compactMap { $0 }.joined(separator: " "))
+            .background(VisibilityReader { visible in model.plugins.host.card(id, shown: visible) })
+        }
+    }
+
+    private func card(_ plugin: ScriptPlugin, _ state: PluginCardState) -> some View {
+        let content = state.content
+        let alert = content?.level == .alert || (state.failure != nil && content == nil)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                if content?.level == .notice {
+                    Circle().fill(Color.themeAccent).frame(width: 5, height: 5)
+                }
+                Caption(content?.title ?? plugin.name)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+                Spacer(minLength: 4)
+                if state.running && content == nil {
+                    ProgressView().controlSize(.mini)
+                } else if let line = state.failure ?? content?.detail {
+                    Text(line)
+                        .font(.system(size: 10.5).monospacedDigit())
+                        .foregroundStyle(state.failure != nil ? Color.alert : Color.ink3)
+                        .lineLimit(1)
+                }
+            }
+            HStack(alignment: .bottom, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    if let symbol = content?.symbol {
+                        Image(systemName: symbol)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.ink3)
+                    }
+                    Text(content?.value ?? "—")
+                        .font(.figure(21))
+                        .foregroundStyle(alert ? Color.alert : Color.ink)
+                    if let unit = content?.unit {
+                        Text(unit)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.ink3)
+                    }
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .layoutPriority(1)
+                Spacer(minLength: 2)
+                graph(content, alert: alert)
+                    .frame(minWidth: 26, maxWidth: wide ? 120 : 46)
+                    .frame(height: 20)
+            }
+            .frame(height: 24)
+            if wide, let items = content?.items, !items.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(items.prefix(5).enumerated()), id: \.offset) { _, item in
+                        HStack(spacing: 6) {
+                            if let symbol = item.symbol {
+                                Image(systemName: symbol).font(.system(size: 10)).foregroundStyle(Color.ink3).frame(width: 14)
+                            }
+                            Text(item.title)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(Color.ink2)
+                                .lineLimit(1)
+                            Spacer(minLength: 6)
+                            if let detail = item.detail {
+                                Text(detail).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(Color.ink3).lineLimit(1)
+                            }
+                        }
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(.horizontal, PanelGrid.inset)
+        .padding(.vertical, 9)
+        .frame(width: wide ? PanelGrid.tile * 2 + PanelGrid.gap : PanelGrid.tile, alignment: .leading)
+        .background(CardSurface(radius: 10, hovering: hovering))
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func graph(_ content: PluginWidgetContent?, alert: Bool) -> some View {
+        if let content, content.series.count >= 2 {
+            Sparkline(values: content.series, color: alert ? .alert : .themeAccent, stretch: true)
+        } else if let progress = content?.progress {
+            Meter(value: progress, height: 4, alert: alert, fill: .themeAccent, track: Color.ink.opacity(0.1))
+                .frame(height: 4)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 4)
+        } else {
+            Color.clear
+        }
+    }
+
+    private func help(_ plugin: ScriptPlugin, _ content: PluginWidgetContent?) -> String {
+        if let url = content?.url { return "Open \(url)" }
+        return plugin.hasAction ? "Run \(plugin.name)" : "Refresh"
+    }
+
+    private func click(_ plugin: ScriptPlugin, _ content: PluginWidgetContent?) {
+        if let link = content?.url, let url = URL(string: link), ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") {
+            afterPanelCloses { NSWorkspace.shared.open(url) }
+        } else if plugin.hasAction {
+            model.plugins.run(plugin)
+        } else {
+            model.plugins.refreshCard(plugin)
+        }
     }
 }
 
@@ -1186,7 +1440,7 @@ enum ShortcutRows {
         if model.wordCounter != nil {
             rows.append(Row(action: .wordCounter, title: "Count Words", short: "Words", symbol: ModuleID.wordCounter.symbol))
         }
-        for plugin in model.plugins.plugins where plugin.enabled {
+        for plugin in model.plugins.plugins where model.plugins.isOn(plugin) && plugin.hasAction {
             rows.append(Row(action: .plugin(plugin.id), title: plugin.name, short: plugin.name, symbol: plugin.symbol))
         }
         return rows
@@ -1221,7 +1475,7 @@ private struct ToolsCard: View {
         .padding(.horizontal, Self.inset)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.055)))
+        .background(CardSurface(radius: 12))
     }
 }
 
@@ -1255,7 +1509,7 @@ private struct ToolTile: View {
             }
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(hovering ? Color.primary.opacity(0.08) : .clear))
+            .background(RoundedRectangle(cornerRadius: Radius.of(8), style: .continuous).fill(hovering ? Color.ink.opacity(0.08) : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
@@ -1271,7 +1525,7 @@ private struct ToolTile: View {
             keycaps(shortcut.symbols)
             Text(shortcut.displayString)
                 .font(.system(size: 9, weight: .medium, design: .rounded))
-                .foregroundStyle(lit > 0 ? Color.accentColor : Color.ink2)
+                .foregroundStyle(lit > 0 ? Color.themeAccent : Color.ink2)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .frame(height: 13)
@@ -1287,8 +1541,8 @@ private struct ToolTile: View {
                     .foregroundStyle(lit > index ? Color.white : Color.ink2)
                     .frame(minWidth: 11, minHeight: 13)
                     .padding(.horizontal, symbol.count > 1 ? 2 : 0)
-                    .background(RoundedRectangle(cornerRadius: 3, style: .continuous).fill(lit > index ? Color.accentColor : Color.wash))
-                    .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(lit > index ? Color.clear : Color.hairline))
+                    .background(RoundedRectangle(cornerRadius: Radius.of(3), style: .continuous).fill(lit > index ? Color.themeAccent : Color.wash))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.of(3), style: .continuous).strokeBorder(lit > index ? Color.clear : Color.hairline))
             }
         }
         .fixedSize()
@@ -1398,7 +1652,7 @@ private struct WindowModeSwitch: View {
             option("Full", full: true)
         }
         .padding(2)
-        .background(Capsule().fill(Color.primary.opacity(0.06)))
+        .background(Capsule().fill(Color.ink.opacity(0.06)))
         .disabled(strip.isSwitchingWindows)
         .help("Windows side by side on the strip, or every window in full screen as its green button does (⌃⌥⇧F)")
     }
@@ -1415,7 +1669,7 @@ private struct WindowModeSwitch: View {
                 .foregroundStyle(selected ? Color.ink : Color.ink3)
                 .padding(.horizontal, 7)
                 .frame(height: 18)
-                .background(Capsule().fill(selected ? Color.primary.opacity(0.1) : .clear))
+                .background(Capsule().fill(selected ? Color.ink.opacity(0.1) : .clear))
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -1471,7 +1725,7 @@ private struct NoticeRow: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, PanelGrid.inset)
-        .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(CardSurface(radius: 12))
         .help(help)
     }
 }
@@ -1549,10 +1803,10 @@ struct BatteryGlyph: View {
     var body: some View {
         HStack(spacing: 1.5) {
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.of(4), style: .continuous)
                     .strokeBorder(Color.ink.opacity(0.55), lineWidth: 1.2)
                 GeometryReader { geo in
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.of(2), style: .continuous)
                         .fill(alert ? Color.alert : Color.solidInk)
                         .frame(width: max(2, (geo.size.width) * min(max(level, 0), 1)))
                         .animation(Motion.snappy, value: level)
@@ -1567,7 +1821,7 @@ struct BatteryGlyph: View {
                 }
             }
             .frame(width: 34, height: 17)
-            RoundedRectangle(cornerRadius: 1, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.of(1), style: .continuous)
                 .fill(Color.ink.opacity(0.55))
                 .frame(width: 2, height: 6)
         }

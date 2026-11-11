@@ -87,6 +87,6 @@ private struct PasswordPromptView: View {
         .padding(18)
         .frame(width: 360)
         .background(PaletteBackground())
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hairline))
+        .overlay(RoundedRectangle(cornerRadius: Radius.of(14), style: .continuous).strokeBorder(Color.hairline))
     }
 }

@@ -249,7 +249,7 @@ private struct EditorToolbar: View {
                             .frame(width: 30, height: 26)
                             .background {
                                 if document.tool == tool {
-                                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.ink)
+                                    RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink)
                                         .matchedGeometryEffect(id: "tool", in: toolPill)
                                 }
                             }
@@ -263,7 +263,7 @@ private struct EditorToolbar: View {
                 }
             }
             .padding(2)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.wash))
+            .background(RoundedRectangle(cornerRadius: Radius.of(9), style: .continuous).fill(Color.wash))
 
             Hairline(vertical: true).frame(height: 22)
             if document.tool != .select && document.tool != .pixelate {
@@ -310,7 +310,7 @@ private struct EditorToolbar: View {
                     .fixedSize()
                     .padding(.horizontal, 8)
                     .frame(height: 24)
-                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.hairline))
+                    .background(RoundedRectangle(cornerRadius: Radius.of(6), style: .continuous).strokeBorder(Color.hairline))
                     .help("Image size in pixels")
                     .transition(.opacity)
             }
@@ -444,9 +444,9 @@ private struct EditorStatus: View {
         HStack(spacing: 14) {
             if let hover = document.hover {
                 Text("X \(Int(hover.point.x - document.crop.minX))  Y \(Int(hover.point.y - document.crop.minY))")
-                RoundedRectangle(cornerRadius: 2.5)
+                RoundedRectangle(cornerRadius: Radius.of(2.5))
                     .fill(Color(nsColor: hover.color))
-                    .overlay(RoundedRectangle(cornerRadius: 2.5).strokeBorder(Color.hairline))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.of(2.5)).strokeBorder(Color.hairline))
                     .frame(width: 11, height: 11)
                 Text(hover.color.hexString)
             } else {

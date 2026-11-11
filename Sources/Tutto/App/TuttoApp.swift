@@ -194,6 +194,12 @@ enum DeepLinks {
             }
             return
         }
+        if name == "event" {
+            // ?name=build-done&info=… : runs the plugins with a custom-event trigger of that name.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            guard let event = items.first(where: { $0.name == "name" })?.value else { return }
+            return model.plugins.host.fireCustom(name: event, info: items.first { $0.name == "info" }?.value)
+        }
         if name == "clicker" {
             // Optional settings first: ?cps=20&button=right&double=1&at=640,400 (or at=pointer)&for=30 (seconds)&clicks=100
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []

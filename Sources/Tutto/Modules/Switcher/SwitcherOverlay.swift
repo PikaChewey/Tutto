@@ -215,8 +215,8 @@ struct SwitcherView: View {
         .padding(.top, 8)
         .padding(.bottom, 10)
         .background(PaletteBackground())
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.hairline, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.of(14), style: .continuous).strokeBorder(Color.hairline, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.of(14), style: .continuous))
     }
 
     // MARK: Search / rename / title row
@@ -387,10 +387,10 @@ struct SwitcherCard: View {
         VStack(alignment: .leading, spacing: 10) {
             picture
                 .frame(width: size.width, height: size.height)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.hairline, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous).strokeBorder(Color.hairline, lineWidth: 1))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.of(13), style: .continuous)
                         .strokeBorder(Color.ink, lineWidth: 2)
                         .padding(-3)
                         .opacity(selected ? 1 : 0)

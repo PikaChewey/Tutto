@@ -266,7 +266,7 @@ struct ProblemRow: View {
             }
         }
         .padding(10)
-        .background(Color.wash, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.wash, in: RoundedRectangle(cornerRadius: Radius.of(8), style: .continuous))
     }
 }
 
@@ -295,8 +295,8 @@ struct AccessibilityCard: View {
             .padding(.top, 4)
         }
         .padding(14)
-        .background(Color.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.hairline))
+        .background(Color.surface, in: RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous).strokeBorder(Color.hairline))
     }
 }
 

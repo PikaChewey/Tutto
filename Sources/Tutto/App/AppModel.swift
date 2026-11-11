@@ -70,6 +70,8 @@ final class AppModel {
 
     /// `quietly` (offscreen snapshots) starts modules without taking any global shortcuts.
     func launch(quietly: Bool = false) {
+        // The theme's light or dark, and your theme files.
+        ThemeStore.shared.start()
         hotkeys.onSuspendChange = { [weak self] suspended in
             self?.strip?.setShortcutsSuspended(suspended)
             self?.switcher?.suspendClaims(suspended)
@@ -94,6 +96,8 @@ final class AppModel {
         // Things that live outside Tutto's process must match the switch even if it was
         // turned off in an earlier session: Finder only loads the menu extension when Archives is on.
         if !enabled.contains(.archives) && !quietly { permissions.setFinderExtension(enabled: false) }
+        // Offscreen renders (quietly) read plugins for their cards, but nothing runs by itself.
+        plugins.quiet = quietly
         plugins.load()
         if !quietly { bindShortcuts() }
         permissions.refresh()

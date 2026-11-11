@@ -265,8 +265,8 @@ struct PluginEditor: View {
                                 Image(systemName: symbol)
                                     .font(.system(size: 12))
                                     .frame(width: 24, height: 22)
-                                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                        .fill(plugin.symbol == symbol ? Color.accentColor.opacity(0.18) : Color.clear))
+                                    .background(RoundedRectangle(cornerRadius: Radius.of(5), style: .continuous)
+                                        .fill(plugin.symbol == symbol ? Color.themeAccent.opacity(0.18) : Color.clear))
                             }
                             .buttonStyle(.plain)
                             .help(symbol)
@@ -282,7 +282,7 @@ struct PluginEditor: View {
                         .scrollContentBackground(.hidden)
                         .frame(height: 74)
                         .padding(4)
-                        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.wash))
+                        .background(RoundedRectangle(cornerRadius: Radius.of(6), style: .continuous).fill(Color.wash))
                     Text("Runs with zsh in your home folder, as in Terminal (your PATH included), stopped after \(Int(plugin.timeout)) s.")
                         .font(.system(size: 11)).foregroundStyle(Color.ink3)
                 }
@@ -324,7 +324,7 @@ struct PluginEditor: View {
                     .frame(maxHeight: 90)
                 }
                 .padding(10)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.wash))
+                .background(RoundedRectangle(cornerRadius: Radius.of(8), style: .continuous).fill(Color.wash))
             }
             if let problem {
                 Text(problem).font(.system(size: 11.5)).foregroundStyle(Color.alert)

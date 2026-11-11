@@ -42,7 +42,7 @@ private struct ScreenshotSettings: View {
                         .buttonStyle(InkButtonStyle(compact: true))
                 }
                 .padding(14)
-                .background(Color.wash, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Color.wash, in: RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous))
             }
             InkGroup("Shortcuts") {
                 LabeledRow("Area to clipboard", detail: "Select, release, it's copied. No editor.") {
