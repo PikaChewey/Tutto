@@ -83,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if #available(macOS 14.2, *), VolumeProbe.runIfRequested() { return NSApp.terminate(nil) }
         if #available(macOS 14.2, *), VolumeGlitchProbe.runIfRequested() { return NSApp.terminate(nil) }
         if #available(macOS 14.2, *), SoundModuleProbe.runIfRequested() { return NSApp.terminate(nil) }
+        if #available(macOS 14.2, *), LiveVolumeCheck.runIfRequested() { return NSApp.terminate(nil) }
         if TonePlayer.runIfRequested() { exit(0) }
         if RecordingProbe.runIfRequested() { return NSApp.terminate(nil) }
         if RecordingProbe.runScrollProbeIfRequested() { return NSApp.terminate(nil) }

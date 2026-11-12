@@ -810,3 +810,46 @@ enum SoundModuleProbe {
     }
 }
 #endif
+
+#if DEBUG
+/// `Tutto --live-volume-check DIR BUNDLEID PERCENT`: records an app's own sound and the installed
+/// Tutto's output for 5 s and says whether its level is applied (Tutto's level ÷ the app's).
+@available(macOS 14.2, *)
+enum LiveVolumeCheck {
+    static func runIfRequested() -> Bool {
+        let args = CommandLine.arguments
+        guard let flag = args.firstIndex(of: "--live-volume-check"), args.count > flag + 3,
+              let percent = Double(args[flag + 3]) else { return false }
+        let dir = URL(fileURLWithPath: args[flag + 1], isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var lines: [String] = []
+        func say(_ line: String) {
+            lines.append(line)
+            try? lines.joined(separator: "\n").write(to: dir.appendingPathComponent("live.txt"), atomically: true, encoding: .utf8)
+        }
+        let bundleID = args[flag + 2]
+        let processes = AudioProcessList.read()
+        let app = processes.filter { $0.bundleID == bundleID }.map(\.objectID)
+        let tuttoPID = NSRunningApplication.runningApplications(withBundleIdentifier: "ca.bryanyao.Tutto")
+            .first { $0.processIdentifier != getpid() }?.processIdentifier
+        guard !app.isEmpty, let tuttoPID, let tutto = processes.first(where: { $0.pid == tuttoPID })?.objectID else {
+            say("not found: app processes \(app.count), Tutto \(tuttoPID.map(String.init) ?? "none")"); return true
+        }
+        let direct = TapMeter(CATapDescription(stereoMixdownOfProcesses: app))
+        let out = TapMeter(CATapDescription(stereoMixdownOfProcesses: [tutto]))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        _ = direct.takeDB(); _ = out.takeDB()
+        var rows: [String] = []
+        for _ in 0..<10 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+            let a = direct.takeDB() ?? -999, b = out.takeDB() ?? -999
+            rows.append(String(format: "%.1f/%.1f", a, b))
+        }
+        let expected = 20 * log10(Double(VolumeCurve.gain(percent: percent)))
+        say("app dBFS / Tutto dBFS every 0.5 s: \(rows.joined(separator: "  "))")
+        say(String(format: "expected Tutto = app %+.1f dB", expected))
+        direct.stop(); out.stop()
+        return true
+    }
+}
+#endif
