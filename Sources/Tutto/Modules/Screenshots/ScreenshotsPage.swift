@@ -5,6 +5,7 @@
 
 import AppKit
 import SwiftUI
+import TuttoKit
 
 struct ScreenshotsPage: View {
     @Bindable var model: AppModel
@@ -140,6 +141,11 @@ private struct RecordingSettings: View {
             Hairline().opacity(0.6)
             LabeledRow("Show clicks", detail: "A ring where you click, so viewers can follow along.") {
                 InkSwitch(isOn: $recorder.showClicks, label: "Show clicks")
+            }
+            Hairline().opacity(0.6)
+            LabeledRow("Show keys you press", detail: "Keycaps like ⌘ ⇧ 4 near the bottom of the video. Shortcuts: keys with ⌘, ⌃ or ⌥, plus Esc, Return, Tab, Delete, arrows and F-keys. Needs Accessibility, and shows nothing while macOS Secure Input is on (a password field).") {
+                InkSegmented(selection: $recorder.keystrokes, options: KeystrokeMode.allCases.map { ($0, $0.title) })
+                    .fixedSize()
             }
             Hairline().opacity(0.6)
             LabeledRow("Show the pointer") {

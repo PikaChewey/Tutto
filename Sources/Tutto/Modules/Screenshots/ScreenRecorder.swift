@@ -54,6 +54,7 @@ final class ScreenRecorder {
     var recordSystemAudio: Bool { didSet { defaults.set(recordSystemAudio, forKey: Keys.systemAudio) } }
     var recordMicrophone: Bool { didSet { defaults.set(recordMicrophone, forKey: Keys.microphone) } }
     var showClicks: Bool { didSet { defaults.set(showClicks, forKey: Keys.clicks) } }
+    var keystrokes: KeystrokeMode { didSet { defaults.set(keystrokes.rawValue, forKey: Keys.keystrokes) } }
     var showPointer: Bool { didSet { defaults.set(showPointer, forKey: Keys.pointer) } }
     var framesPerSecond: Int { didSet { defaults.set(framesPerSecond, forKey: Keys.fps) } }
     var codec: RecordingCodec { didSet { defaults.set(codec.rawValue, forKey: Keys.codec) } }
@@ -72,12 +73,15 @@ final class ScreenRecorder {
     @ObservationIgnored private var countdownTimer: Timer?
     @ObservationIgnored private var session: AnyObject?
     @ObservationIgnored private var target: RecordingTarget?
+    @ObservationIgnored private var recordArea: CGRect = .zero
+    @ObservationIgnored private var keycaps: KeystrokeOverlay?
 
     init() {
         let d = UserDefaults.standard
         recordSystemAudio = d.object(forKey: Keys.systemAudio) as? Bool ?? true
         recordMicrophone = d.bool(forKey: Keys.microphone)
         showClicks = d.object(forKey: Keys.clicks) as? Bool ?? true
+        keystrokes = KeystrokeMode(rawValue: d.string(forKey: Keys.keystrokes) ?? "") ?? .off
         showPointer = d.object(forKey: Keys.pointer) as? Bool ?? true
         framesPerSecond = [30, 60].contains(d.integer(forKey: Keys.fps)) ? d.integer(forKey: Keys.fps) : 60
         codec = RecordingCodec(rawValue: d.string(forKey: Keys.codec) ?? "") ?? .h264
@@ -140,6 +144,7 @@ final class ScreenRecorder {
         let onScreen = CGRect(x: shot.frame.minX + source.minX, y: shot.frame.maxY - source.maxY,
                               width: source.width, height: source.height)
         let whole = source.width >= shot.frame.width - 1 && source.height >= shot.frame.height - 1
+        recordArea = onScreen
         target = RecordingTarget(displayID: shot.displayID, sourceRect: source, width: size.width, height: size.height)
         outline = RecordingOutline(around: onScreen, wholeScreen: whole)
         if recordMicrophone, AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
@@ -186,15 +191,28 @@ final class ScreenRecorder {
         }
         let options = RecordingSession.Options(fps: framesPerSecond, showPointer: showPointer, showClicks: showClicks,
                                                systemAudio: recordSystemAudio, microphone: microphone, codec: codec)
+        // The keycap panel goes up first so its window id can stay in the capture filter.
+        var keepWindow: CGWindowID?
+        if keystrokes != .off {
+            if AXIsProcessTrusted() {
+                let keycaps = KeystrokeOverlay(area: recordArea, mode: keystrokes)
+                keycaps.show()
+                self.keycaps = keycaps
+                keepWindow = keycaps.windowID
+            } else {
+                Toast.shared.show("Recording without the keys", detail: "Showing keys needs Tutto in Privacy & Security › Accessibility.", duration: 3)
+            }
+        }
         state = .saving  // until the stream is running
         Task { @MainActor in
             do {
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                let session = try await RecordingSession.start(target: target, options: options, url: url) { [weak self] result in
+                let session = try await RecordingSession.start(target: target, options: options, url: url, keeping: keepWindow) { [weak self] result in
                     self?.finished(result)
                 }
                 self.session = session
                 self.state = .recording(since: Date())
+                self.keycaps?.listen()
                 self.outline?.markRecording()
                 log.notice("recording \(target.width, privacy: .public)×\(target.height, privacy: .public) at \(options.fps, privacy: .public) fps to \(url.lastPathComponent, privacy: .public)")
             } catch {
@@ -211,6 +229,8 @@ final class ScreenRecorder {
         state = .saving
         outline?.close()
         outline = nil
+        keycaps?.close()
+        keycaps = nil
         guard #available(macOS 15.0, *), let session = session as? RecordingSession else { return reset() }
         Task { await session.stop() }
     }
@@ -241,6 +261,8 @@ final class ScreenRecorder {
         prompt.hide()
         outline?.close()
         outline = nil
+        keycaps?.close()
+        keycaps = nil
         target = nil
         if session == nil { state = .idle }
     }
@@ -249,6 +271,7 @@ final class ScreenRecorder {
         static let systemAudio = "recording.systemAudio"
         static let microphone = "recording.microphone"
         static let clicks = "recording.showClicks"
+        static let keystrokes = "recording.keystrokes"
         static let pointer = "recording.showPointer"
         static let fps = "recording.fps"
         static let codec = "recording.codec"
@@ -287,15 +310,16 @@ final class RecordingSession: NSObject, SCStreamDelegate, SCRecordingOutputDeleg
         self.finish = finish
     }
 
-    static func start(target: RecordingTarget, options: Options, url: URL,
+    static func start(target: RecordingTarget, options: Options, url: URL, keeping keepWindow: CGWindowID? = nil,
                       finish: @escaping @MainActor (Result<URL, Error>) -> Void) async throws -> RecordingSession {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { $0.displayID == target.displayID }) else {
             throw CaptureError.noDisplays
         }
-        // Tutto's floating bits (the outline, the panel, toasts) stay out; its own windows are in.
+        // Tutto's floating bits (the outline, the panel, toasts) stay out, except the keycaps
+        // (`keepWindow`); its own windows are in.
         let own = Bundle.main.bundleIdentifier
-        let floating = content.windows.filter { $0.owningApplication?.bundleIdentifier == own && $0.windowLayer != 0 }
+        let floating = content.windows.filter { $0.owningApplication?.bundleIdentifier == own && $0.windowLayer != 0 && $0.windowID != keepWindow }
         let filter = SCContentFilter(display: display, excludingWindows: floating)
 
         let configuration = SCStreamConfiguration()
