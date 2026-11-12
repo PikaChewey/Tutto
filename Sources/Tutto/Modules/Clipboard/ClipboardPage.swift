@@ -32,8 +32,12 @@ private struct ClipboardSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             InkGroup {
-                LabeledRow("Open clipboard history", detail: "Type to search, double-click or ↩ to paste into the app you're in, ⌘↩ to copy, ⇥ to filter by type, ⌘1–⌘9 to paste the first nine.") {
+                LabeledRow("Open clipboard history", detail: "Type to search, double-click or ↩ to paste into the app you're in, ⇧↩ to paste it as plain text, ⌘↩ to copy, ⇥ to filter by type, ⌘1–⌘9 to paste the first nine.") {
                     ShortcutRecorder(action: .clipboardHistory, model: model)
+                }
+                Hairline().opacity(0.6)
+                LabeledRow("Paste as plain text", detail: "Pastes what you copied without its fonts, colors or links, in any app. Your clipboard keeps the formatting.") {
+                    ShortcutRecorder(action: .pastePlainText, model: model)
                 }
                 Hairline().opacity(0.6)
                 LabeledRow("Record new copies", detail: clipboard.isPaused ? "Paused: nothing you copy is saved." : "On") {

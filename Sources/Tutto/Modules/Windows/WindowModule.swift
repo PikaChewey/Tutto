@@ -17,6 +17,13 @@ import TuttoKit
 final class WindowModule: ModuleController {
     /// Space between tiled windows and screen edges, in points.
     var gap: Double { didSet { defaults.set(gap, forKey: Keys.gap) } }
+    /// Drag a window to a screen edge or corner to snap it.
+    var dragSnap: Bool {
+        didSet {
+            defaults.set(dragSnap, forKey: Keys.dragSnap)
+            updateDragSnapper()
+        }
+    }
     private(set) var usage: [String: Int]
 
     private weak var model: AppModel?
@@ -24,19 +31,91 @@ final class WindowModule: ModuleController {
     private var palette: WindowPaletteController?
     /// Frames before Tutto moved them, for Restore.
     private var history: [(window: AXUIElement, frame: CGRect)] = []
+    /// Windows Tutto snapped: the size it gave them and the size they had, to give it back
+    /// when they're dragged away.
+    private var snapped: [CGWindowID: (size: CGSize, before: CGSize)] = [:]
+    @ObservationIgnored private var snapper: WindowDragSnap?
+    /// The window's frame when the drag began (after any size given back).
+    @ObservationIgnored private var dragStartFrame: CGRect?
 
     init(model: AppModel) {
         self.model = model
         gap = defaults.double(forKey: Keys.gap)
+        dragSnap = defaults.object(forKey: Keys.dragSnap) as? Bool ?? true
         usage = defaults.dictionary(forKey: Keys.usage) as? [String: Int] ?? [:]
     }
 
-    func start() {}
+    func start() {
+        updateDragSnapper()
+    }
 
     func stop() {
         palette?.close()
         palette = nil
         history.removeAll()
+        snapped.removeAll()
+        snapper?.stop()
+        snapper = nil
+    }
+
+    // MARK: Dragging to an edge
+
+    private func updateDragSnapper() {
+        if dragSnap {
+            if snapper == nil { snapper = WindowDragSnap(module: self) }
+            snapper?.start()
+        } else {
+            snapper?.stop()
+            snapper = nil
+        }
+    }
+
+    /// macOS 15's own "Drag windows to screen edges to tile" (on unless switched off).
+    var macOSTilesByDragging: Bool {
+        guard #available(macOS 15, *) else { return false }
+        return UserDefaults(suiteName: "com.apple.WindowManager")?.object(forKey: "EnableTilingByEdgeDrag") as? Bool ?? true
+    }
+
+    /// Checked as each drag starts: Accessibility allowed, macOS's tiling off, and the strip not
+    /// holding every window in place.
+    var canSnapByDragging: Bool {
+        AXIsProcessTrusted() && !macOSTilesByDragging && model?.strip?.arrangeMode != .always
+    }
+
+    func snapFrame(for action: WindowAction, on screen: ScreenArea) -> CGRect {
+        WindowLayout.frame(for: action, visible: screen.visible, current: dragStartFrame ?? screen.visible, gap: gap)
+    }
+
+    /// A window started moving under the pointer: one Tutto snapped gets its old size back.
+    func dragStarted(window: AXUIElement, id: CGWindowID, app: NSRunningApplication?, frame: CGRect, pointer: CGPoint) {
+        dragStartFrame = frame
+        guard let record = snapped[id] else { return }
+        snapped[id] = nil
+        guard abs(frame.width - record.size.width) < 4, abs(frame.height - record.size.height) < 4 else { return }
+        let restored = SnapZones.unsnapped(current: frame, previousSize: record.before, pointer: pointer)
+        Self.setFrame(restored, of: window, app: app)
+        dragStartFrame = restored
+    }
+
+    /// The window was let go in a zone.
+    func snapDropped(_ window: AXUIElement, app: NSRunningApplication?, action: WindowAction, screen: ScreenArea) {
+        let target = snapFrame(for: action, on: screen)
+        let before = dragStartFrame ?? Self.frame(of: window) ?? target
+        dragStartFrame = nil
+        usage[action.rawValue, default: 0] += 1
+        defaults.set(usage, forKey: Keys.usage)
+        history.removeAll { CFEqual($0.window, window) }
+        history.append((window, before))
+        if history.count > 40 { history.removeFirst() }
+        Self.setFrame(target, of: window, app: app)
+        if let id = WindowElements.windowID(of: window) { remember(id, snappedTo: target.size, before: before.size) }
+    }
+
+    private func remember(_ id: CGWindowID, snappedTo size: CGSize, before: CGSize) {
+        // Snapping again keeps the size from before the first snap.
+        let original = snapped[id]?.before ?? before
+        snapped[id] = (size, original)
+        if snapped.count > 60 { snapped.removeValue(forKey: snapped.keys.first!) }
     }
 
     // MARK: Palette
@@ -145,6 +224,9 @@ final class WindowModule: ModuleController {
         history.append((window, current))
         if history.count > 40 { history.removeFirst() }
         Self.setFrame(target, of: window, app: app)
+        if !action.movesBetweenDisplays, action != .center, let id = WindowElements.windowID(of: window) {
+            remember(id, snappedTo: target.size, before: current.size)
+        }
     }
 
     // MARK: Accessibility helpers
@@ -229,6 +311,7 @@ final class WindowModule: ModuleController {
 
     private enum Keys {
         static let gap = "windows.gap"
+        static let dragSnap = "windows.dragSnap"
         static let usage = "windows.usage"
     }
 }

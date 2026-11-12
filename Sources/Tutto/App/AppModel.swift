@@ -333,6 +333,7 @@ final class AppModel {
     func perform(_ action: ShortcutAction) {
         switch action {
         case .clipboardHistory: clipboard?.showPalette()
+        case .pastePlainText: clipboard?.pastePlainText()
         case .windowPalette: windows?.showPalette()
         case .captureArea: screenshots?.capture(.areaToClipboard)
         case .captureScreen: screenshots?.capture(.screenToClipboard)

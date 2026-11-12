@@ -28,12 +28,15 @@ public enum DefaultShortcuts {
     public static let scrollingCapture = KeyShortcut.ctrlShift(kVK_ANSI_S)
     /// The Convert window: "K" for convert (C is the word counter's).
     public static let convertFiles = KeyShortcut.ctrlShift(kVK_ANSI_K)
+    /// Paste as plain text: ⌥⇧⌘V, the keys apps already use for "Paste and Match Style", so it
+    /// does the same thing in every app (and in ones that have no such command).
+    public static let pastePlainText = KeyShortcut(keyCode: UInt16(kVK_ANSI_V), modifiers: [.option, .shift, .command])
 
     public static let all = [clipboardHistory, windowPalette, captureScreen, captureArea, captureAreaEdit, wordCounter, toggleClicker,
-                             recordScreen, scrollingCapture, convertFiles]
+                             recordScreen, scrollingCapture, convertFiles, pastePlainText]
 
     /// Defaults that take a macOS shortcut on purpose.
-    public static let takenFromMacOS: Set<KeyShortcut> = [captureScreen]
+    public static let takenFromMacOS: Set<KeyShortcut> = [captureScreen, pastePlainText]
 }
 
 /// Well-known macOS shortcuts worth a warning when someone records them.
@@ -49,6 +52,7 @@ public enum SystemShortcuts {
         case (kVK_Tab, [.command]): return "switching apps"
         case (kVK_ANSI_Grave, [.command]): return "cycling windows"
         case (kVK_ANSI_Grave, [.command, .shift]): return "cycling windows backwards"
+        case (kVK_ANSI_V, [.command, .option, .shift]): return "apps' Paste and Match Style"
         case (kVK_ANSI_Q, [.command]), (kVK_ANSI_W, [.command]), (kVK_ANSI_C, [.command]), (kVK_ANSI_V, [.command]),
              (kVK_ANSI_X, [.command]), (kVK_ANSI_Z, [.command]), (kVK_ANSI_A, [.command]), (kVK_ANSI_S, [.command]):
             return "a standard app command"

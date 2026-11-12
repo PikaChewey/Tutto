@@ -295,6 +295,55 @@ final class ClipboardModule: ModuleController {
         }
     }
 
+    /// Pastes what's on the clipboard as plain text (no fonts, colors, links or pictures) into
+    /// the app in front, then puts the clipboard back as it was, formatting and all.
+    func pastePlainText() {
+        let pasteboard = NSPasteboard.general
+        guard let text = pasteboard.string(forType: .string), !text.isEmpty else {
+            Toast.shared.show("No text to paste", detail: "The clipboard holds no text")
+            return
+        }
+        guard AXIsProcessTrusted() else {
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            markOwnChange()
+            Toast.shared.show("Copied as plain text", detail: "Press ⌘V to paste · allow Accessibility to paste directly")
+            return
+        }
+        let saved = PasteboardSnapshot(pasteboard)
+        let alreadyPlain = (pasteboard.types ?? []).allSatisfy { $0 == .string || $0.rawValue.hasPrefix("dyn.") || $0.rawValue == "public.utf8-plain-text" }
+        if !alreadyPlain {
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            markOwnChange()
+        }
+        let pasted = pasteboard.changeCount
+        // The shortcut's own keys are still down: wait until they're let go (up to half a
+        // second), or the app sees ⌥⇧⌘V instead of ⌘V.
+        Self.whenModifiersReleased(within: 0.5) {
+            Self.postCommandV()
+            guard !alreadyPlain else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard NSPasteboard.general.changeCount == pasted else { return }
+                    saved.restore(to: NSPasteboard.general)
+                    self?.markOwnChange()
+                }
+            }
+        }
+    }
+
+    private static func whenModifiersReleased(within limit: TimeInterval, started: Date = Date(), _ then: @escaping @MainActor () -> Void) {
+        let held = CGEventSource.flagsState(.combinedSessionState).intersection([.maskCommand, .maskAlternate, .maskShift, .maskControl])
+        if held.isEmpty || Date().timeIntervalSince(started) >= limit {
+            then()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+            MainActor.assumeIsolated { whenModifiersReleased(within: limit, started: started, then) }
+        }
+    }
+
     /// Our own pasteboard write: not a new copy to record.
     private func markOwnChange() {
         ownChangeCount = NSPasteboard.general.changeCount

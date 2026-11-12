@@ -15,6 +15,7 @@ import TuttoKit
 /// Everything that can have a global shortcut.
 enum ShortcutAction: Hashable, Identifiable {
     case clipboardHistory
+    case pastePlainText
     case windowPalette
     case captureArea
     case captureScreen
@@ -36,6 +37,7 @@ enum ShortcutAction: Hashable, Identifiable {
     var id: String {
         switch self {
         case .clipboardHistory: "clipboard.history"
+        case .pastePlainText: "clipboard.pastePlain"
         case .windowPalette: "windows.palette"
         case .captureArea: "screenshot.area"
         case .captureScreen: "screenshot.screen"
@@ -58,6 +60,7 @@ enum ShortcutAction: Hashable, Identifiable {
     var title: String {
         switch self {
         case .clipboardHistory: "Clipboard history"
+        case .pastePlainText: "Paste as plain text"
         case .windowPalette: "Window palette"
         case .captureArea: "Capture area to clipboard"
         case .captureScreen: "Capture full screen to clipboard"
@@ -79,7 +82,7 @@ enum ShortcutAction: Hashable, Identifiable {
 
     var module: ModuleID? {
         switch self {
-        case .clipboardHistory: .clipboard
+        case .clipboardHistory, .pastePlainText: .clipboard
         case .windowPalette, .window: .windows
         case .captureArea, .captureScreen, .captureAreaEdit, .recordScreen, .scrollingCapture: .screenshots
         case .convertFiles: .converter
@@ -98,6 +101,7 @@ enum ShortcutAction: Hashable, Identifiable {
     var defaultShortcut: KeyShortcut? {
         switch self {
         case .clipboardHistory: DefaultShortcuts.clipboardHistory
+        case .pastePlainText: DefaultShortcuts.pastePlainText
         case .windowPalette: DefaultShortcuts.windowPalette
         case .captureArea: DefaultShortcuts.captureArea
         case .captureScreen: DefaultShortcuts.captureScreen
@@ -114,7 +118,7 @@ enum ShortcutAction: Hashable, Identifiable {
     }
 
     static var fixed: [ShortcutAction] {
-        [.clipboardHistory, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .recordScreen, .scrollingCapture, .convertFiles,
+        [.clipboardHistory, .pastePlainText, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .recordScreen, .scrollingCapture, .convertFiles,
          .cleanUp, .wordCounter,
          .toggleClicker,
          .muteFrontApp, .openTutto, .toggleCorner]

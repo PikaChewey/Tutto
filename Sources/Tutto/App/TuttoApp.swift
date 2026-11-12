@@ -194,6 +194,7 @@ enum DeepLinks {
         case "scrolling-capture": .scrollingCapture
         case "clean-up": .cleanUp
         case "clipboard": .clipboardHistory
+        case "paste-plain-text": .pastePlainText
         case "windows": .windowPalette
         case "word-counter": .wordCounter
         case "mute-front-app": .muteFrontApp

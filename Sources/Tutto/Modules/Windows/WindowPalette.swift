@@ -284,6 +284,26 @@ private struct WindowSettings: View {
                     ShortcutRecorder(action: .windowPalette, model: model)
                 }
                 Hairline().opacity(0.6)
+                LabeledRow("Snap by dragging", detail: windows.dragSnap && windows.macOSTilesByDragging
+                           ? "macOS's own tiling is on, so Tutto stays out of its way."
+                           : "Drag a window to an edge or corner: halves, quarters, full screen, thirds along the bottom. Drag it away for its old size; Esc cancels.") {
+                    InkSwitch(isOn: $windows.dragSnap, label: "Snap by dragging", active: !windows.macOSTilesByDragging)
+                }
+                if windows.dragSnap && windows.macOSTilesByDragging {
+                    HStack(spacing: 10) {
+                        Text("To use Tutto's (with thirds, gaps and sizes given back), switch off “Drag windows to screen edges to tile” in System Settings › Desktop & Dock.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Color.ink3)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Button("Open Settings") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Desktop-Settings.extension")!)
+                        }
+                        .buttonStyle(OutlineButtonStyle(compact: true))
+                    }
+                    .padding(.vertical, 6)
+                }
+                Hairline().opacity(0.6)
                 LabeledRow("Gap between windows", detail: windows.gap == 0 ? "None, edge to edge." : "\(Int(windows.gap)) pt around and between windows.") {
                     InkSegmented(selection: $windows.gap, options: [(0, "0"), (4, "4"), (8, "8"), (12, "12")])
                 }

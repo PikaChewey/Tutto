@@ -43,7 +43,10 @@ final class KeyShortcutTests: XCTestCase {
         // taken from macOS's "back through an app's windows", ⌘` alone stays macOS's (and the switcher's).
         XCTAssertEqual(DefaultShortcuts.captureScreen, .cmdShift(kVK_ANSI_Grave))
         XCTAssertEqual(DefaultShortcuts.captureAreaEdit, .cmdShift(kVK_ANSI_1))
-        XCTAssertEqual(DefaultShortcuts.takenFromMacOS, [.cmdShift(kVK_ANSI_Grave)])
+        // ⌥⇧⌘V is apps' "Paste and Match Style": paste as plain text takes it on purpose, to do the
+        // same thing everywhere (2026-11-11).
+        XCTAssertEqual(DefaultShortcuts.takenFromMacOS, [.cmdShift(kVK_ANSI_Grave), DefaultShortcuts.pastePlainText])
+        XCTAssertEqual(SystemShortcuts.owner(of: DefaultShortcuts.pastePlainText), "apps' Paste and Match Style")
         XCTAssertFalse(defaults.contains(KeyShortcut(keyCode: UInt16(kVK_ANSI_Grave), modifiers: .command)))
     }
 }
