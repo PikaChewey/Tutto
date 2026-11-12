@@ -1,6 +1,6 @@
 # Fan helper (TuttoHelper)
 
-TuttoHelper also holds sleep off for Stay Awake (helper 1.1.0). See "Stay Awake" at the end.
+TuttoHelper also holds sleep off for Stay Awake (helper 1.1.0; see "Stay Awake" at the end) and holds charging off for the charge limit under a lease the app renews every minute (helper 1.2.0; see [features/charge-limit.md](features/charge-limit.md)).
 
 Fan speeds are SMC writes, and the SMC refuses writes from non-root processes with `kIOReturnNotPrivileged` (0xe00002c1). Tutto therefore ships a small root LaunchDaemon, `TuttoHelper`. The app registers it with `SMAppService` and talks to it over XPC. Reading temperatures and fans needs no helper: use `TemperatureSensors` and `Fans` in TuttoKit.
 

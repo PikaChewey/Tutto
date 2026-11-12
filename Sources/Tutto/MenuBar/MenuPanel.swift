@@ -431,6 +431,13 @@ private struct BatteryCard: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Color.ink3)
                             .lineLimit(1)
+                        // Charge limit holding the charge ("Held at 80 %"): one dim line, only then.
+                        if let note = ChargeLimitController.shared.panelNote {
+                            Text(note)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.ink3)
+                                .lineLimit(1)
+                        }
                     }
                     Spacer(minLength: 8)
                     VStack(alignment: .trailing, spacing: 2) {
@@ -452,7 +459,7 @@ private struct BatteryCard: View {
             .onHover { hovering = $0 }
             .help("Battery details")
             .accessibilityLabel("Battery")
-            .accessibilityValue("\(battery.percent) percent, \(battery.stateText), \(Format.watts(battery.powerDraw)) watts \(powerCaption), \(healthLine)")
+            .accessibilityValue("\(battery.percent) percent, \(battery.stateText), \(Format.watts(battery.powerDraw)) watts \(powerCaption), \(healthLine)\(ChargeLimitController.shared.panelNote.map { ", \($0)" } ?? "")")
             .accessibilityHint("Shows details")
             // A battery that needs attention says so on a line of its own (it's rare, and it matters).
             if let condition = unusualCondition {

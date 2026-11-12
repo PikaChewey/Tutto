@@ -3,7 +3,8 @@
 //  Tutto
 //
 //  The XPC contract between Tutto.app and TuttoHelper, the root LaunchDaemon that
-//  writes fan speeds to the SMC and keeps the Mac awake for Stay Awake (`AwakeCore.swift`).
+//  writes fan speeds to the SMC, keeps the Mac awake for Stay Awake (`AwakeCore.swift`) and
+//  holds charging off for the charge limit (`ChargeControlCore.swift`).
 //
 //  This file is compiled into BOTH TuttoKit and TuttoHelper. Sources/TuttoHelper/Shared/
 //  holds a symlink to it, so the helper does not have to link all of TuttoKit. Keep it
@@ -21,7 +22,7 @@ public enum TuttoFanHelper {
     public static let plistName = "ca.bryanyao.Tutto.helper.plist"
     /// Bump this whenever the protocol or the helper's behaviour changes. The app
     /// compares it with `version(reply:)` and re-registers the daemon on a mismatch.
-    public static let version = "1.1.0"
+    public static let version = "1.2.0"
 
     public static let appBundleIdentifier = "ca.bryanyao.Tutto"
     public static let helperIdentifier = "ca.bryanyao.Tutto.helper"
@@ -38,6 +39,9 @@ public enum TuttoFanHelper {
 
     /// Where the helper journals a Stay Awake session (root-owned).
     public static let awakeJournalPath = "/Library/Application Support/Tutto/awake.json"
+
+    /// Where the helper marks that it holds charging off (root-owned), until it lets go.
+    public static let chargeJournalPath = "/Library/Application Support/Tutto/charge.json"
 
     /// The helper exits after this long with no clients, every fan on automatic and no session.
     /// launchd starts it again the next time the app connects.
@@ -88,4 +92,15 @@ public protocol TuttoFanHelperProtocol {
 
     /// The session running, if any: its end (0 = none) and whether Low Power Mode is claimed.
     func awakeState(reply: @escaping (Double, Bool) -> Void)
+
+    // MARK: Charge limit (helper 1.2.0)
+
+    /// `inhibited` true: stop charging (the Mac keeps running on the adapter) for `lease` seconds,
+    /// or renew a hold already in place; the helper clamps the lease to `ChargeLease.shortest…longest`
+    /// and allows charging by itself when it runs out, when the last app connection ends and when
+    /// it exits. False: allow charging now.
+    func setChargingInhibited(_ inhibited: Bool, lease: Double, reply: @escaping (Int32, String?) -> Void)
+
+    /// Whether this Mac can stop charging, whether this helper holds it off, and the lease left (s).
+    func chargingState(reply: @escaping (Bool, Bool, Double) -> Void)
 }

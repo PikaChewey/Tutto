@@ -76,6 +76,9 @@ enum Snapshots {
             if only.contains("clicker-on") { model.clicker?.previewClicking(since: 18) }
         }
         if only.contains("awake-nohelper") { model.awake?.previewSession(remaining: 3600, lidSafe: false) }
+        // `charge-held` / `charge-nohelper`: the charge limit on (Battery page and panel), nothing sent to the helper.
+        if only.contains("charge-held") { ChargeLimitController.shared.previewHolding() }
+        if only.contains("charge-nohelper") { ChargeLimitController.shared.previewHolding(percent: 64, helper: .requiresApproval) }
 
         for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {
             if only.isEmpty || only.contains("panel") {

@@ -54,6 +54,16 @@ private final class FakeHelper: NSObject, TuttoFanHelperProtocol, NSXPCListenerD
         reply(2_000_000_000, true)
     }
 
+    func setChargingInhibited(_ inhibited: Bool, lease: Double, reply: @escaping (Int32, String?) -> Void) {
+        record("setChargingInhibited \(inhibited) \(lease)")
+        reply(inhibited ? FanStatus.unsupported : FanStatus.success, inhibited ? "no key" : nil)
+    }
+
+    func chargingState(reply: @escaping (Bool, Bool, Double) -> Void) {
+        record("chargingState")
+        reply(true, false, 42.5)
+    }
+
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
         connection.exportedInterface = TuttoFanHelper.makeInterface()
         connection.exportedObject = self
@@ -163,6 +173,30 @@ final class SensorHelperProtocolTests: XCTestCase {
         XCTAssertTrue(helper.calls.contains("beginAwake 1999999999.5"))
         XCTAssertTrue(helper.calls.contains("setAwakePaused [42]"))
         XCTAssertTrue(helper.calls.contains("endAwake true"))
+
+        // The charge limit's calls too (helper 1.2.0).
+        let inhibit = expectation(description: "inhibit")
+        proxy.setChargingInhibited(true, lease: ChargeLease.duration) { status, message in
+            XCTAssertEqual(status, FanStatus.unsupported)
+            XCTAssertEqual(message, "no key")
+            inhibit.fulfill()
+        }
+        let allow = expectation(description: "allow")
+        proxy.setChargingInhibited(false, lease: 0) { status, message in
+            XCTAssertEqual(status, FanStatus.success)
+            XCTAssertNil(message)
+            allow.fulfill()
+        }
+        let chargeState = expectation(description: "chargingState")
+        proxy.chargingState { supported, inhibited, left in
+            XCTAssertTrue(supported)
+            XCTAssertFalse(inhibited)
+            XCTAssertEqual(left, 42.5)
+            chargeState.fulfill()
+        }
+        wait(for: [inhibit, allow, chargeState], timeout: 5)
+        XCTAssertTrue(helper.calls.contains("setChargingInhibited true 90.0"))
+        XCTAssertTrue(helper.calls.contains("setChargingInhibited false 0.0"))
     }
 
     /// The helper's listener requirement turns away any client that is not Tutto.app, such as this test runner.

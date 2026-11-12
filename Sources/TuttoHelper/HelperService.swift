@@ -12,6 +12,10 @@
 //  battery runs nearly flat or the Mac gets critically hot first. A journal left by a helper
 //  that was killed is picked up at the next start.
 //
+//  Charge limit: the helper holds charging off only under a lease the app renews every minute.
+//  Charging comes back when the lease runs out, when the last app connection ends, on SIGTERM,
+//  and at the next start if a killed helper left its journal.
+//
 
 import Foundation
 import IOKit
@@ -37,12 +41,16 @@ final class HelperService: NSObject, NSXPCListenerDelegate, TuttoFanHelperProtoc
     private var idleAttempts = 0
     private var signalSources: [DispatchSourceSignal] = []
     private var power: PowerObserver?
+    private let charge: ChargeInhibitor
+    private var chargeTimer: DispatchSourceTimer?
 
     /// `requirement` is the code-signing requirement every client must meet (nil only in
     /// the self-test's control case).
     init(smc: SMCAccess, requirement: String? = TuttoFanHelper.clientRequirement, exitsWhenIdle: Bool = true,
-         awakeJournal: URL? = URL(fileURLWithPath: TuttoFanHelper.awakeJournalPath)) {
+         awakeJournal: URL? = URL(fileURLWithPath: TuttoFanHelper.awakeJournalPath),
+         chargeJournal: URL? = URL(fileURLWithPath: TuttoFanHelper.chargeJournalPath)) {
         controller = FanController(smc: smc)
+        charge = ChargeInhibitor(smc: smc, journalURL: chargeJournal)
         awake = awakeJournal.map { AwakeController(commands: SystemPMSet(), processes: SystemProcesses(), journalURL: $0) }
         self.requirement = requirement
         self.exitsWhenIdle = exitsWhenIdle
@@ -63,6 +71,8 @@ final class HelperService: NSObject, NSXPCListenerDelegate, TuttoFanHelperProtoc
             let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: queue)
             source.setEventHandler { [unowned self] in
                 let status = self.controller.resetAll()
+                let charging = self.charge.allow()
+                log.notice("signal \(signalNumber, privacy: .public): charging allowed (\(FanStatus.describe(charging.status), privacy: .public))")
                 // Stopped from outside (Tutto switched off in Login Items, removed, shutdown):
                 // nothing would start the helper again to finish a session, so end it now.
                 let awake = self.awake.map { $0.isActive ? $0.end() : .ok }
@@ -78,6 +88,10 @@ final class HelperService: NSObject, NSXPCListenerDelegate, TuttoFanHelperProtoc
         }
         if power == nil { log.error("could not register for sleep notifications") }
         queue.async {
+            // A charge hold journaled by a helper that was killed: let the Mac charge again.
+            if self.charge.recoverFromJournal() {
+                log.notice("found a charge-limit journal from an earlier helper; charging allowed")
+            }
             // A session journaled by a helper that was stopped: resume what it paused (the app that
             // paused it may be gone) and keep it to its end, or end it if that has passed.
             if let awake = self.awake, awake.isActive {
@@ -181,6 +195,49 @@ final class HelperService: NSObject, NSXPCListenerDelegate, TuttoFanHelperProtoc
         }
     }
 
+    // MARK: Charge limit
+
+    func setChargingInhibited(_ inhibited: Bool, lease: Double, reply: @escaping (Int32, String?) -> Void) {
+        queue.async {
+            let result = inhibited ? self.charge.inhibit(lease: lease) : self.charge.allow()
+            log.notice("setChargingInhibited \(inhibited, privacy: .public) lease \(lease, privacy: .public): \(result.message ?? FanStatus.describe(result.status), privacy: .public)")
+            self.armChargeTimer()
+            if !self.charge.isInhibiting { self.scheduleIdleExit() }
+            reply(result.status, result.message)
+        }
+    }
+
+    func chargingState(reply: @escaping (Bool, Bool, Double) -> Void) {
+        queue.async {
+            reply(self.charge.method != nil, self.charge.isInhibiting, self.charge.leaseRemaining)
+        }
+    }
+
+    /// While charging is held off: one timer for the lease's end, on the monotonic clock (it
+    /// doesn't run out during sleep). Each renewal re-arms it.
+    private func armChargeTimer(retryIn retry: TimeInterval? = nil) {
+        chargeTimer?.cancel()
+        chargeTimer = nil
+        guard charge.isInhibiting else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + (retry ?? charge.leaseRemaining + 0.5), leeway: .seconds(1))
+        timer.setEventHandler { [unowned self] in
+            if self.charge.expireLeaseIfDue() {
+                log.notice("charge-limit lease ran out (the app didn't renew it): charging allowed")
+                self.armChargeTimer()
+                self.scheduleIdleExit()
+            } else if self.charge.isInhibiting && self.charge.leaseRemaining <= 0 {
+                // The write back failed: keep trying rather than leave charging off.
+                log.error("charge-limit lease ran out but charging couldn't be allowed; retrying in 5 s")
+                self.armChargeTimer(retryIn: 5)
+            } else {
+                self.armChargeTimer()
+            }
+        }
+        chargeTimer = timer
+        timer.resume()
+    }
+
     /// Ends the session and, if asked and the lid is still closed, puts the Mac to sleep.
     @discardableResult
     private func endAwakeSession(reason: String, sleepIfLidClosed: Bool) -> AwakeResult {
@@ -280,6 +337,11 @@ final class HelperService: NSObject, NSXPCListenerDelegate, TuttoFanHelperProtoc
         guard clients.isEmpty else { return }
         let status = controller.resetAll()
         log.notice("last client gone: fans to automatic (\(FanStatus.describe(status), privacy: .public))")
+        if charge.isInhibiting {
+            let charging = charge.allow()
+            armChargeTimer()
+            log.notice("last client gone: charging allowed (\(FanStatus.describe(charging.status), privacy: .public))")
+        }
         if let awake, awake.isActive {
             // Nothing is left to resume them when the lid opens.
             let resumed = awake.resumePaused()
@@ -290,12 +352,12 @@ final class HelperService: NSObject, NSXPCListenerDelegate, TuttoFanHelperProtoc
     }
 
     private func scheduleIdleExit() {
-        guard exitsWhenIdle, clients.isEmpty, idleTimer == nil, !(awake?.isActive ?? false) else { return }
+        guard exitsWhenIdle, clients.isEmpty, idleTimer == nil, !(awake?.isActive ?? false), !charge.isInhibiting else { return }
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + TuttoFanHelper.idleExitDelay)
         timer.setEventHandler { [unowned self] in
             self.idleTimer = nil
-            guard self.clients.isEmpty, !(self.awake?.isActive ?? false) else { return }
+            guard self.clients.isEmpty, !(self.awake?.isActive ?? false), !self.charge.isInhibiting else { return }
             if !self.controller.allAutomatic { self.controller.resetAll() }
             self.idleAttempts += 1
             // If something else keeps a fan manual, do not fight it forever.

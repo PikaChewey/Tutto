@@ -34,6 +34,15 @@ enum SelfTest {
             print("fan \(fan): mode key \(modeKey ?? "none") = \(mode), actual \(value(FanSMC.actualKey(fan))), "
                 + "min \(value(FanSMC.minimumKey(fan))), max \(value(FanSMC.maximumKey(fan))), target \(value(FanSMC.targetKey(fan)))")
         }
+        // Charge limit: which key this Mac uses and what it holds now (read only).
+        let charge = ChargeInhibitor(smc: reader, journalURL: nil)
+        if let method = charge.method {
+            let keys = ChargeSMC.keys(for: method, keyExists: { smc.read($0) != nil })
+            let values = keys.map { key in "\(key) = " + (smc.read(key)?.bytes.map { String(format: "%02x", $0) }.joined() ?? "?") }
+            print("charging control: \(values.joined(separator: ", ")) (\(charge.smcSaysInhibited ? "held off" : "allowed"))")
+        } else {
+            print("charging control: no key (CHTE / CH0B absent)")
+        }
 
         // 1. Code-signing requirement, through the same attach/accept code the daemon uses.
         check(roundTrip(requirement: nil) == .accepted, "XPC control: no requirement -> this process is accepted")
@@ -91,7 +100,7 @@ enum SelfTest {
 
     /// Connects this process to an anonymous listener configured exactly like the daemon's.
     static func roundTrip(requirement: String?) -> Outcome {
-        let service = HelperService(smc: WriteBlockingSMC(SMCDevice.shared), requirement: requirement, exitsWhenIdle: false, awakeJournal: nil)
+        let service = HelperService(smc: WriteBlockingSMC(SMCDevice.shared), requirement: requirement, exitsWhenIdle: false, awakeJournal: nil, chargeJournal: nil)
         let listener = NSXPCListener.anonymous()
         service.attach(to: listener)
         listener.resume()
