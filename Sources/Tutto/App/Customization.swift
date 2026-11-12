@@ -19,13 +19,14 @@ import TuttoKit
 final class PanelLayoutStore {
     /// Tutto's own cards.
     enum Card: String, CaseIterable, Identifiable {
-        case battery, cpu, memory, gpu, disk, network, temperature, awake, clicker, fan, sound, tools
+        case battery, devices, cpu, memory, gpu, disk, network, temperature, awake, clicker, fan, sound, tools
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .battery: "Battery"
+            case .devices: "Bluetooth devices"
             case .cpu: "CPU"
             case .memory: "Memory"
             case .gpu: "GPU"
@@ -44,6 +45,7 @@ final class PanelLayoutStore {
         var detail: String {
             switch self {
             case .battery: "Wide: charge, watts, health and the busiest apps. Small: charge and watts."
+            case .devices: "AirPods, keyboards and mice, with their charge. Shows only while one is connected."
             case .cpu: "Processor load and the last minute."
             case .memory: "Memory used and the last minute."
             case .gpu: "Graphics load and the last minute."
@@ -61,6 +63,7 @@ final class PanelLayoutStore {
         var symbol: String {
             switch self {
             case .battery: "battery.75percent"
+            case .devices: "headphones"
             case .cpu: "cpu"
             case .memory: "memorychip"
             case .gpu: "square.stack.3d.up"
@@ -80,7 +83,7 @@ final class PanelLayoutStore {
             switch self {
             case .battery: [.wide, .small]
             case .cpu, .memory, .gpu, .disk, .network, .temperature: [.small, .wide]
-            case .awake, .clicker, .fan, .sound, .tools: [.wide]
+            case .devices, .awake, .clicker, .fan, .sound, .tools: [.wide]
             }
         }
 
@@ -147,7 +150,11 @@ final class PanelLayoutStore {
     /// card after the readings).
     func available(_ model: AppModel) -> [Widget] {
         var cards: [Widget] = []
-        if model.system != nil { cards += [.card(.battery), .card(.cpu), .card(.memory), .card(.gpu), .card(.disk), .card(.network)] }
+        if model.system != nil {
+            cards += [.card(.battery), .card(.devices), .card(.cpu), .card(.memory), .card(.gpu), .card(.disk), .card(.network)]
+        } else {
+            cards.append(.card(.devices))
+        }
         if model.sensors != nil { cards.append(.card(.temperature)) }
         cards += model.plugins.cardPlugins.map { .plugin($0.id) }
         if model.awake != nil { cards.append(.card(.awake)) }
@@ -166,10 +173,14 @@ final class PanelLayoutStore {
     }
 
     /// The cards the panel shows, in order, with their sizes.
-    func slots(_ model: AppModel) -> [WidgetSlot] {
-        // A tools row with every tile hidden isn't drawn as an empty card.
+    func slots(_ model: AppModel, editing: Bool = false) -> [WidgetSlot] {
+        // A tools row with every tile hidden isn't drawn as an empty card, nor is the devices
+        // card when none reports a level (the Customize preview keeps it, to pick up and move).
         let noTools = ShortcutRows.visible(model).isEmpty
-        return all(model).filter { layout.widgets.isShown($0.id) && !(noTools && $0 == .card(.tools)) }
+        let noDevices = !editing && !BluetoothBatteries.shared.hasDevices
+        return all(model).filter {
+            layout.widgets.isShown($0.id) && !(noTools && $0 == .card(.tools)) && !(noDevices && $0 == .card(.devices))
+        }
             .map { WidgetSlot(id: $0.id, size: size(of: $0, model), isRow: isRow($0)) }
     }
 

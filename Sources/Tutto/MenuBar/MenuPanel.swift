@@ -117,7 +117,7 @@ private struct WidgetGrid: View {
     var editing: PanelEditing?
 
     var body: some View {
-        let lines = PanelLayout.lines(model.layout.slots(model))
+        let lines = PanelLayout.lines(model.layout.slots(model, editing: editing != nil))
         VStack(spacing: PanelGrid.gap) {
             ForEach(lines, id: \.self) { line in
                 switch line {
@@ -133,6 +133,10 @@ private struct WidgetGrid: View {
             }
         }
         .animation(Motion.snappy, value: lines)
+        // Devices are read only while the panel (or the Customize preview) is on screen.
+        .background {
+            if model.layout.layout.widgets.isShown(PanelLayoutStore.Card.devices.id) { Color.clear.watchingBluetoothBatteries() }
+        }
     }
 
     @ViewBuilder
@@ -144,6 +148,8 @@ private struct WidgetGrid: View {
             if let system = model.system {
                 ReadingTile(reading: reading, system: system, sensors: model.sensors, wide: wide)
             }
+        case .card(.devices):
+            DevicesCard(placeholder: editing != nil)
         case .card(.sound):
             if let sound = model.sound, SoundModule.isSupported { SoundCard(sound: sound) }
         case .card(.tools):
@@ -1579,6 +1585,65 @@ private struct BatteryWidget: View {
             } else {
                 BusyAppsList(apps: system.busyApps, measured: system.busyAppsMeasured).panelCard()
             }
+        }
+    }
+}
+
+// MARK: - Bluetooth devices
+
+/// One line per Bluetooth device that reports a charge: symbol, name, levels (low ones in the
+/// alert colour). Nothing is drawn when none does; on the Customize page it shows a stand-in.
+private struct DevicesCard: View {
+    var placeholder: Bool
+    @State private var hovering = false
+
+    var body: some View {
+        let devices = BluetoothBatteries.shared.devices
+        if !devices.isEmpty {
+            Button {
+                showInApp(.battery)
+            } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(devices) { device in
+                        HStack(spacing: 8) {
+                            Image(systemName: device.kind.symbol)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(Color.ink3)
+                                .frame(width: 16)
+                            Text(BluetoothBatteryRules.shortName(device.name))
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.ink2)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 8)
+                            // The levels keep their room; a long name gives way.
+                            BluetoothLevelsText(parts: device.parts, size: 12)
+                                .fixedSize()
+                                .layoutPriority(1)
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(device.name)
+                        .accessibilityValue(BluetoothBatteryRules.spoken(device.levels))
+                    }
+                }
+                .hoverBackground(hovering, x: 6, y: 4)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help("Bluetooth device batteries")
+            .panelCard(vertical: 10)
+        } else if placeholder {
+            HStack(spacing: 8) {
+                Image(systemName: "headphones")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Color.ink3)
+                Text("Bluetooth devices appear here when one is connected")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.ink3)
+                    .lineLimit(1)
+            }
+            .panelCard(vertical: 10)
         }
     }
 }

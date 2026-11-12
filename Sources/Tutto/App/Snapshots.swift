@@ -49,6 +49,14 @@ enum Snapshots {
                                         lastClosed: .init(darkened: true, mute: .init(deviceUID: "x", wasMuted: false), pausedNames: ["Chat", "Game"]))
         }
         if only.contains("clicker-on") { model.clicker?.previewClicking() }
+        // `bluetooth-devices`: the panel and the Battery page with sample devices (none are read).
+        if only.contains("bluetooth-devices") {
+            BluetoothBatteries.shared.previewDevices([
+                BluetoothBatteryDevice(id: "a", name: "Bryan's AirPods Pro", kind: .headphones, levels: BluetoothBatteryLevels(left: 80, right: 18, caseLevel: 50)),
+                BluetoothBatteryDevice(id: "b", name: "Magic Keyboard", kind: .keyboard, levels: BluetoothBatteryLevels(single: 64)),
+                BluetoothBatteryDevice(id: "c", name: "Magic Mouse", kind: .mouse, levels: BluetoothBatteryLevels(single: 12)),
+            ])
+        }
         // `cleanup-scan`: the Clean Up page after a real (read-only) scan of this Mac.
         if only.contains("cleanup-scan"), let cleaner = model.cleaner {
             cleaner.scan()
