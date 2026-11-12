@@ -163,6 +163,13 @@ struct SnapshotExtras {
             .padding(20)
             .background(Color(white: 0.45)))
         })
+        // The keyboard cleaning screen, 27 s into a 30 s lock.
+        extras.append(SnapshotExtras(name: "keyboard-clean", inDefaultSet: false) { _ in
+            let state = CleaningState()
+            state.total = 30
+            state.secondsLeft = 26.6
+            return AnyView(CleaningOverlay(state: state).frame(width: 900, height: 560).background(Color(white: 0.6)))
+        })
         // The drag wheel for pictures, PNG lit.
         extras.append(SnapshotExtras(name: "convert-wheel", inDefaultSet: false) { _ in
             let items = ConvertPlanner.targets(for: .image).map { WheelView.Item(title: $0.title, action: .convert($0)) }

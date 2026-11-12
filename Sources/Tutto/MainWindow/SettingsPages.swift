@@ -309,6 +309,16 @@ struct GeneralPage: View {
                         .buttonStyle(OutlineButtonStyle(compact: true))
                 }
             }
+            InkGroup("Keyboard") {
+                LabeledRow("Clean the keyboard", detail: "Locks the keys and trackpad clicks so you can wipe them, then gives them back by itself.") {
+                    HStack(spacing: 10) {
+                        InkSegmented(selection: Bindable(KeyboardCleaner.shared).seconds,
+                                     options: KeyboardCleanLock.allowedSeconds.map { (value: $0, title: "\($0) s") })
+                        Button("Start") { KeyboardCleaner.shared.start() }
+                            .buttonStyle(OutlineButtonStyle(compact: true))
+                    }
+                }
+            }
             InkGroup("App") {
                 LabeledRow("Open at login", detail: "Tutto starts quietly in the menu bar.") {
                     InkSwitch(isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }),
