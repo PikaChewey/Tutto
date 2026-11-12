@@ -53,11 +53,14 @@ final class CleanupModule: ModuleController {
 
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private let cancelled = OSAllocatedUnfairLock(initialState: false)
+    /// The page's Disk map: what fills the disk.
+    let diskMap = DiskMapModel()
 
     func start() {}
 
     func stop() {
         cancelScan()
+        diskMap.stop()
     }
 
     var selectedBytes: Int64 { items.filter { selected.contains($0.id) }.reduce(0) { $0 + $1.bytes } }

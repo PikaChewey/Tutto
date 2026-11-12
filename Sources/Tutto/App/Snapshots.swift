@@ -283,6 +283,17 @@ struct SnapshotExtras {
                     .background(Color(nsColor: .windowBackgroundColor)))
             })
         }
+        // Clean Up's disk map after a scan of TUTTO_SNAPSHOT_FOLDER (default: the current folder).
+        // `disk-map-in`: the same, one folder down (the biggest).
+        for name in ["disk-map", "disk-map-in"] {
+            extras.append(SnapshotExtras(name: name, inDefaultSet: false) { _ in
+                let map = DiskMapModel()
+                map.previewScan(ProcessInfo.processInfo.environment["TUTTO_SNAPSHOT_FOLDER"] ?? FileManager.default.currentDirectoryPath)
+                if name == "disk-map-in", let inner = map.root?.children.first(where: \.canOpen) { map.show(inner) }
+                return AnyView(DiskMapView(map: map, fullDiskAccess: false).padding(24).frame(width: 760)
+                    .background(Color(nsColor: .windowBackgroundColor)))
+            })
+        }
         extras.append(SnapshotExtras(name: "network-tiles", inDefaultSet: false) { _ in
             AnyView(PreviewNetworkTiles().background(PanelMaterialStandIn()))
         })

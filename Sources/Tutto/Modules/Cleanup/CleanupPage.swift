@@ -32,26 +32,41 @@ private struct CleanupContent: View {
     @Bindable var cleaner: CleanupModule
     @Bindable var model: AppModel
     @State private var showAll: Set<CleanupCategory> = []
+    @State private var view: CleanupView = .leftovers
+
+    /// Leftovers (what Clean Up finds) or the disk map (what fills the disk).
+    enum CleanupView: Hashable { case leftovers, diskMap }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            if !model.permissions.fullDiskAccess { fullDiskBanner }
-            if let result = cleaner.lastResult {
-                Text(result)
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Color.ink2)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous).fill(Color.wash))
+            InkSegmented(selection: $view, options: [(.leftovers, "Leftovers"), (.diskMap, "Disk map")])
+                .fixedSize()
+            if view == .diskMap {
+                DiskMapView(map: cleaner.diskMap, fullDiskAccess: model.permissions.fullDiskAccess)
+            } else {
+                leftovers
             }
-            switch cleaner.state {
-            case .idle: start
-            case .scanning(let place): scanning(place)
-            case .ready, .cleaning: results
-            }
-            if cleaner.state == .ready || cleaner.state == .cleaning { trashCard }
         }
         .onAppear { model.permissions.refresh() }
+    }
+
+    @ViewBuilder
+    private var leftovers: some View {
+        if !model.permissions.fullDiskAccess { fullDiskBanner }
+        if let result = cleaner.lastResult {
+            Text(result)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Color.ink2)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous).fill(Color.wash))
+        }
+        switch cleaner.state {
+        case .idle: start
+        case .scanning(let place): scanning(place)
+        case .ready, .cleaning: results
+        }
+        if cleaner.state == .ready || cleaner.state == .cleaning { trashCard }
     }
 
     private static func bytes(_ count: Int64) -> String {
