@@ -255,3 +255,210 @@ enum VolumeProbe {
     }
 }
 #endif
+
+#if DEBUG
+/// Every sample a tap delivers (first channel) with the host time of each buffer, for the glitch probe.
+@available(macOS 14.2, *)
+final class TapRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var samples: [Float] = []
+    /// (index of the buffer's first sample, host time in seconds)
+    private(set) var marks: [(Int, Double)] = []
+    private var tap = AudioObjectID(kAudioObjectUnknown)
+    private var device = AudioObjectID(kAudioObjectUnknown)
+    private var proc: AudioDeviceIOProcID?
+    private(set) var status: OSStatus = noErr
+    private(set) var sampleRate: Double = 48_000
+
+    init(_ description: CATapDescription) {
+        samples.reserveCapacity(48_000 * 12)
+        description.uuid = UUID()
+        description.isPrivate = true
+        status = AudioHardwareCreateProcessTap(description, &tap)
+        guard status == noErr else { return }
+        var format = AudioStreamBasicDescription()
+        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        var address = AudioObjectPropertyAddress(mSelector: kAudioTapPropertyFormat, mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        AudioObjectGetPropertyData(tap, &address, 0, nil, &size, &format)
+        if format.mSampleRate > 0 { sampleRate = format.mSampleRate }
+        let channels = max(Int(format.mChannelsPerFrame), 1)
+        let interleaved = format.mFormatFlags & kAudioFormatFlagIsNonInterleaved == 0
+        let composition: [String: Any] = [
+            kAudioAggregateDeviceNameKey: "Tutto probe recorder",
+            kAudioAggregateDeviceUIDKey: UUID().uuidString,
+            kAudioAggregateDeviceIsPrivateKey: true,
+            kAudioAggregateDeviceTapListKey: [[kAudioSubTapUIDKey: description.uuid.uuidString]],
+        ]
+        status = AudioHardwareCreateAggregateDevice(composition as CFDictionary, &device)
+        guard status == noErr else { return }
+        var timebase = mach_timebase_info_data_t()
+        mach_timebase_info(&timebase)
+        let ticks = Double(timebase.numer) / Double(timebase.denom) / 1e9
+        status = AudioDeviceCreateIOProcIDWithBlock(&proc, device, nil) { [self] _, input, inputTime, _, _ in
+            guard let buffer = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input)).first,
+                  let data = buffer.mData?.assumingMemoryBound(to: Float.self) else { return }
+            let step = interleaved ? channels : 1
+            let count = Int(buffer.mDataByteSize) / 4 / step
+            let time = Double(inputTime.pointee.mHostTime) * ticks
+            lock.lock()
+            marks.append((samples.count, time))
+            for i in 0..<count { samples.append(data[i * step]) }
+            lock.unlock()
+        }
+        guard status == noErr else { return }
+        status = AudioDeviceStart(device, proc)
+    }
+
+    func snapshot() -> (samples: [Float], marks: [(Int, Double)]) {
+        lock.lock(); defer { lock.unlock() }
+        return (samples, marks)
+    }
+
+    func stop() {
+        if let proc { AudioDeviceStop(device, proc); AudioDeviceDestroyIOProcID(device, proc) }
+        proc = nil
+        if device != kAudioObjectUnknown { AudioHardwareDestroyAggregateDevice(device) }
+        if tap != kAudioObjectUnknown { AudioHardwareDestroyProcessTap(tap) }
+        device = AudioObjectID(kAudioObjectUnknown)
+        tap = AudioObjectID(kAudioObjectUnknown)
+    }
+
+    /// Host time of the first sample at or after `from` whose level passes `threshold`.
+    func firstSound(after from: Double, threshold: Float = 0.003) -> Double? {
+        let (samples, marks) = snapshot()
+        for (k, mark) in marks.enumerated() where mark.1 >= from {
+            let end = k + 1 < marks.count ? marks[k + 1].0 : samples.count
+            if let i = samples[mark.0..<end].firstIndex(where: { abs($0) > threshold }) {
+                return mark.1 + Double(i - mark.0) / sampleRate
+            }
+        }
+        return nil
+    }
+}
+
+/// `Tutto --tone-player`: three one-second 1 kHz bursts with the output stopped in between
+/// (how a browser pausing and playing behaves), for the glitch probe.
+enum TonePlayer {
+    static func runIfRequested() -> Bool {
+        guard CommandLine.arguments.contains("--tone-player") else { return false }
+        let engine = AVAudioEngine()
+        let rate = engine.outputNode.outputFormat(forBus: 0).sampleRate
+        var phase = 0.0
+        let source = AVAudioSourceNode { _, _, frames, list -> OSStatus in
+            let buffers = UnsafeMutableAudioBufferListPointer(list)
+            for frame in 0..<Int(frames) {
+                let value = Float(sin(phase) * 0.1)
+                phase += 2 * .pi * 1000 / rate
+                for buffer in buffers { buffer.mData?.assumingMemoryBound(to: Float.self)[frame] = value }
+            }
+            return noErr
+        }
+        engine.attach(source)
+        engine.connect(source, to: engine.mainMixerNode, format: AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2))
+        for burst in 0..<3 {
+            try? engine.start()
+            Thread.sleep(forTimeInterval: 1.0)
+            engine.stop()
+            if burst < 2 { Thread.sleep(forTimeInterval: 1.5) }
+        }
+        return true
+    }
+}
+
+/// `Tutto --volume-glitch-probe DIR`: a player with three bursts and stops in between, its sound
+/// through a VolumeRig at 50 %, recorded from the player and from Tutto's own output. Reports
+/// dropouts, clicks and level wobble while playing, and how long each new burst played before
+/// Tutto's output had it (with "muted while read", the app is heard unprocessed for that long).
+/// Run once per mute behavior. DIR/glitch.txt.
+@available(macOS 14.2, *)
+enum VolumeGlitchProbe {
+    static func runIfRequested() -> Bool {
+        let args = CommandLine.arguments
+        guard let flag = args.firstIndex(of: "--volume-glitch-probe"), args.count > flag + 1 else { return false }
+        let dir = URL(fileURLWithPath: args[flag + 1], isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var lines: [String] = []
+        func say(_ line: String) {
+            lines.append(line)
+            try? lines.joined(separator: "\n").write(to: dir.appendingPathComponent("glitch.txt"), atomically: true, encoding: .utf8)
+        }
+        func wait(_ seconds: Double) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
+        func now() -> Double {
+            var timebase = mach_timebase_info_data_t(); mach_timebase_info(&timebase)
+            return Double(mach_absolute_time()) * Double(timebase.numer) / Double(timebase.denom) / 1e9
+        }
+        for (name, behavior) in [("muted while read (current)", CATapMuteBehavior.mutedWhenTapped), ("always muted", CATapMuteBehavior.muted)] {
+            let player = Process()
+            player.executableURL = URL(fileURLWithPath: Bundle.main.executablePath!)
+            player.arguments = ["--tone-player"]
+            do { try player.run() } catch { say("player: \(error)"); return true }
+            let started = now()
+            var source: AudioObjectID?
+            for _ in 0..<40 where source == nil {
+                wait(0.05)
+                source = AudioProcessList.read().first(where: { $0.pid == player.processIdentifier })?.objectID
+            }
+            guard let source else { say("\(name): no audio process for the player"); player.terminate(); continue }
+            let direct = TapRecorder(CATapDescription(stereoMixdownOfProcesses: [source]))
+            let rig: VolumeRig
+            do { rig = try VolumeRig(processes: [source], gain: VolumeCurve.gain(percent: 50), muteBehavior: behavior) }
+            catch { say("\(name): rig \(error)"); player.terminate(); continue }
+            wait(0.3)
+            guard let own = AudioProcessList.read().first(where: { $0.pid == getpid() })?.objectID else {
+                say("\(name): no audio process for Tutto"); rig.stop(); player.terminate(); continue
+            }
+            let out = TapRecorder(CATapDescription(stereoMixdownOfProcesses: [own]))
+            // Bursts at about 0–1, 2.5–3.5 and 5–6 s after the player started; re-arm half a
+            // second after each ends, as the Sound module does once the app goes quiet.
+            for rearmAt in [1.6, 4.1] {
+                let delay = started + rearmAt - now()
+                if delay > 0 { wait(delay) }
+                rig.rearm()
+            }
+            let end = started + 6.6 - now()
+            if end > 0 { wait(end) }
+            player.waitUntilExit()
+            rig.stop()
+            // Starts of bursts 2 and 3 (after a re-arm): when the player had sound, when Tutto's output did.
+            for (k, from) in [(2, started + 2.0), (3, started + 4.5)] {
+                if let a = direct.firstSound(after: from), let b = out.firstSound(after: from) {
+                    say(String(format: "%@ · burst %d: Tutto's output began %.0f ms after the app's", name, k, (b - a) * 1000))
+                } else {
+                    say("\(name) · burst \(k): \(direct.firstSound(after: from) == nil ? "no sound from the app" : "no sound from Tutto")")
+                }
+            }
+            // While playing: Tutto's output, 10 ms blocks, from 0.2 s into burst 3 for 0.6 s.
+            let (samples, marks) = out.snapshot()
+            if let start = out.firstSound(after: started + 4.5),
+               let mark = marks.last(where: { $0.1 <= start + 0.2 }) {
+                let rate = out.sampleRate
+                let from = mark.0 + Int((start + 0.2 - mark.1) * rate)
+                let to = min(from + Int(0.6 * rate), samples.count)
+                if from >= 0, to > from {
+                    let chunk = Array(samples[from..<to])
+                    let block = Int(rate / 100)
+                    var levels: [Float] = []
+                    var index = 0
+                    while index + block <= chunk.count {
+                        let slice = chunk[index..<(index + block)]
+                        levels.append(sqrt(slice.reduce(0) { $0 + $1 * $1 } / Float(block)))
+                        index += block
+                    }
+                    let peak = chunk.map(abs).max() ?? 0
+                    let jumps = zip(chunk, chunk.dropFirst()).filter { abs($1 - $0) > peak * 0.25 }.count
+                    let silentBlocks = levels.filter { $0 < peak * 0.05 }.count
+                    let mean = levels.reduce(0, +) / Float(max(levels.count, 1))
+                    let spread = (levels.max() ?? 0) / max(levels.min() ?? 1, 1e-6)
+                    say(String(format: "%@ · steady: level %.1f dBFS (expect about %.1f), dropouts %d of %d blocks, clicks %d, level spread %.2f×",
+                               name, 20 * log10(Double(max(mean, 1e-9))), 20 * log10(0.1 / sqrt(2) * 0.25), silentBlocks, levels.count, jumps, spread))
+                }
+            }
+            direct.stop()
+            out.stop()
+            wait(0.5)
+        }
+        return true
+    }
+}
+#endif

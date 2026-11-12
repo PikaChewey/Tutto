@@ -1,4 +1,4 @@
-# DESIGN — Tutto (menu bar panel and identity, v4)
+# DESIGN — Tutto (menu bar panel and identity, v5)
 
 Binding for the menu bar panel, the menu bar glyph and the app icon. Sources:
 - X posts and Hacker News threads, read 2026-10-26 and 2026-10-27 (27 + 18), plus five on dark and monochrome icons read 2026-11-02. Dates and engagement were confirmed through api.fxtwitter.com and HN's Algolia API, and the replies were read (for the 2026-11-02 posts, the posts and their pictures only).
@@ -149,6 +149,28 @@ Kept from the house style: posts on one object and one number, a quiet bar, glas
 
 Captions are no longer than 5 words.
 
+## 5b. Version 5: fits the screen (2026-11-12)
+
+Bryan, on v4 with every tool on: "the menu bar GUI is getting very long and cluttered … over extending the verticality of my macbook … the GUI could be more organized", and "dont make the GUI look exactly like vorssaint". His screenshot measured 938 pt on a 945 pt screen, and it "isnt even the longest it can be".
+
+Read 2026-11-12, confirmed through api.fxtwitter.com and HN's Algolia API:
+
+| # | Source | Date | Likes / views | Taken |
+|---|---|---|---|---|
+| 25 | [Apple Silicon monitor](https://x.com/GitHub_Daily/status/2069601434077921763) | 2026-06-24 | 157 / 13K | Sensor rows that expand and a process card that scrolls inside itself: depth is hidden until asked for. |
+| 26 | [macOS 27 menu bar overflow](https://x.com/aaronp613/status/2064124339767636148) | 2026-06-08 | 1,434 / 93K | The system itself collapses what doesn't fit behind a "more" control. |
+| 27 | [Native, single-purpose menu bar app](https://x.com/t11s__/status/2115146796846723178) | 2026-10-27 | 111 / 30K | ~20 MB and 0 % at rest is the pitch; scope discipline reads as quality. |
+| 28 | [Show HN: a menu bar app, crowding](https://news.ycombinator.com/item?id=49952148) | 2026-10-04 | 89 pts / 28 comments | "The last thing most of us need is even more clutter in that space." |
+| 29 | [The competing all-in-one](https://x.com/tom_doerr/status/2095705215496253930) | 2026-09-04 | 125 / 12K | Its panel (README images): a capsule of eight icon-only tabs with a blue active square, a logo on top, letter-spaced caps section labels, one big charcoal card, blue toggle cards, and a Settings / Quit button pair. Tutto must not look like this. |
+| 30 | [Its mixer tab](https://x.com/mattdagley/status/2105978036310945988) | 2026-10-02 | 3 / 392 (image only) | A full mixer with pill sliders and per-app device pop-ups, ~700 pt tall. |
+
+Rules (they extend principles 1–7):
+
+8. **The panel never outgrows the screen** (25, 26). The header and footer stay put; the cards between them scroll inside the panel once they'd pass the screen's height (visible frame − 24 pt). Default layout with everything on: about 700 pt, not 940.
+9. **Depth on demand, not on show** (25, 26, 9). The busiest apps are one row of chips (icon and CPU %; the name on hover), not three rows. Levels replace the app strip instead of adding a mixer under it, and list only the apps that matter now (playing, not at 100 %, or muted; five at most); "All apps" opens the Sound page.
+10. **The tools are a bar, keys on hover** (12, 2, 27). One row of icon buttons; pointing at one shows a small floating label with its name and keys (no layout shift); a click still lights the keys as if pressed.
+11. **No tabs** (29). Tabs hide what you came for behind a guess, and an icon-only tab capsule is the competitor's signature. Tutto stays one calm scroll of cards in its own monochrome ink-and-paper look.
+
 ## 6. Anti-goals
 
 - **Bryan's:**
@@ -165,6 +187,8 @@ Captions are no longer than 5 words.
   - orange next to green;
   - anything costing battery while idle;
   - memory that grows over hours.
+  - looking like the competing all-in-one (29): no icon-only tab capsule, no logo above the cards, no letter-spaced caps section labels, no Settings / Quit button pair, no blue toggle cards, no charcoal shell with blue, green and cyan charts;
+  - a panel taller than the screen (v4, 938 pt).
 - **Commenters:**
   - "not native, overdesigned" (13);
   - slow or always-running motion (2, 13);

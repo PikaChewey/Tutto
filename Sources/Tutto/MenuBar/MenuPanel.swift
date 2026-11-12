@@ -56,9 +56,16 @@ struct MenuPanel: View {
             if let recorder = model.screenshots?.recorder, let since = recorder.recordingSince {
                 RecordingBanner(recorder: recorder, since: since)
             }
-            // The cards in the order and sizes set on the Customize page.
-            WidgetGrid(model: model, editing: editing)
-            Notices(model: model)
+            // The cards in the order and sizes set on the Customize page. They grow with their
+            // content up to the screen's height, then scroll between the header and the footer.
+            if preview {
+                cards
+            } else {
+                ScrollView(.vertical) { cards }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .frame(maxHeight: Self.cardsHeightLimit)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             PanelFooter(model: model)
         }
         .padding(.horizontal, PanelGrid.outer)
@@ -70,6 +77,19 @@ struct MenuPanel: View {
         .watching(model.system, model.system?.panelFeeds ?? [])
         .background { if !preview { PanelWindowReader() } }
         .tint(Color.themeAccent)
+    }
+
+    private var cards: some View {
+        VStack(alignment: .leading, spacing: PanelGrid.gap) {
+            WidgetGrid(model: model, editing: editing)
+            Notices(model: model)
+        }
+    }
+
+    /// The screen's usable height, less the header, the footer and a margin.
+    @MainActor static var cardsHeightLimit: CGFloat {
+        let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 900
+        return max(visible - 24 - 104, 320)
     }
 }
 
@@ -418,7 +438,7 @@ private struct BatteryCard: View {
     @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Button {
                 showInApp(.battery)
             } label: {
@@ -498,59 +518,59 @@ private struct BatteryCard: View {
 }
 
 /// The three apps using the processor most right now, helpers counted as their app (read
-/// from the kernel every 2 s while the panel is open). Always three rows tall, so the panel
-/// doesn't jump as apps come and go.
+/// from the kernel every 2 s while the panel is open): one row of chips, an icon and its share
+/// each (the name on hover). Three equal slots, so the row doesn't jump as apps come and go.
 private struct BusyAppsList: View {
     var apps: [AppActivity]
     /// False until the first reading since the panel opened.
     var measured: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Caption("Busiest apps")
-                Spacer()
-                Caption("CPU")
-            }
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: 6) {
+            Text("Busiest")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.ink3)
+                .fixedSize()
+            if apps.isEmpty {
+                Text(measured ? "All quiet" : "Measuring…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.ink3)
+                Spacer(minLength: 0)
+            } else {
                 ForEach(0..<3, id: \.self) { index in
                     if index < apps.count {
-                        BusyAppRow(app: apps[index])
-                    } else if index == 0 {
-                        Text(measured ? "All quiet" : "Measuring…")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Color.ink3)
-                            .frame(height: 18)
+                        BusyAppChip(app: apps[index])
                     } else {
-                        Color.clear.frame(height: 18)
+                        Color.clear.frame(maxWidth: .infinity).frame(height: 22)
                     }
                 }
             }
         }
+        .frame(height: 22)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Busiest apps")
     }
 }
 
-private struct BusyAppRow: View {
+private struct BusyAppChip: View {
     var app: AppActivity
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 5) {
             AppIcon(pid: app.pid)
-                .frame(width: 15, height: 15)
-            Text(app.name)
-                .font(.system(size: 11.5))
-                .foregroundStyle(Color.ink)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 6)
+                .frame(width: 14, height: 14)
             Text(app.cpu >= 10 ? "\(Int(app.cpu.rounded())) %" : String(format: "%.1f %%", app.cpu))
                 .font(.geist(11, weight: .medium))
                 .foregroundStyle(Color.ink2)
+                .lineLimit(1)
         }
-        .frame(height: 18)
-        .accessibilityElement(children: .combine)
+        .padding(.horizontal, 7)
+        .frame(maxWidth: .infinity, minHeight: 22)
+        .background(Capsule().fill(Color.ink.opacity(0.06)))
+        .help("\(app.name) · \(String(format: "%.1f", app.cpu)) % CPU")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(app.name)
+        .accessibilityValue("\(Int(app.cpu.rounded())) percent CPU")
     }
 }
 
@@ -1427,6 +1447,9 @@ struct SoundCard: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Color.ink3)
                     .frame(height: 34)
+            } else if showLevels {
+                // Levels take the strip's place (a mixer under the strip is what made the panel long).
+                levels.transition(.opacity.combined(with: .offset(y: -4)))
             } else {
                 HStack(spacing: 0) {
                     ForEach(visible) { app in
@@ -1442,7 +1465,6 @@ struct SoundCard: View {
                 // Each button is 2 pt wider than its icon, and an app icon's artwork sits about 3 pt
                 // inside its square at this size: pull the row left so the artwork lines up with the text.
                 .padding(.leading, -5)
-                if showLevels { levels.transition(.opacity.combined(with: .offset(y: -4))) }
             }
             if let problem = sound.problem {
                 HStack(spacing: 8) {
@@ -1466,25 +1488,49 @@ struct SoundCard: View {
         .onChange(of: sound.apps.map(\.bundleID)) { fixOrder(reset: false) }
     }
 
-    /// A slider per app (the strip's order: muted, playing, then the rest), six at most here.
+    /// The apps that matter now (muted, playing, or not at 100 %; five at most, else the first
+    /// three), each with its level; a click on an icon mutes it, as on the strip. The rest are on
+    /// the Sound page.
+    private var levelApps: [SoundApp] {
+        let relevant = ordered.filter {
+            sound.isMuted($0.bundleID) || sound.usingAudio.contains($0.bundleID) || sound.volume(of: $0.bundleID) != 100
+        }
+        return relevant.isEmpty ? Array(ordered.prefix(3)) : Array(relevant.prefix(5))
+    }
+
     private var levels: some View {
-        VStack(spacing: 4) {
-            ForEach(ordered.prefix(6)) { app in
+        VStack(spacing: 2) {
+            ForEach(levelApps) { app in
                 let muted = sound.isMuted(app.bundleID)
                 let level = sound.volume(of: app.bundleID)
                 HStack(spacing: 8) {
-                    Image(nsImage: app.icon)
-                        .resizable()
-                        .interpolation(.high)
-                        .frame(width: 18, height: 18)
-                        .saturation(muted ? 0 : 1)
-                        .opacity(muted ? 0.45 : 1)
+                    Button {
+                        withAnimation(Motion.micro) { sound.toggle(app) }
+                    } label: {
+                        Image(nsImage: app.icon)
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: 18, height: 18)
+                            .saturation(muted ? 0 : 1)
+                            .opacity(muted ? 0.45 : 1)
+                            .overlay(alignment: .bottomTrailing) {
+                                if muted {
+                                    Image(systemName: "speaker.slash.fill")
+                                        .font(.system(size: 7, weight: .bold))
+                                        .foregroundStyle(Color.ink)
+                                        .offset(x: 3, y: 2)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(muted ? "Unmute \(app.name)" : "Mute \(app.name)")
                     Text(app.name)
                         .font(.system(size: 12))
                         .foregroundStyle(Color.ink2)
                         .lineLimit(1)
                         .frame(width: 70, alignment: .leading)
-                    VolumeSlider(value: level, width: 128) { sound.setVolume(app.bundleID, $0) }
+                    VolumeSlider(value: level, width: 126) { sound.setVolume(app.bundleID, $0) }
                         .disabled(muted)
                         .opacity(muted ? 0.4 : 1)
                     Text(muted ? "Muted" : VolumeCurve.label(level))
@@ -1494,15 +1540,16 @@ struct SoundCard: View {
                 }
                 .frame(height: 24)
             }
-            if ordered.count > 6 {
+            if ordered.count > levelApps.count {
                 HStack {
                     Spacer()
-                    QuietLink(title: "All apps", size: 11) { showInApp(.sound) }
+                    QuietLink(title: "All \(ordered.count) apps", size: 11) { showInApp(.sound) }
                 }
+                .frame(height: 16)
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.vertical, 5)
         .background(RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous).fill(Color.ink.opacity(0.045)))
     }
 
@@ -1833,111 +1880,87 @@ enum ShortcutRows {
 
 private struct ToolsCard: View {
     var model: AppModel
-    /// A tool is on its way (keys lighting, panel closing): the row ignores further clicks, so a
+    /// A tool is on its way (keys lighting, panel closing): the bar ignores further clicks, so a
     /// quick double click can't run it twice or bring the panel back.
     @State private var launching = false
+    /// The tool under the pointer (or being pressed): its name and keys float above the bar.
+    @State private var hovered: String?
+    @State private var lit = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let inset: CGFloat = 6
     private static let gap: CGFloat = 2
+    /// Icons in a row before the bar wraps.
+    private static let perRow = 10
 
     var body: some View {
-        // Six to a row at most; each tile an equal share of its row, so a long shortcut can't widen it.
-        let lines = PanelLayout.rows(ShortcutRows.visible(model), perRow: PanelLayout.toolsPerRow)
-        let count = CGFloat(min(max(lines.first?.count ?? 1, 1), PanelLayout.toolsPerRow))
+        let rows = ShortcutRows.visible(model)
+        let lines = PanelLayout.rows(rows, perRow: Self.perRow)
+        let count = CGFloat(min(max(lines.first?.count ?? 1, 1), Self.perRow))
         let tile = (PanelGrid.width - 2 * PanelGrid.outer - 2 * Self.inset - Self.gap * (count - 1)) / count
         VStack(alignment: .leading, spacing: Self.gap) {
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 HStack(spacing: Self.gap) {
                     ForEach(line) { row in
-                        ToolTile(row: row, shortcut: model.shortcuts.shortcut(for: row.action), launching: $launching) {
-                            afterPanelCloses { model.perform(row.action) }
-                        }
-                        .frame(width: tile)
+                        toolButton(row)
+                            .frame(width: tile)
                     }
                 }
             }
         }
         .padding(.horizontal, Self.inset)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
         .background(CardSurface(radius: 12))
-    }
-}
-
-/// A tool: its symbol, a short name and its keys. Clicking it presses the keys you'd press:
-/// they light up one after another, then the panel closes and the tool runs.
-private struct ToolTile: View {
-    var row: ShortcutRows.Row
-    var shortcut: KeyShortcut?
-    @Binding var launching: Bool
-    var action: () -> Void
-    @State private var hovering = false
-    @State private var lit = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        Button(action: press) {
-            VStack(spacing: 4) {
-                Image(systemName: row.symbol)
-                    .font(.system(size: 14.5))
-                    .foregroundStyle(Color.ink)
-                    .frame(height: 18)
-                Text(row.short)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Color.ink2)
-                    .lineLimit(1)
-                if let shortcut {
-                    keys(shortcut)
-                } else {
-                    Text("—").font(.system(size: 9.5)).foregroundStyle(Color.ink4).frame(height: 14)
-                }
+        .overlay(alignment: .topLeading) {
+            if let id = hovered, let index = rows.firstIndex(where: { $0.id == id }) {
+                let row = rows[index]
+                let column = CGFloat(index % Self.perRow), line = CGFloat(index / Self.perRow)
+                ToolLabel(row: row, shortcut: model.shortcuts.shortcut(for: row.action), lit: lit)
+                    .fixedSize()
+                    .alignmentGuide(.leading) { label in
+                        // Centered over its icon, kept inside the card.
+                        let center = Self.inset + column * (tile + Self.gap) + tile / 2
+                        let cardWidth = PanelGrid.width - 2 * PanelGrid.outer
+                        let x = min(max(center - label.width / 2, 2), cardWidth - label.width - 2)
+                        return -x
+                    }
+                    .offset(y: -30 + line * 32)
+                    .transition(.opacity.animation(reduceMotion ? nil : .easeOut(duration: 0.12)))
+                    .allowsHitTesting(false)
             }
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: Radius.of(8), style: .continuous).fill(hovering ? Color.ink.opacity(0.08) : .clear))
-            .contentShape(Rectangle())
+        }
+        .zIndex(1)
+    }
+
+    private func toolButton(_ row: ShortcutRows.Row) -> some View {
+        Button {
+            press(row)
+        } label: {
+            Image(systemName: row.symbol)
+                .font(.system(size: 14.5))
+                .foregroundStyle(Color.ink)
+                .frame(maxWidth: .infinity)
+                .frame(height: 30)
+                .background(RoundedRectangle(cornerRadius: Radius.of(8), style: .continuous)
+                    .fill(hovered == row.id ? Color.ink.opacity(0.08) : .clear))
+                .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
-        .onHover { hovering = $0 }
-        .help(shortcut.map { "\(row.title) (\($0.displayString))" } ?? row.title)
+        .onHover { inside in
+            guard !launching else { return }
+            if inside { hovered = row.id } else if hovered == row.id { hovered = nil }
+        }
         .accessibilityLabel(row.title)
-        .accessibilityValue(shortcut?.spokenDescription ?? "")
-    }
-
-    /// Keycaps when they fit the tile; a longer custom shortcut falls back to one line of text.
-    private func keys(_ shortcut: KeyShortcut) -> some View {
-        ViewThatFits(in: .horizontal) {
-            keycaps(shortcut.symbols)
-            Text(shortcut.displayString)
-                .font(.system(size: 9, weight: .medium, design: .rounded))
-                .foregroundStyle(lit > 0 ? Color.themeAccent : Color.ink2)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .frame(height: 13)
-        }
-    }
-
-    /// Small keycaps; while pressed, each fills in turn with the accent.
-    private func keycaps(_ symbols: [String]) -> some View {
-        HStack(spacing: 1.5) {
-            ForEach(Array(symbols.enumerated()), id: \.offset) { index, symbol in
-                Text(symbol)
-                    .font(.system(size: 8.5, weight: .medium, design: .rounded))
-                    .foregroundStyle(lit > index ? Color.white : Color.ink2)
-                    .frame(minWidth: 11, minHeight: 13)
-                    .padding(.horizontal, symbol.count > 1 ? 2 : 0)
-                    .background(RoundedRectangle(cornerRadius: Radius.of(3), style: .continuous).fill(lit > index ? Color.themeAccent : Color.wash))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.of(3), style: .continuous).strokeBorder(lit > index ? Color.clear : Color.hairline))
-            }
-        }
-        .fixedSize()
+        .accessibilityValue(model.shortcuts.shortcut(for: row.action)?.spokenDescription ?? "")
     }
 
     /// Keys light 30 ms apart (all at once under Reduce Motion), the tool runs 80 ms after the last,
-    /// and the keys go dark once the panel has faded. One launch at a time for the whole row.
-    private func press() {
+    /// and the keys go dark once the panel has faded. One launch at a time for the whole bar.
+    private func press(_ row: ShortcutRows.Row) {
         guard !launching else { return }
         launching = true
-        let count = shortcut?.symbols.count ?? 0
+        hovered = row.id
+        let count = model.shortcuts.shortcut(for: row.action)?.symbols.count ?? 0
         let step = reduceMotion ? 0 : 0.03
         for index in 0..<count {
             DispatchQueue.main.asyncAfter(deadline: .now() + step * Double(index)) {
@@ -1945,12 +1968,49 @@ private struct ToolTile: View {
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + step * Double(count) + 0.08) {
-            action()
+            afterPanelCloses { model.perform(row.action) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 lit = 0
                 launching = false
+                hovered = nil
             }
         }
+    }
+}
+
+/// Over the tools bar: the hovered tool's name and its keys as small keycaps (lit in turn when pressed).
+private struct ToolLabel: View {
+    var row: ShortcutRows.Row
+    var shortcut: KeyShortcut?
+    var lit: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(row.title)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(Color.ink)
+                .lineLimit(1)
+            if let shortcut {
+                HStack(spacing: 1.5) {
+                    ForEach(Array(shortcut.symbols.enumerated()), id: \.offset) { index, symbol in
+                        Text(symbol)
+                            .font(.system(size: 9, weight: .medium, design: .rounded))
+                            .foregroundStyle(lit > index ? Color.white : Color.ink2)
+                            .frame(minWidth: 12, minHeight: 14)
+                            .padding(.horizontal, symbol.count > 1 ? 2 : 0)
+                            .background(RoundedRectangle(cornerRadius: Radius.of(3), style: .continuous)
+                                .fill(lit > index ? Color.themeAccent : Color.wash))
+                            .overlay(RoundedRectangle(cornerRadius: Radius.of(3), style: .continuous)
+                                .strokeBorder(lit > index ? Color.clear : Color.hairline))
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 24)
+        .background(Capsule().fill(Color.paper))
+        .overlay(Capsule().strokeBorder(Color.hairline))
+        .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
     }
 }
 

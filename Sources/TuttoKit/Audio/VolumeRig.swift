@@ -46,7 +46,7 @@ public final class VolumeRig {
     private let left: UnsafeMutablePointer<Float>
     private let right: UnsafeMutablePointer<Float>
 
-    public init(processes: [AudioObjectID], gain: Float) throws {
+    public init(processes: [AudioObjectID], gain: Float, muteBehavior: CATapMuteBehavior = .mutedWhenTapped) throws {
         self.processes = processes
         state = .allocate(capacity: 1)
         left = .allocate(capacity: Self.maxFrames)
@@ -59,7 +59,7 @@ public final class VolumeRig {
         description = CATapDescription(stereoMixdownOfProcesses: processes)
         description.uuid = UUID()
         description.name = "Tutto volume"
-        description.muteBehavior = .mutedWhenTapped
+        description.muteBehavior = muteBehavior
         description.isPrivate = true
 
         var status = AudioHardwareCreateProcessTap(description, &tap)
