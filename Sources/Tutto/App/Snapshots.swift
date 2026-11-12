@@ -75,6 +75,10 @@ enum Snapshots {
             }
             if only.contains("clicker-on") { model.clicker?.previewClicking(since: 18) }
         }
+        // `windows-pinned`: the Windows page's Keep on top list with two windows in it.
+        if only.contains("windows-pinned") {
+            model.windows?.pins.previewPins([("TextEdit", "Shopping list.txt"), ("Terminal", "~ — zsh — 120×40")])
+        }
         if only.contains("awake-nohelper") { model.awake?.previewSession(remaining: 3600, lidSafe: false) }
         // `charge-held` / `charge-nohelper`: the charge limit on (Battery page and panel), nothing sent to the helper.
         if only.contains("charge-held") { ChargeLimitController.shared.previewHolding() }
@@ -184,6 +188,14 @@ struct SnapshotExtras {
             let palette = WindowPaletteModel(module: windows)
             palette.appName = "Safari"
             palette.query = "half"
+            return AnyView(WindowPaletteView(model: palette, perform: { _ in }).frame(width: 560, height: 420))
+        })
+        // The palette with "top" typed: Keep on Top among the actions that start with "Top".
+        extras.append(SnapshotExtras(name: "window-palette-top", inDefaultSet: false) { model in
+            guard let windows = model.windows else { return AnyView(EmptyView()) }
+            let palette = WindowPaletteModel(module: windows)
+            palette.appName = "TextEdit"
+            palette.query = "top"
             return AnyView(WindowPaletteView(model: palette, perform: { _ in }).frame(width: 560, height: 420))
         })
         extras.append(SnapshotExtras(name: "word-counter") { model in

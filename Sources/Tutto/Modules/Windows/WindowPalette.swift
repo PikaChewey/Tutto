@@ -13,14 +13,22 @@ import Carbon.HIToolbox
 import SwiftUI
 import TuttoKit
 
+/// A row in the window palette: a window action, or keeping the window on top.
+enum WindowPaletteItem: Hashable {
+    case action(WindowAction)
+    case keepOnTop
+}
+
 @MainActor
 @Observable
 final class WindowPaletteModel {
     var query = "" { didSet { refresh() } }
     var selection = 0
-    private(set) var results: [WindowAction] = []
+    private(set) var results: [WindowPaletteItem] = []
     var appName: String?
     var hasWindow = true
+    /// The window is already kept on top (the row then lets it go).
+    var windowPinned = false
     let module: WindowModule
 
     init(module: WindowModule) {
@@ -29,7 +37,12 @@ final class WindowPaletteModel {
     }
 
     func refresh() {
-        results = module.rankedActions(for: query)
+        let actions = module.rankedActions(for: query)
+        results = actions.map { .action($0) }
+        let scores = actions.map { FuzzyMatcher.score(query, title: $0.title, aliases: $0.aliases) ?? 0 }
+        if let index = PinRules.paletteIndex(query: query, rankedActionScores: scores) {
+            results.insert(.keepOnTop, at: index)
+        }
         selection = 0
     }
 
@@ -38,7 +51,7 @@ final class WindowPaletteModel {
         selection = min(max(selection + delta, 0), results.count - 1)
     }
 
-    var selected: WindowAction? { results.indices.contains(selection) ? results[selection] : nil }
+    var selected: WindowPaletteItem? { results.indices.contains(selection) ? results[selection] : nil }
 
     private let openedAt = NSEvent.mouseLocation
 
@@ -73,13 +86,14 @@ final class WindowPaletteController: NSObject, NSWindowDelegate {
         let model = WindowPaletteModel(module: module)
         model.appName = app?.localizedName
         model.hasWindow = window != nil
+        model.windowPinned = window.map { module.pins.isPinned($0) } ?? false
         self.model = model
 
         let panel = FloatingPanel(size: NSSize(width: 560, height: 420))
         panel.delegate = self
         panel.onResignKey = { [weak self] in self?.close() }
-        panel.contentView = NSHostingView(rootView: WindowPaletteView(model: model, perform: { [weak self] action in
-            self?.perform(action)
+        panel.contentView = NSHostingView(rootView: WindowPaletteView(model: model, perform: { [weak self] item in
+            self?.perform(item)
         }))
         panel.positionOnActiveScreen()
         panel.makeKeyAndOrderFront(nil)
@@ -102,8 +116,8 @@ final class WindowPaletteController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) { close() }
 
-    private func perform(_ action: WindowAction?) {
-        guard let action, let module else { return }
+    private func perform(_ item: WindowPaletteItem?) {
+        guard let item, let module else { return }
         let window = self.window
         let app = self.app
         close()
@@ -111,7 +125,10 @@ final class WindowPaletteController: NSObject, NSWindowDelegate {
             if !AXIsProcessTrusted() { AppModel.shared.permissions.request(.accessibility) } else { NSSound.beep() }
             return
         }
-        module.perform(action, on: window, app: app)
+        switch item {
+        case .action(let action): module.perform(action, on: window, app: app)
+        case .keepOnTop: module.pins.toggle(window: window, app: app)
+        }
     }
 
     private func installKeys() {
@@ -130,7 +147,7 @@ final class WindowPaletteController: NSObject, NSWindowDelegate {
 
 struct WindowPaletteView: View {
     @Bindable var model: WindowPaletteModel
-    var perform: (WindowAction?) -> Void
+    var perform: (WindowPaletteItem?) -> Void
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -154,11 +171,19 @@ struct WindowPaletteView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 1) {
-                        ForEach(Array(model.results.enumerated()), id: \.element) { index, action in
-                            WindowActionRow(action: action, selected: index == model.selection,
-                                            shortcut: AppModel.shared.shortcuts.shortcut(for: .window(action)))
-                                .id(action)
-                                .onTapGesture { perform(action) }
+                        ForEach(Array(model.results.enumerated()), id: \.element) { index, item in
+                            Group {
+                                switch item {
+                                case .action(let action):
+                                    WindowActionRow(action: action, selected: index == model.selection,
+                                                    shortcut: AppModel.shared.shortcuts.shortcut(for: .window(action)))
+                                case .keepOnTop:
+                                    KeepOnTopRow(pinned: model.windowPinned, selected: index == model.selection,
+                                                 shortcut: AppModel.shared.shortcuts.shortcut(for: .pinWindow))
+                                }
+                            }
+                                .id(item)
+                                .onTapGesture { perform(item) }
                                 .onContinuousHover { phase in
                                     // Only a pointer that moved selects: one resting where the palette
                                     // opens must not override what you type.
@@ -222,6 +247,38 @@ private struct WindowActionRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(action.title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The palette's "Keep on Top" row: a pin where the others have a screen.
+private struct KeepOnTopRow: View {
+    var pinned: Bool
+    var selected: Bool
+    var shortcut: KeyShortcut?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: pinned ? "pin.slash" : "pin")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(selected ? Color.paper : Color.ink)
+                .frame(width: 22, height: 14)
+            Text(PinRules.paletteTitle(pinned: pinned))
+                .font(.system(size: 13))
+                .foregroundStyle(selected ? Color.paper : Color.ink)
+            Spacer()
+            if let shortcut {
+                Text(shortcut.displayString)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(selected ? Color.paper.opacity(0.75) : Color.ink3)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 36)
+        .background(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(selected ? Color.ink : .clear))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(PinRules.paletteTitle(pinned: pinned))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -308,6 +365,7 @@ private struct WindowSettings: View {
                     InkSegmented(selection: $windows.gap, options: [(0, "0"), (4, "4"), (8, "8"), (12, "12")])
                 }
             }
+            KeepOnTopGroup(pins: windows.pins, model: model)
             InkGroup("Actions", trailing: AnyView(Caption("optional shortcuts"))) {
                 ForEach(WindowAction.allCases) { action in
                     HStack(spacing: 12) {
@@ -319,6 +377,39 @@ private struct WindowSettings: View {
                     .frame(minHeight: 34)
                     .overlay(alignment: .bottom) { if action != WindowAction.allCases.last { Hairline().opacity(0.6) } }
                 }
+            }
+        }
+    }
+}
+
+/// Keep on top: its keys, and the windows on top now with a way to let each go.
+private struct KeepOnTopGroup: View {
+    var pins: WindowPins
+    @Bindable var model: AppModel
+
+    var body: some View {
+        InkGroup("Keep on top") {
+            LabeledRow("Keep the front window on top",
+                       detail: "A live copy floats above other windows. Click it to use the window; the keys again stop it. Up to three.") {
+                ShortcutRecorder(action: .pinWindow, model: model)
+            }
+            ForEach(pins.pinned) { pin in
+                Hairline().opacity(0.6)
+                HStack(spacing: 10) {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.ink3)
+                        .frame(width: 16)
+                    Text(pin.label)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Color.ink)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 12)
+                    Button("Unpin") { pins.unpin(pin.id) }
+                        .buttonStyle(OutlineButtonStyle(compact: true))
+                }
+                .frame(minHeight: 34)
             }
         }
     }
