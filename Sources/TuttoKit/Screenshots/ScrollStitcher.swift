@@ -138,16 +138,25 @@ public enum ScrollStitcher {
         guard offset > 0, height > 0 else { return (0, 0) }
         let limit = height / 3
         var top = 0
-        while top < limit, difference(previous[top], next[top]) <= sameRow,
+        while top < limit, bandDifference(previous[top], next[top]) <= sameRow,
               // A row the scroll explains equally well (a blank line) doesn't make a header longer.
-              top + offset >= height || difference(previous[top + offset], next[top]) > sameRow {
+              top + offset >= height || bandDifference(previous[top + offset], next[top]) > sameRow {
             top += 1
         }
         var bottom = 0
-        while bottom < limit, difference(previous[height - 1 - bottom], next[height - 1 - bottom]) <= sameRow {
+        while bottom < limit, bandDifference(previous[height - 1 - bottom], next[height - 1 - bottom]) <= sameRow {
             bottom += 1
         }
         return (top, bottom)
+    }
+
+    /// The row difference without the right edge, where the scroll indicator shows while
+    /// scrolling: drawn over a header or footer, it would cut the band short.
+    static func bandDifference(_ a: [UInt8], _ b: [UInt8]) -> Double {
+        let n = min(a.count, b.count)
+        let kept = n - max(n / 32, 1)
+        guard kept > 0 else { return difference(a, b) }
+        return difference(Array(a.prefix(kept)), Array(b.prefix(kept)))
     }
 
     static func median(_ values: [Double]) -> Double {
@@ -183,13 +192,16 @@ public struct StitchPlan: Equatable, Sendable {
     }
 
     /// The bands found between the first two frames that moved (later frames can only narrow
-    /// them: a footer that seemed fixed once but moved later wasn't one).
-    public mutating func setBands(top: Int, bottom: Int) {
+    /// them: a footer that seemed fixed once but moved later wasn't one). `offset`: how far the
+    /// content moved between the two frames measured. A step shorter than the header (the last
+    /// one, at the end of a page) can't tell a plain header row from one the scroll moved into
+    /// place, so it doesn't shorten the header.
+    public mutating func setBands(top: Int, bottom: Int, offset: Int? = nil) {
         if steps.isEmpty {
             header = top
             footer = bottom
         } else {
-            header = min(header, top)
+            if offset.map({ $0 >= header }) ?? true { header = min(header, top) }
             footer = min(footer, bottom)
         }
     }
@@ -207,6 +219,76 @@ public struct StitchPlan: Equatable, Sendable {
 
     /// The finished picture's height.
     public var height: Int { frameHeight + steps.reduce(0) { $0 + $1.offset } }
+
+    /// The rows to copy, in order, reading each step's new rows from whichever of two frames
+    /// keeps them clear of the scroll indicator (which macOS shows while anything scrolls): the
+    /// frame that brought them, low in its view, or the next frame, where they've moved up. The
+    /// indicator travels down the side as the content scrolls, so it's never in both places; this
+    /// predicts where it is from how far along the content each frame was, the way a scroller
+    /// places its knob. Needs steps of at most half the view, so every row is seen twice.
+    /// `minimumThumb`: the knob's least length in rows. `finalFrame`: the last view captured again
+    /// once the indicator had faded; every row it shows (the whole last screen and the footer)
+    /// comes from it.
+    public func sources(minimumThumb: Int = 40, finalFrame: Int? = nil) -> [Slice] {
+        let end = frameHeight - footer
+        var result = [Slice(frame: 0, rows: 0..<end)]
+        let scrolledInAll = height - frameHeight
+        let range = max(scrolledInAll, 1)
+        let thumb = min(max(frameHeight * frameHeight / max(height, 1), minimumThumb), frameHeight)
+        // The knob's rows in a view scrolled this far, on a track the height of the view.
+        func knob(scrolled: Int) -> Range<Int> {
+            let top = Int((Double(frameHeight - thumb) * Double(min(max(scrolled, 0), range)) / Double(range)).rounded())
+            return top..<(top + thumb)
+        }
+        func distance(_ row: Int, _ knob: Range<Int>) -> Int {
+            row < knob.lowerBound ? knob.lowerBound - row : row >= knob.upperBound ? row - knob.upperBound + 1 : 0
+        }
+        // Rows closer than this to where the knob should be are read from the next frame if it's
+        // further away there (a margin for knobs on a shorter track, under a toolbar).
+        let margin = frameHeight / 8
+        enum From { case this, next, last }
+        var scrolled = 0
+        for (index, step) in steps.enumerated() {
+            scrolled += step.offset
+            let next = index + 1 < steps.count ? steps[index + 1] : nil
+            let here = knob(scrolled: scrolled)
+            let there = next.map { knob(scrolled: scrolled + $0.offset) }
+            let lastShift = scrolledInAll - scrolled  // this frame's rows sit this much higher in the last view
+            func slice(_ from: From, _ rows: Range<Int>) -> Slice {
+                switch from {
+                case .this: Slice(frame: step.frame, rows: rows)
+                case .next: Slice(frame: next!.frame, rows: (rows.lowerBound - next!.offset)..<(rows.upperBound - next!.offset))
+                case .last: Slice(frame: finalFrame!, rows: (rows.lowerBound - lastShift)..<(rows.upperBound - lastShift))
+                }
+            }
+            let start = end - step.offset
+            var runStart = start
+            var runFrom = From.this
+            for row in start..<end {
+                let from: From
+                if finalFrame != nil, row - lastShift >= header {
+                    from = .last
+                } else if let next, let there, row - next.offset >= header, distance(row, here) < margin,
+                          distance(row - next.offset, there) > distance(row, here) {
+                    from = .next
+                } else {
+                    from = .this
+                }
+                if row == start {
+                    runFrom = from
+                } else if from != runFrom {
+                    result.append(slice(runFrom, runStart..<row))
+                    runStart = row
+                    runFrom = from
+                }
+            }
+            if end > runStart { result.append(slice(runFrom, runStart..<end)) }
+        }
+        if footer > 0 {
+            result.append(Slice(frame: finalFrame ?? steps.last?.frame ?? 0, rows: end..<frameHeight))
+        }
+        return result
+    }
 
     /// The rows to copy, in order, ending with the last frame's footer.
     public var slices: [Slice] {

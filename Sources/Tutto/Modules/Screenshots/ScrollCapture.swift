@@ -43,6 +43,9 @@ final class ScrollCapture {
     @ObservationIgnored private let hud = ScrollHUD()
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var keyMonitor: Any?
+    /// Return and Esc while capturing are Tutto's alone: the app being captured never gets
+    /// them (Return in a chat's message box would send what's typed there).
+    @ObservationIgnored private var keyTap: ShortcutTap?
     @ObservationIgnored private var finishRequested = false
     @ObservationIgnored private var cancelled = false
 
@@ -122,12 +125,25 @@ final class ScrollCapture {
         height = 0
         state = .capturing(manual: false)
         hud.show(near: area.frame, capture: self)
-        keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            MainActor.assumeIsolated {
-                switch event.keyCode {
-                case 53: self?.cancel()           // Esc
-                case 36, 76: self?.finish()       // Return, Enter
-                default: break
+        let tap = ShortcutTap { [weak self] id, _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { id == "cancel" ? self?.cancel() : self?.finish() }
+            }
+        }
+        tap.bindings = [KeyShortcut(keyCode: 53, modifiers: []): "cancel",   // Esc
+                        KeyShortcut(keyCode: 36, modifiers: []): "finish",   // Return
+                        KeyShortcut(keyCode: 76, modifiers: []): "finish"]   // Enter
+        if tap.start(name: "Scrolling capture keys") {
+            keyTap = tap
+        } else {
+            // No tap (Accessibility off): the keys still work, but the app sees them too.
+            keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                MainActor.assumeIsolated {
+                    switch event.keyCode {
+                    case 53: self?.cancel()           // Esc
+                    case 36, 76: self?.finish()       // Return, Enter
+                    default: break
+                    }
                 }
             }
         }
@@ -143,8 +159,10 @@ final class ScrollCapture {
 
     /// Scrolls and captures until the end of the content, Done, or Esc; returns the picture.
     private func run(_ area: Area) async -> CGImage? {
-        guard let first = try? await ScreenCapturer.captureArea(display: area.displayID, rect: area.rect, scale: area.scale),
-              let firstPrints = Self.fingerprints(first) else { return nil }
+        // Every frame kept is copied at once: a capture's buffer can be reused by the next one,
+        // and a frame held as it came could show later content by the time it's stitched.
+        guard let captured = try? await ScreenCapturer.captureArea(display: area.displayID, rect: area.rect, scale: area.scale),
+              let first = Self.ownCopy(of: captured), let firstPrints = Self.fingerprints(first) else { return nil }
         var plan = StitchPlan(frameHeight: first.height)
         var pieces: [Int: (image: CGImage, top: Int)] = [0: (first, 0)]
         var previous = firstPrints
@@ -152,13 +170,18 @@ final class ScrollCapture {
         var manual = false
         var stillCount = 0
         var lastOffset = 0
+        var lastScroll = Date()
         height = first.height
 
         while !finishRequested {
             let pixelsVisible = max(first.height - plan.header - plan.footer, 40)
-            let stepPoints = max(40, (CGFloat(pixelsVisible) / area.scale * 0.6).rounded())
+            // A little under half the view: every new row is seen twice (low in the frame that
+            // brings it, higher up in the next), so it can be read from wherever the scroll
+            // indicator isn't.
+            let stepPoints = max(40, (CGFloat(pixelsVisible) / area.scale * 0.48).rounded())
             if !manual {
                 Self.scroll(by: stepPoints, at: area.center)
+                lastScroll = Date()
                 try? await Task.sleep(for: .milliseconds(140))
             } else {
                 try? await Task.sleep(for: .milliseconds(220))
@@ -198,29 +221,60 @@ final class ScrollCapture {
                 continue
             }
             stillCount = 0
+            let previousStep = plan.steps.last?.offset ?? 0
             lastOffset = match.offset
+            if manual { lastScroll = Date() }
             if plan.steps.isEmpty || plan.footer > 0 || plan.header > 0 {
                 let bands = ScrollStitcher.fixedBands(previous, prints, offset: match.offset)
-                plan.setBands(top: bands.top, bottom: bands.bottom)
+                plan.setBands(top: bands.top, bottom: bands.bottom, offset: match.offset)
             }
             frameIndex += 1
             guard plan.add(frame: frameIndex, offset: match.offset) else {
                 Toast.shared.show("That's as tall as it gets", detail: "\(StitchPlan.maximumHeight.formatted()) pixels", duration: 3)
                 break
             }
-            pieces[frameIndex] = (frame, 0)
             previous = prints
             height = plan.height
-            // Keep only the rows each frame contributes (the new rows and the footer).
-            let keepFrom = max(frame.height - plan.footer - match.offset, 0)
-            if let kept = ScreenshotModule.detachedCrop(of: frame, to: CGRect(x: 0, y: keepFrom, width: frame.width, height: frame.height - keepFrom)) {
-                pieces[frameIndex] = (kept, keepFrom)
+            // Keep the rows this frame brought, the footer, and the rows the previous frame
+            // brought as they look here (moved up), copied.
+            let keepFrom = max(frame.height - plan.footer - match.offset - previousStep - 2, 0)
+            guard let kept = Self.ownCopy(of: frame, rows: keepFrom..<frame.height) else { break }
+            pieces[frameIndex] = (kept, keepFrom)
+        }
+        guard !cancelled else { return nil }
+        // The last view once more after the scroll indicator has faded (macOS shows it for about
+        // a second after scrolling): the picture's last screen and footer come from it.
+        var finalFrame: Int?
+        if !plan.steps.isEmpty {
+            state = .finishing
+            let wait = Self.indicatorFade - Date().timeIntervalSince(lastScroll)
+            if wait > 0 { try? await Task.sleep(for: .milliseconds(Int(wait * 1000))) }
+            if !cancelled, let image = try? await ScreenCapturer.captureArea(display: area.displayID, rect: area.rect, scale: area.scale),
+               let prints = Self.fingerprints(image), ScrollStitcher.match(previous, prints)?.offset == 0,
+               let copy = Self.ownCopy(of: image) {
+                finalFrame = frameIndex + 1
+                pieces[frameIndex + 1] = (copy, 0)
             }
         }
         guard !cancelled else { return nil }
+        #if DEBUG
+        lastPlan = plan
+        #endif
+        var slices = plan.sources(minimumThumb: Int(20 * area.scale), finalFrame: finalFrame)
+        let kept = slices.allSatisfy { slice in
+            guard let piece = pieces[slice.frame] else { return false }
+            return slice.rows.lowerBound >= piece.top && slice.rows.upperBound <= piece.top + piece.image.height
+        }
+        if !kept {
+            log.error("rows to read around the scroll indicator weren't kept; each step from its own frame")
+            slices = plan.slices
+        }
         log.notice("stitched \(plan.steps.count + 1, privacy: .public) frames into \(plan.height, privacy: .public) px")
-        return Self.compose(plan, pieces: pieces, width: first.width)
+        return Self.compose(slices, height: plan.height, pieces: pieces, width: first.width)
     }
+
+    /// Seconds after the last scroll by which the scroll indicator has faded.
+    private static let indicatorFade = 1.1
 
     private static func scroll(by points: CGFloat, at location: CGPoint) {
         guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
@@ -228,6 +282,17 @@ final class ScrollCapture {
         event.location = location
         event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
         event.post(tap: .cghidEventTap)
+    }
+
+    /// The image (or some of its rows) in memory of its own.
+    private static func ownCopy(of image: CGImage, rows: Range<Int>? = nil) -> CGImage? {
+        let rows = rows ?? 0..<image.height
+        guard !rows.isEmpty, let crop = image.cropping(to: CGRect(x: 0, y: rows.lowerBound, width: image.width, height: rows.count)),
+              let context = CGContext(data: nil, width: crop.width, height: crop.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+        return context.makeImage()
     }
 
     private static func fingerprints(_ image: CGImage) -> ScrollStitcher.Fingerprints? {
@@ -243,13 +308,12 @@ final class ScrollCapture {
                                            width: width, height: height, bytesPerRow: width * 4)
     }
 
-    private static func compose(_ plan: StitchPlan, pieces: [Int: (image: CGImage, top: Int)], width: Int) -> CGImage? {
-        let total = plan.height
+    private static func compose(_ slices: [StitchPlan.Slice], height total: Int, pieces: [Int: (image: CGImage, top: Int)], width: Int) -> CGImage? {
         guard total > 0, let context = CGContext(data: nil, width: width, height: total, bitsPerComponent: 8, bytesPerRow: 0,
                                                  space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
                                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         var y = 0  // from the top of the picture
-        for slice in plan.slices {
+        for slice in slices {
             guard let piece = pieces[slice.frame] else { continue }
             let from = slice.rows.lowerBound - piece.top
             guard from >= 0, let rows = piece.image.cropping(to: CGRect(x: 0, y: from, width: piece.image.width, height: slice.rows.count)) else { continue }
@@ -263,6 +327,8 @@ final class ScrollCapture {
     private func end(with image: CGImage?) {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
+        keyTap?.stop()
+        keyTap = nil
         hud.hide()
         task = nil
         state = .idle
@@ -294,6 +360,12 @@ final class ScrollCapture {
         state = .idle
         return image
     }
+
+    /// Ends a probe run as Done would.
+    func finishFromProbe() { finishRequested = true }
+
+    /// The last run's plan, for the probe's report.
+    @ObservationIgnored private(set) var lastPlan: StitchPlan?
     #endif
 }
 
@@ -343,7 +415,7 @@ private struct ScrollHUDView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.themeAccent)
             VStack(alignment: .leading, spacing: 1) {
-                Text(manual ? "Scroll it yourself" : "Scrolling…")
+                Text(capture.state == .finishing ? "Finishing…" : manual ? "Scroll it yourself" : "Scrolling…")
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(Color.ink)
                 Text("\(capture.height.formatted()) px · Return finishes · Esc cancels")
@@ -352,6 +424,7 @@ private struct ScrollHUDView: View {
             }
             Button("Done") { capture.finish() }
                 .buttonStyle(OutlineButtonStyle(compact: true))
+                .disabled(capture.state == .finishing)
             Button("Cancel") { capture.cancel() }
                 .buttonStyle(.plain)
                 .font(.system(size: 11.5, weight: .medium))

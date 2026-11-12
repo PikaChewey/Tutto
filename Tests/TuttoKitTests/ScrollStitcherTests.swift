@@ -139,4 +139,101 @@ final class ScrollStitcherTests: XCTestCase {
         XCTAssertEqual(rows[0], [0, 0, 0, 0])
         XCTAssertEqual(rows[1], [255, 255, 255, 255])
     }
+
+    // MARK: The scroll indicator
+
+    /// A long page captured in steps a little under half the view, with macOS's scroll knob drawn
+    /// over every frame where a scroller would put it (`track`: the rows it runs along). Each
+    /// frame is a list of what its rows show: content row numbers, -2 for the sticky header, -3
+    /// for the footer, -1 where the knob covers a row. The last frame is taken after the knob faded.
+    private func knobbedCapture(track: Range<Int>, content: Int = 13_520) -> (frames: [[Int]], plan: StitchPlan, content: Int) {
+        let height = 840, header = 96, footer = 64
+        let total = header + content + footer, range = max(total - height, 1)
+        let step = (height - header - footer) * 48 / 100
+        var positions = [0]
+        while positions.last! < range { positions.append(min(positions.last! + step, range)) }
+        let knobLength = min(max(track.count * track.count / content, 40), track.count)
+        func frame(at scrolled: Int, knob: Bool) -> [Int] {
+            var rows = (0..<height).map { y -> Int in
+                y < header ? -2 : y >= height - footer ? -3 : scrolled + y - header
+            }
+            if knob {
+                let top = track.lowerBound + Int(Double(track.count - knobLength) * Double(scrolled) / Double(range))
+                for y in top..<min(top + knobLength, height) { rows[y] = -1 }
+            }
+            return rows
+        }
+        var frames = positions.enumerated().map { frame(at: $1, knob: $0 > 0) }
+        frames.append(frame(at: range, knob: false))
+        var plan = StitchPlan(frameHeight: height)
+        plan.setBands(top: header, bottom: footer)
+        for index in 1..<positions.count { plan.add(frame: index, offset: positions[index] - positions[index - 1]) }
+        return (frames, plan, content)
+    }
+
+    private func compose(_ frames: [[Int]], _ slices: [StitchPlan.Slice]) -> [Int] {
+        slices.flatMap { Array(frames[$0.frame][$0.rows]) }
+    }
+
+    func testTheScrollKnobIsLeftOutOfThePicture() {
+        // Long pages and short ones (a long knob), knobs on the whole view or under a toolbar.
+        for content in [900, 1_500, 3_000, 13_520] {
+        for track in [0..<840, 96..<776, 40..<800] {
+            let capture = knobbedCapture(track: track, content: content)
+            let picture = compose(capture.frames, capture.plan.sources(minimumThumb: 40, finalFrame: capture.frames.count - 1))
+            XCTAssertEqual(picture.count, capture.plan.height)
+            XCTAssertFalse(picture.contains(-1), "knob rows in the picture (\(content) rows, track \(track)): \(picture.indices.filter { picture[$0] == -1 }.count)")
+            XCTAssertEqual(Array(picture.prefix(96)), Array(repeating: -2, count: 96), "the header once, at the top")
+            XCTAssertEqual(Array(picture.suffix(64)), Array(repeating: -3, count: 64), "the footer once, at the bottom")
+            XCTAssertEqual(Array(picture.dropFirst(96).dropLast(64)), Array(0..<capture.content), "every row once, in order")
+        }
+        }
+    }
+
+    func testReadingEachStepFromItsOwnFrameKeepsTheKnob() {
+        // The plain slices, as before: the knob comes along in the lower half of the page.
+        let capture = knobbedCapture(track: 0..<840)
+        let picture = compose(capture.frames, capture.plan.slices)
+        XCTAssertGreaterThan(picture.filter { $0 == -1 }.count, 500)
+    }
+
+    /// The indicator drawn over a dark sticky header (light, on the last samples) in the frame
+    /// after a scroll: the header is still the whole header.
+    func testTheIndicatorOverAHeaderDoesNotShortenIt() {
+        let columns = ScrollStitcher.columns
+        func content(_ row: Int) -> [UInt8] { (0..<columns).map { UInt8((row * 37 + $0 * 11) % 200 + 20) } }
+        let header = 96, footer = 64, height = 840, offset = 300
+        func frame(scrolled: Int, knobRows: Range<Int>) -> ScrollStitcher.Fingerprints {
+            (0..<height).map { y in
+                var row = y < header ? [UInt8](repeating: 60, count: columns)
+                    : y >= height - footer ? [UInt8](repeating: 90, count: columns) : content(scrolled + y)
+                if knobRows.contains(y) { row[columns - 1] = 230; row[columns - 2] = 230 }
+                return row
+            }
+        }
+        let before = frame(scrolled: 0, knobRows: 0..<0)
+        let after = frame(scrolled: offset, knobRows: 11..<70)
+        let bands = ScrollStitcher.fixedBands(before, after, offset: offset)
+        XCTAssertEqual(bands.top, header)
+        XCTAssertEqual(bands.bottom, footer)
+        let atTheEnd = frame(scrolled: offset * 2, knobRows: 760..<829)
+        XCTAssertEqual(ScrollStitcher.fixedBands(after, atTheEnd, offset: offset).bottom, footer, "and over a footer")
+    }
+
+    /// At the end of a page the last step is short (48 rows, under a 96-row header): a plain
+    /// header row matches the header row 48 below it, so the band measured there looks 11 rows
+    /// tall. It mustn't shorten the header, or the picture's last screen gets header rows in it.
+    func testAShortLastStepDoesNotShortenTheHeader() {
+        var plan = StitchPlan(frameHeight: 840)
+        plan.setBands(top: 96, bottom: 64, offset: 404)
+        plan.add(frame: 1, offset: 404)
+        plan.setBands(top: 96, bottom: 64, offset: 326)
+        plan.add(frame: 2, offset: 326)
+        plan.setBands(top: 11, bottom: 64, offset: 48)
+        plan.add(frame: 3, offset: 48)
+        XCTAssertEqual(plan.header, 96)
+        // A full step that finds less of a header still narrows it.
+        plan.setBands(top: 40, bottom: 64, offset: 326)
+        XCTAssertEqual(plan.header, 40)
+    }
 }
