@@ -5,7 +5,7 @@
 <p align="center"><b>Every Mac utility you actually use, in one quiet menu bar app.</b><br>
 Battery &amp; system load · fans · clipboard history · a ⌘Tab for every window · the scrolling strip · screenshots, scrolling captures and screen recording · convert &amp; compress · clean-up · per-app volume · stay awake · auto clicker · archives · trackpad clicks · word counter.</p>
 
-Tutto is sixteen everyday tools in one native Swift app. **The app is 9 MB, it uses about 20 MB of memory when it starts and no measurable CPU while idle** (around 65 MB once you've used every tool), and it's MIT-licensed. Every tool can be switched off, and a tool that's off uses nothing at all: fifteen from the Overview and General pages, and the Scrolling Strip, which rearranges every window, from its own page.
+Tutto is sixteen everyday tools in one native Swift app. **The app is 10 MB, it uses about 20 MB of memory when it starts and no measurable CPU while idle** (around 65 MB once you've used every tool), and it's MIT-licensed. Every tool can be switched off, and a tool that's off uses nothing at all: fifteen from the Overview and General pages, and the Scrolling Strip, which rearranges every window, from its own page.
 
 ## What's inside
 
