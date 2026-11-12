@@ -85,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if RecordingProbe.runScrollProbeIfRequested() { return NSApp.terminate(nil) }
         if RecordingProbe.runScrollEventsProbeIfRequested() { return NSApp.terminate(nil) }
         if RecordingProbe.runScrollFadeProbeIfRequested() { return NSApp.terminate(nil) }
+        if RecordingProbe.runEditorProbeIfRequested() { return NSApp.terminate(nil) }
         if ConvertProbe.runIfRequested() { return NSApp.terminate(nil) }
         if ConvertProbe.runCleanupIfRequested() { return NSApp.terminate(nil) }
         if SwitcherLab.runIfRequested() { return NSApp.terminate(nil) }

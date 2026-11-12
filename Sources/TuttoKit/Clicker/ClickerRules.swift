@@ -190,13 +190,13 @@ public enum ClickerRules {
     }
 
     /// The pill's words after the shortcut's keycaps, saying how to stop it: "stops it",
-    /// "or a corner stops it", "let go to stop"; without a shortcut, the whole sentence.
+    /// "or move the pointer to a corner to stop", "let go to stop"; without a shortcut, the whole sentence.
     public static func howToStop(hasShortcut: Bool, holding: Bool, corner: Bool) -> String {
         switch (hasShortcut, holding, corner) {
         case (true, true, _): "let go to stop"
-        case (true, false, true): "or a corner stops it"
+        case (true, false, true): "or move the pointer to a corner to stop"
         case (true, false, false): "stops it"
-        case (false, _, true): "a corner or the menu bar stops it"
+        case (false, _, true): "move the pointer to a corner, or use the menu bar, to stop"
         case (false, _, false): "the menu bar stops it"
         }
     }

@@ -35,7 +35,7 @@ final class ClickerHUD {
         present()
     }
 
-    /// While clicking: how to stop it, nothing else ("Auto clicker  ⌃⇧A or a corner stops it").
+    /// While clicking: how to stop it, nothing else ("Auto clicker  ⌃⇧A or move the pointer to a corner to stop").
     func show(clicking settings: ClickerSettings, shortcut: KeyShortcut?) {
         model.text = "Auto clicker"
         model.keys = shortcut

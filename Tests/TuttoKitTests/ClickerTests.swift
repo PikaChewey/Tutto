@@ -138,10 +138,10 @@ final class ClickerTests: XCTestCase {
 
     /// The pill only says how to stop it.
     func testHowToStop() {
-        XCTAssertEqual(ClickerRules.howToStop(hasShortcut: true, holding: false, corner: true), "or a corner stops it")
+        XCTAssertEqual(ClickerRules.howToStop(hasShortcut: true, holding: false, corner: true), "or move the pointer to a corner to stop")
         XCTAssertEqual(ClickerRules.howToStop(hasShortcut: true, holding: false, corner: false), "stops it")
         XCTAssertEqual(ClickerRules.howToStop(hasShortcut: true, holding: true, corner: true), "let go to stop")
-        XCTAssertEqual(ClickerRules.howToStop(hasShortcut: false, holding: false, corner: true), "a corner or the menu bar stops it")
+        XCTAssertEqual(ClickerRules.howToStop(hasShortcut: false, holding: false, corner: true), "move the pointer to a corner, or use the menu bar, to stop")
         XCTAssertEqual(ClickerRules.howToStop(hasShortcut: false, holding: true, corner: false), "the menu bar stops it")
     }
 }

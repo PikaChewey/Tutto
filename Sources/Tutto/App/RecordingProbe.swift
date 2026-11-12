@@ -399,6 +399,53 @@ enum RecordingProbe {
         return true
     }
 
+    /// `Tutto --editor-probe DIR`: the screenshot editor's highlighter on a dark and a light half,
+    /// and text recognition with one word pixelated. DIR/editor.png and editor.txt. Off screen.
+    static func runEditorProbeIfRequested() -> Bool {
+        let args = CommandLine.arguments
+        guard let flag = args.firstIndex(of: "--editor-probe"), args.count > flag + 1 else { return false }
+        let dir = URL(fileURLWithPath: args[flag + 1], isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let width = 1200, height = 400
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return true }
+        let graphics = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = graphics
+        NSColor(white: 0.12, alpha: 1).setFill(); NSRect(x: 0, y: 0, width: 600, height: 400).fill()
+        NSColor.white.setFill(); NSRect(x: 600, y: 0, width: 600, height: 400).fill()
+        let font = NSFont.systemFont(ofSize: 44, weight: .medium)
+        ("Dark side words" as NSString).draw(at: NSPoint(x: 40, y: 260), withAttributes: [.font: font, .foregroundColor: NSColor(white: 0.85, alpha: 1)])
+        ("Light side words" as NSString).draw(at: NSPoint(x: 640, y: 260), withAttributes: [.font: font, .foregroundColor: NSColor.black])
+        ("Visible SECRETWORD" as NSString).draw(at: NSPoint(x: 640, y: 80), withAttributes: [.font: font, .foregroundColor: NSColor.black])
+        NSGraphicsContext.restoreGraphicsState()
+        guard let image = context.makeImage() else { return true }
+        let document = EditorDocument(image: image)
+        // Top-left image coordinates: the words sit around y 90–150 from the top.
+        let yellow = NSColor(srgbRed: 1, green: 0.84, blue: 0.04, alpha: 1)
+        document.add(Annotation(shape: .stroke([CGPoint(x: 40, y: 120), CGPoint(x: 560, y: 120)]), color: yellow, width: 54, highlighter: true))
+        document.add(Annotation(shape: .stroke([CGPoint(x: 640, y: 120), CGPoint(x: 1160, y: 120)]), color: yellow, width: 54, highlighter: true))
+        document.add(Annotation(shape: .pixelate(CGRect(x: 820, y: 270, width: 360, height: 70)), color: .black, width: 1))
+        var lines: [String] = []
+        if let out = document.render() {
+            if let data = NSBitmapImageRep(cgImage: out).representation(using: .png, properties: [:]) { try? data.write(to: dir.appendingPathComponent("editor.png")) }
+            for (name, x) in [("dark", 300), ("light", 900)] {
+                lines.append("\(name) half under the highlight: \(out.color(atX: x, y: 140)?.description ?? "?") vs beside it: \(out.color(atX: x, y: 200)?.description ?? "?")")
+            }
+        }
+        var done = false
+        Task { @MainActor in
+            let result = await document.recognizeText()
+            lines.append("recognized: \(result.text.replacingOccurrences(of: "\n", with: " | "))")
+            lines.append(result.text.contains("SECRET") ? "PIXELATED WORD READ (bad)" : "pixelated word not read (good)")
+            done = true
+        }
+        let started = Date()
+        while !done, Date().timeIntervalSince(started) < 20 { pump(0.05) }
+        try? lines.joined(separator: "\n").write(to: dir.appendingPathComponent("editor.txt"), atomically: true, encoding: .utf8)
+        return true
+    }
+
     /// A long page: a sticky header, a fixed footer, paragraphs of different lengths, every fifth
     /// tinted (rows that repeat a lot are what stitching gets wrong).
     static func probePage() -> String {

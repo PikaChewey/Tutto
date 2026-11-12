@@ -66,6 +66,37 @@ struct Annotation: Identifiable, Equatable {
     var width: CGFloat
     var highlighter = false
 
+    /// The picture rows and columns the drawing covers (for a highlighter's background).
+    var bounds: CGRect {
+        let points: [CGPoint]
+        switch shape {
+        case .stroke(let p): points = p
+        case .arrow(let a, let b): points = [a, b]
+        default: return .null
+        }
+        guard let first = points.first else { return .null }
+        return points.dropFirst().reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
+            .insetBy(dx: -width / 2, dy: -width / 2)
+    }
+
+    /// Mean brightness (0–1) of `image` inside `rect` (image pixels, top-left origin), from an
+    /// 8 × 8 reduction.
+    static func brightness(of image: CGImage, in rect: CGRect) -> CGFloat? {
+        let area = rect.intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height)).integral
+        guard !area.isNull, area.width >= 1, area.height >= 1, let crop = image.cropping(to: area),
+              let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        var bytes = [UInt8](repeating: 0, count: 8 * 8 * 4)
+        guard let context = CGContext(data: &bytes, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 32, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.interpolationQuality = .medium
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: 8, height: 8))
+        var total = 0.0
+        for i in stride(from: 0, to: bytes.count, by: 4) {
+            total += 0.2126 * Double(bytes[i]) + 0.7152 * Double(bytes[i + 1]) + 0.0722 * Double(bytes[i + 2])
+        }
+        return CGFloat(total / 64 / 255)
+    }
+
     /// Draws in image-pixel coordinates (the context's CTM maps those to the output).
     /// `source` is the original picture, needed by Pixelate.
     func draw(in context: CGContext, source: CGImage? = nil) {
@@ -83,13 +114,16 @@ struct Annotation: Identifiable, Equatable {
         }
         context.saveGState()
         defer { context.restoreGState() }
-        let alpha: CGFloat = highlighter ? 0.38 : 1
+        // A highlighter darkens what's under it (multiply), which can't show on a dark picture:
+        // there it lightens instead (screen), a little stronger, so it reads on both.
+        let onDark = highlighter && (source.flatMap { Self.brightness(of: $0, in: bounds) } ?? 1) < 0.42
+        let alpha: CGFloat = highlighter ? (onDark ? 0.55 : 0.38) : 1
         context.setStrokeColor(color.withAlphaComponent(alpha).cgColor)
         context.setFillColor(color.withAlphaComponent(alpha).cgColor)
         context.setLineWidth(width)
         context.setLineCap(.round)
         context.setLineJoin(.round)
-        if highlighter { context.setBlendMode(.multiply) }
+        if highlighter { context.setBlendMode(onDark ? .screen : .multiply) }
         switch shape {
         case .stroke(let points):
             context.addPath(Self.smoothPath(points))
@@ -243,6 +277,7 @@ final class EditorDocument {
     }
 
     /// Renders `region` of the picture with its drawings, at full resolution.
+    /// `annotated` false: the picture as captured, except what's been pixelated stays pixelated.
     func render(_ region: CGRect? = nil, annotated: Bool = true) -> CGImage? {
         let region = (region ?? exportRegion).integral
         let width = Int(region.width), height = Int(region.height)
@@ -252,11 +287,12 @@ final class EditorDocument {
               let pixels = base.cropping(to: region) else { return nil }
         context.interpolationQuality = .none
         context.draw(pixels, in: CGRect(x: 0, y: 0, width: width, height: height))
-        if annotated && !annotations.isEmpty {
+        let drawn = annotated ? annotations : annotations.filter { if case .pixelate = $0.shape { true } else { false } }
+        if !drawn.isEmpty {
             context.translateBy(x: 0, y: CGFloat(height))
             context.scaleBy(x: 1, y: -1)
             context.translateBy(x: -region.minX, y: -region.minY)
-            for annotation in annotations { annotation.draw(in: context, source: base) }
+            for annotation in drawn { annotation.draw(in: context, source: base) }
         }
         return context.makeImage()
     }
