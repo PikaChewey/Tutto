@@ -5,7 +5,7 @@
 <p align="center"><b>Every Mac utility you actually use, in one quiet menu bar app.</b><br>
 Battery &amp; system load · fans · clipboard history · a ⌘Tab for every window · the scrolling strip · screenshots, scrolling captures and screen recording · convert &amp; compress · clean-up · per-app volume · stay awake · auto clicker · archives · trackpad clicks · word counter.</p>
 
-Tutto is fifteen everyday tools in one native Swift app. **The app is 8 MB, it uses about 20 MB of memory when it starts and no measurable CPU while idle** (around 65 MB once you've used every tool), and it's MIT-licensed. Every tool can be switched off, and a tool that's off uses nothing at all: fourteen from the Overview and General pages, and the Scrolling Strip, which rearranges every window, from its own page.
+Tutto is fifteen everyday tools in one native Swift app. **The app is 9 MB, it uses about 20 MB of memory when it starts and no measurable CPU while idle** (around 65 MB once you've used every tool), and it's MIT-licensed. Every tool can be switched off, and a tool that's off uses nothing at all: fourteen from the Overview and General pages, and the Scrolling Strip, which rearranges every window, from its own page.
 
 ## What's inside
 
@@ -77,7 +77,7 @@ Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press th
 
 **Screen recording (`⌃⇧R`, macOS 15):** the screenshot picker opens: drag an area, click a window, or click the desktop for the whole screen. A 3-2-1 (or 5, or none), then it records at the display's own resolution, 60 or 30 frames a second, H.264 (plays everywhere) or HEVC (about half the size), with the Mac's sound and your microphone if you switch them on, the pointer and a ring where you click. A thin outline marks the area and stays out of the video. A dot and the time sit beside Tutto's icon, and the panel shows Stop; the keys again also stop it. The MP4 lands in the screenshots folder, and a thumbnail in the corner lets you drag it into any app, play it, show it, copy it or delete it. Settings: Screenshots › Screen recording.
 
-**Scrolling capture (`⌃⇧S`):** pick the part of a window that scrolls (a web page, a chat, a document). Tutto scrolls it by itself, captures each step and stitches one tall picture, keeping a header or footer that stays put only once; if the content won't scroll for Tutto, it asks you to scroll and follows. It stops at the end of the content, or press Return (Done) or Esc (Cancel). The picture is saved as a PNG, copied to the clipboard, and shown in the corner to drag anywhere or **Edit**.
+**Scrolling capture (`⌃⇧S`):** pick the part of a window that scrolls (a web page, a chat, a document). Tutto scrolls it by itself, captures each step and stitches one tall picture, keeping a header or footer that stays put only once and leaving out the scroll bar that flashes while it scrolls; if the content won't scroll for Tutto, it asks you to scroll and follows. It stops at the end of the content, or press Return (Done) or Esc (Cancel). The picture is saved as a PNG, copied to the clipboard, and shown in the corner to drag anywhere or **Edit**.
 
 **Convert and compress (`⌃⇧K`, the Convert tile, or tap `⇧` while dragging files):** drop files on the Convert window and pick a format, or Compress with its settings. While dragging files anywhere — from Finder, the desktop or a mail — tap ⇧ and a wheel of formats opens at the pointer, Compress in the middle; drop on one. Finder's right-click menu has **Convert** too. Copies land beside the originals, never over them, and a note says how much smaller they got.
 - **Pictures** (anything macOS reads, RAW, HEIC and WebP included) → JPEG, PNG, HEIC, AVIF, TIFF, GIF, BMP or PDF; several pictures → one PDF. Compress: quality, the longest side, a size to aim for ("500 KB"), and location and camera details removed (the picture is turned upright first). PNGs become palette PNGs when that looks the same, often a third of the size.
@@ -156,7 +156,7 @@ Measurements and comparisons with comparable utilities are in [docs/PERFORMANCE.
 ## Development
 
 ```bash
-swift test                               # 407 XCTest + 58 Swift Testing tests (corner engine, readers, archives, clipboard, layout, themes, plugins, converter, stitcher, clean-up rules, gain…)
+swift test                               # 411 XCTest + 58 Swift Testing tests (corner engine, readers, archives, clipboard, layout, themes, plugins, converter, stitcher, clean-up rules, gain…)
 scripts/build.sh --debug                 # debug build with offscreen UI snapshots:
 build/Products.noindex/Tutto.app/Contents/MacOS/Tutto --snapshot /tmp/shots panel battery editor
 scripts/measure.sh 180 Tutto <OtherApp> …           # idle CPU / memory / wake-ups, side by side
