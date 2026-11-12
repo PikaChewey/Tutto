@@ -462,3 +462,351 @@ enum VolumeGlitchProbe {
     }
 }
 #endif
+
+#if DEBUG
+/// `Tutto --sound-module-probe DIR PLAYER.app [scenario …]`: the real Sound module (its own
+/// throwaway settings) with a test player app set to 25 %, through what people actually do:
+/// a new player, pause and play, a player that restarts, the Mac's output switched and back,
+/// the output's sample rate changed and back, a wake, and the level moved. Tutto's output is
+/// recorded beside the player's own sound; every 100 ms of the player playing is checked:
+/// applied (Tutto's output at the player's level × the gain), unapplied (Tutto silent, so the
+/// player is heard as is), or off level. DIR/sound.txt. Output and rate are put back after.
+/// The test player, opened through LaunchServices.
+@MainActor
+final class ProbePlayer {
+    let app: NSRunningApplication
+    private let wait: (Double) -> Void
+    init(app: NSRunningApplication, wait: @escaping (Double) -> Void) { self.app = app; self.wait = wait }
+    var processIdentifier: pid_t { app.processIdentifier }
+    func waitUntilExit() { while !app.isTerminated { wait(0.05) } }
+    func terminate() { app.terminate() }
+}
+
+@available(macOS 14.2, *)
+@MainActor
+enum SoundModuleProbe {
+    static let playerID = "ca.bryanyao.TuttoProbePlayer"
+
+    static func runIfRequested() -> Bool {
+        let args = CommandLine.arguments
+        guard let flag = args.firstIndex(of: "--sound-module-probe"), args.count > flag + 2 else { return false }
+        let dir = URL(fileURLWithPath: args[flag + 1], isDirectory: true)
+        let playerApp = URL(fileURLWithPath: args[flag + 2])
+        var only = Set(args.dropFirst(flag + 3))
+        let noRestore = only.remove("norestore") != nil
+        if only.remove("forcemuted") != nil { SoundModule.probeForceMuted = true }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var lines: [String] = []
+        func say(_ line: String) {
+            lines.append(line)
+            try? lines.joined(separator: "\n").write(to: dir.appendingPathComponent("sound.txt"), atomically: true, encoding: .utf8)
+        }
+        func wait(_ seconds: Double) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
+        func now() -> Double {
+            var timebase = mach_timebase_info_data_t(); mach_timebase_info(&timebase)
+            return Double(mach_absolute_time()) * Double(timebase.numer) / Double(timebase.denom) / 1e9
+        }
+
+        if noRestore { VolumeRig.restoresProcesses = false }
+        say("process restore \(VolumeRig.restoresProcesses ? "on" : "off")")
+        let suite = UserDefaults(suiteName: "ca.bryanyao.Tutto.soundprobe")!
+        suite.removePersistentDomain(forName: "ca.bryanyao.Tutto.soundprobe")
+        let module = SoundModule(defaults: suite)
+        module.start()
+        module.setVolume(playerID, 25)
+        let originalOutput = AudioDevices.defaultOutputID()
+        say("output: \(originalOutput.flatMap(AudioDevices.uid(of:)) ?? "?")")
+
+        // Recording: Tutto's own output, and the player's (a new tap per player process).
+        var players: [(pid: pid_t, recorder: TapRecorder)] = []
+        var out: TapRecorder?
+        var gainAt: [(Double, Double)] = [(0, 25)]  // (time, percent)
+
+        /// Opened like any app, through `open` (so macOS lists it as running), with its script as
+        /// arguments; the new instance is found by its bundle ID.
+        func launch(_ script: [String]) -> ProbePlayer? {
+            let before = Set(NSRunningApplication.runningApplications(withBundleIdentifier: playerID).map(\.processIdentifier))
+            let opener = Process()
+            opener.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            opener.arguments = ["-n", "-g", playerApp.path, "--args"] + script
+            do { try opener.run() } catch { say("player: \(error)"); return nil }
+            let deadline = Date().addingTimeInterval(10)
+            while Date() < deadline {
+                if let app = NSRunningApplication.runningApplications(withBundleIdentifier: playerID)
+                    .first(where: { !before.contains($0.processIdentifier) && !$0.isTerminated }) {
+                    return ProbePlayer(app: app, wait: wait)
+                }
+                wait(0.02)
+            }
+            say("player didn't start")
+            return nil
+        }
+        /// Starts recording a player's sound once its audio process exists.
+        func follow(_ player: ProbePlayer) {
+            for _ in 0..<150 {
+                if let object = AudioProcessList.read().first(where: { $0.pid == player.processIdentifier })?.objectID {
+                    players.append((player.processIdentifier, TapRecorder(CATapDescription(stereoMixdownOfProcesses: [object]))))
+                    if out == nil, let own = AudioProcessList.read().first(where: { $0.pid == getpid() })?.objectID {
+                        out = TapRecorder(CATapDescription(stereoMixdownOfProcesses: [own]))
+                    }
+                    return
+                }
+                wait(0.02)
+            }
+            say("no audio process for the player")
+        }
+        func setLevel(_ percent: Double) {
+            module.setVolume(playerID, percent)
+            gainAt.append((now(), percent))
+        }
+
+        /// Every 100 ms of [from, to) in which the player had sound: was the level applied?
+        func check(_ name: String, from: Double, to: Double) {
+            guard let out else { say("\(name): Tutto's output wasn't recorded"); return }
+            func rms(_ recorder: TapRecorder, _ t0: Double, _ t1: Double) -> Float? {
+                let (samples, marks) = recorder.snapshot()
+                var sum: Float = 0, n = 0
+                for (k, mark) in marks.enumerated() {
+                    let end = k + 1 < marks.count ? marks[k + 1].0 : samples.count
+                    let count = end - mark.0
+                    guard count > 0 else { continue }
+                    let first = mark.1, last = mark.1 + Double(count) / recorder.sampleRate
+                    guard last > t0, first < t1 else { continue }
+                    for i in mark.0..<end {
+                        let t = mark.1 + Double(i - mark.0) / recorder.sampleRate
+                        if t >= t0 && t < t1 { sum += samples[i] * samples[i]; n += 1 }
+                    }
+                }
+                return n > 0 ? sqrt(sum / Float(n)) : nil
+            }
+            var good = 0, silent = 0, off = 0, total = 0, longestSilent = 0, run = 0
+            var offNotes: [String] = []
+            var onsets: [String] = []
+            var previous: Float = 0
+            var t = from
+            while t + 0.1 <= to {
+                let source = players.compactMap { rms($0.recorder, t, t + 0.1) }.max() ?? 0
+                let next = players.compactMap { rms($0.recorder, t + 0.1, t + 0.2) }.max() ?? 0
+                defer { previous = source; t += 0.1 }
+                guard source > 0.003 else { run = 0; continue }
+                // A sound starting: how long until Tutto's output had it (or, at 100 %, nothing to do).
+                if previous <= 0.003 {
+                    let percent = gainAt.last(where: { $0.0 <= t })?.1 ?? 25
+                    if percent != 100, let a = players.compactMap({ $0.recorder.firstSound(after: t - 0.1) }).min() {
+                        if let b = out.firstSound(after: t - 0.1, threshold: 0.0005) {
+                            onsets.append(String(format: "%.0f ms", max(0, (b - a) * 1000)))
+                        } else {
+                            onsets.append("never")
+                        }
+                    }
+                    continue
+                }
+                // Windows at a start or end of sound, or 150 ms after a level change, aren't judged.
+                if next <= 0.003 || abs(20 * log10(Double(max(next, 1e-6) / source))) > 3 { continue }
+                if gainAt.contains(where: { $0.0 > t - 0.15 && $0.0 <= t + 0.1 }) { continue }
+                let percent = gainAt.last(where: { $0.0 <= t })?.1 ?? 25
+                total += 1
+                let got = rms(out, t, t + 0.1) ?? 0
+                if percent == 100 {
+                    // No rig at 100 %: the app plays as is, and Tutto's output must be silent.
+                    if got < source * 0.1 { good += 1 } else { off += 1 }
+                    run = 0
+                    continue
+                }
+                let expected = source * VolumeCurve.gain(percent: percent)
+                if got < 0.0005 || got < expected * 0.1 {
+                    silent += 1; run += 1; longestSilent = max(longestSilent, run)
+                } else if abs(20 * log10(Double(got / max(expected, 1e-9)))) > 2 {
+                    off += 1; run = 0
+                    if offNotes.count < 3 { offNotes.append(String(format: "%.1f s: %+.1f dB", t - from, 20 * log10(Double(got / expected)))) }
+                } else {
+                    good += 1; run = 0
+                }
+            }
+            let pct = { (n: Int) in total == 0 ? 0 : Int((Double(n) / Double(total) * 100).rounded()) }
+            say("\(name): \(total) steady windows · right \(pct(good)) % · not through Tutto \(pct(silent)) % (longest \(longestSilent * 100) ms) · off level \(pct(off)) %\(offNotes.isEmpty ? "" : " (" + offNotes.joined(separator: ", ") + ")") · starts: \(onsets.isEmpty ? "–" : onsets.joined(separator: ", "))")
+        }
+
+        func scenario(_ name: String) -> Bool { only.isEmpty || only.contains(name) }
+
+        // 1. A new player starts playing (the rig is made once its sound process appears).
+        if scenario("new"), let player = launch(["play:3"]) {
+            let start = now()
+            follow(player)
+            player.waitUntilExit()
+            check("new player, 3 s", from: start, to: now())
+        }
+        // 2. Pause and play, three times (the same process stops and starts its output).
+        if scenario("pause"), let player = launch(["play:1.5", "stop:1.5", "play:1.5", "stop:1.5", "play:1.5"]) {
+            let start = now()
+            follow(player)
+            player.waitUntilExit()
+            check("pause and play ×3", from: start + 1.5, to: now())
+        }
+        // 3. The output switched to another device and back while playing.
+        if scenario("output"), let speakers = originalOutput, let speakersUID = AudioDevices.uid(of: speakers) {
+            // Another real output (the built-in speakers, or whatever else plays), else a stand-in.
+            var test = otherOutput(than: speakers) ?? AudioObjectID(kAudioObjectUnknown)
+            var madeTest = false
+            if test == kAudioObjectUnknown {
+                let composition: [String: Any] = [
+                    kAudioAggregateDeviceNameKey: "Tutto test output",
+                    kAudioAggregateDeviceUIDKey: "ca.bryanyao.Tutto.testoutput.\(UUID().uuidString)",
+                    kAudioAggregateDeviceMainSubDeviceKey: speakersUID,
+                    kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: speakersUID]],
+                ]
+                madeTest = AudioHardwareCreateAggregateDevice(composition as CFDictionary, &test) == noErr
+            }
+            say("other output: \(AudioDevices.uid(of: test) ?? "none")")
+            if test != kAudioObjectUnknown, let player = launch(["play:7"]) {
+                let start = now()
+                follow(player)
+                wait(1.5)
+                say(String(format: "switch to the test output: %d", setDefaultOutput(test)))
+                let switched = now()
+                wait(2.5)
+                say(String(format: "switch back: %d", setDefaultOutput(speakers)))
+                let back = now()
+                player.waitUntilExit()
+                check("before the switch", from: start, to: switched)
+                check("on the other output", from: switched, to: back)
+                check("back on the first output", from: back, to: now())
+                if madeTest { AudioHardwareDestroyAggregateDevice(test) }
+            } else {
+                say("no other output, or the player didn't start")
+            }
+            if let originalOutput, AudioDevices.defaultOutputID() != originalOutput { _ = setDefaultOutput(originalOutput) }
+        }
+        // 4. The output's sample rate changed and back (Bluetooth headsets and displays do this).
+        if scenario("rate"), let current = originalOutput {
+            // Bluetooth outputs won't change rate on request: use the built-in speakers then.
+            let speakers = otherOutput(than: current).flatMap { setNominalRate($0, nominalRate($0) ?? 48_000) == noErr ? $0 : nil } ?? current
+            if speakers != current { say(String(format: "rate test on %@: %d", AudioDevices.uid(of: speakers) ?? "?", setDefaultOutput(speakers))); wait(0.5) }
+            let rate = nominalRate(speakers) ?? 48_000
+            let other: Double = rate == 48_000 ? 44_100 : 48_000
+            if let player = launch(["play:6"]) {
+                let start = now()
+                follow(player)
+                wait(1.5)
+                say(String(format: "rate %.0f → %.0f: %d", rate, other, setNominalRate(speakers, other)))
+                let changed = now()
+                wait(2)
+                say(String(format: "rate back to %.0f: %d", rate, setNominalRate(speakers, rate)))
+                let back = now()
+                player.waitUntilExit()
+                check("before the rate change", from: start, to: changed)
+                check("at the other rate", from: changed, to: back)
+                check("rate back", from: back, to: now())
+            }
+            if nominalRate(speakers) != rate { _ = setNominalRate(speakers, rate) }
+            if speakers != current { _ = setDefaultOutput(current) }
+        }
+        // 9. A rig made "muted" while the app already plays (never starts by itself): the start
+        // check must catch it and make it again.
+        if scenario("stuck") {
+            setLevel(100)
+            if let player = launch(["play:4"]) {
+                let start = now()
+                follow(player)
+                wait(1)
+                SoundModule.probeForceMuted = true
+                setLevel(25)
+                player.waitUntilExit()
+                check("stuck rig rescued", from: start + 1, to: now())
+            }
+            setLevel(25)
+        }
+        // 8. The common case: the app is open and quiet, then plays (its rig is already there).
+        if scenario("open"), let player = launch(["stop:1.5", "play:2", "stop:1", "play:2"]) {
+            let start = now()
+            follow(player)
+            player.waitUntilExit()
+            check("open app starts playing", from: start, to: now())
+        }
+        // 5. The player restarts (a new process for the same app).
+        if scenario("restart") {
+            if let first = launch(["play:1.5"]) { follow(first); first.waitUntilExit() }
+            wait(0.4)
+            if let second = launch(["play:2.5"]) {
+                let start = now()
+                follow(second)
+                second.waitUntilExit()
+                check("player restarted (new process)", from: start, to: now())
+            }
+        }
+        // 6. A wake from sleep while playing.
+        if scenario("wake"), let player = launch(["play:4"]) {
+            let start = now()
+            follow(player)
+            wait(1.5)
+            module.simulateWake()
+            player.waitUntilExit()
+            check("wake while playing", from: start, to: now())
+        }
+        // 7. The level moved while playing: 60 %, 25 %, 100 % and back to 25 %, 200 %.
+        if scenario("levels"), let player = launch(["play:6"]) {
+            let start = now()
+            follow(player)
+            wait(1); setLevel(60)
+            wait(1); setLevel(25)
+            wait(1); setLevel(100)
+            wait(1); setLevel(25)
+            wait(1); setLevel(200)
+            player.waitUntilExit()
+            check("level moved while playing", from: start, to: now())
+            setLevel(25)
+        }
+        players.forEach { $0.recorder.stop() }
+        out?.stop()
+        module.stop()
+        if let originalOutput, AudioDevices.defaultOutputID() != originalOutput { _ = setDefaultOutput(originalOutput) }
+        suite.removePersistentDomain(forName: "ca.bryanyao.Tutto.soundprobe")
+        say("done; output \(AudioDevices.defaultOutputID().flatMap(AudioDevices.uid(of:)) ?? "?")")
+        return true
+    }
+
+    /// An output device other than `device` that plays sound (built-in speakers first).
+    static func otherOutput(than device: AudioObjectID) -> AudioObjectID? {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size)
+        var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids)
+        let outputs = ids.filter { $0 != device && AudioDevices.streamCount(of: $0, scope: kAudioObjectPropertyScopeOutput) > 0 }
+        func transport(_ id: AudioObjectID) -> UInt32 {
+            var value: UInt32 = 0
+            var size = UInt32(MemoryLayout<UInt32>.size)
+            var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyTransportType, mScope: kAudioObjectPropertyScopeGlobal,
+                                                     mElement: kAudioObjectPropertyElementMain)
+            AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value)
+            return value
+        }
+        return outputs.first { transport($0) == kAudioDeviceTransportTypeBuiltIn } ?? outputs.first {
+            transport($0) != kAudioDeviceTransportTypeAggregate && transport($0) != kAudioDeviceTransportTypeVirtual
+        }
+    }
+
+    static func setDefaultOutput(_ device: AudioObjectID) -> OSStatus {
+        var value = device
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        return AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, UInt32(MemoryLayout<AudioObjectID>.size), &value)
+    }
+
+    static func nominalRate(_ device: AudioObjectID) -> Double? {
+        var rate: Float64 = 0
+        var size = UInt32(MemoryLayout<Float64>.size)
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        return AudioObjectGetPropertyData(device, &address, 0, nil, &size, &rate) == noErr ? rate : nil
+    }
+
+    static func setNominalRate(_ device: AudioObjectID, _ rate: Double) -> OSStatus {
+        var value = Float64(rate)
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        return AudioObjectSetPropertyData(device, &address, 0, nil, UInt32(MemoryLayout<Float64>.size), &value)
+    }
+}
+#endif

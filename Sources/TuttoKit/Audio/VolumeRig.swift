@@ -30,14 +30,23 @@ public final class VolumeRig {
         var inputInterleaved: Bool
         var left: (stream: Int, channel: Int) = (0, 0)
         var right: (stream: Int, channel: Int) = (0, 1)
+        /// Set by the audio thread on its first call: the rig is reading the tap.
+        var reading = false
+        /// Audio cycles so far (a rig that should be playing and isn't counting is stuck).
+        var cycles: UInt64 = 0
 
         /// Streams the tap's sound arrives in: one interleaved, or one per channel.
         var tapStreams: Int { inputInterleaved ? 1 : max(inputChannels, 1) }
     }
 
     static let maxFrames = 16_384
+    /// Probes compare taps with and without process restore.
+    nonisolated(unsafe) public static var restoresProcesses = true
 
     public private(set) var processes: [AudioObjectID]
+    public private(set) var bundleIDs: [String]
+    /// The output device it plays through (a different default output means a new rig).
+    public let outputDevice: AudioObjectID
     private let description: CATapDescription
     private var tap = AudioObjectID(kAudioObjectUnknown)
     private var aggregate = AudioObjectID(kAudioObjectUnknown)
@@ -46,8 +55,16 @@ public final class VolumeRig {
     private let left: UnsafeMutablePointer<Float>
     private let right: UnsafeMutablePointer<Float>
 
-    public init(processes: [AudioObjectID], gain: Float, muteBehavior: CATapMuteBehavior = .mutedWhenTapped) throws {
+    /// `bundleIDs` (macOS 26): the app's and its own helpers' bundle IDs; the tap then takes in
+    /// their sound processes as they start (a new tab, a restart) with no gap. `muteBehavior`:
+    /// muted for as long as the tap exists, so the app is never heard unprocessed (if the rig is
+    /// slow to start, the start of a sound is quiet, not at full volume).
+    /// `bufferFrames`: the device's IO buffer; smaller is less delay (256 frames ≈ 5 ms at 48 kHz).
+    public init(processes: [AudioObjectID], bundleIDs: [String] = [], gain: Float, muteBehavior: CATapMuteBehavior = .muted,
+                bufferFrames: UInt32 = 256) throws {
         self.processes = processes
+        self.bundleIDs = bundleIDs
+        outputDevice = AudioDevices.defaultOutputID() ?? AudioObjectID(kAudioObjectUnknown)
         state = .allocate(capacity: 1)
         left = .allocate(capacity: Self.maxFrames)
         right = .allocate(capacity: Self.maxFrames)
@@ -61,6 +78,10 @@ public final class VolumeRig {
         description.name = "Tutto volume"
         description.muteBehavior = muteBehavior
         description.isPrivate = true
+        if #available(macOS 26.0, *), !bundleIDs.isEmpty {
+            description.bundleIDs = bundleIDs
+            description.isProcessRestoreEnabled = Self.restoresProcesses
+        }
 
         var status = AudioHardwareCreateProcessTap(description, &tap)
         guard status == noErr else { throw MuteRigError(stage: "Creating the tap", status: status) }
@@ -76,7 +97,8 @@ public final class VolumeRig {
         state.pointee = State(target: gain, stage: GainStage(gain: gain, sampleRate: format.mSampleRate > 0 ? format.mSampleRate : 48_000),
                               inputChannels: channels, inputInterleaved: interleaved)
 
-        guard let output = AudioDevices.defaultOutputID(), let outputUID = AudioDevices.uid(of: output) else {
+        let output = outputDevice
+        guard output != kAudioObjectUnknown, let outputUID = AudioDevices.uid(of: output) else {
             throw MuteRigError(stage: "Finding the output", status: OSStatus(kAudioHardwareBadDeviceError))
         }
         // The output's stereo pair (a mono output gets both sides mixed).
@@ -99,6 +121,13 @@ public final class VolumeRig {
         ]
         status = AudioHardwareCreateAggregateDevice(composition as CFDictionary, &aggregate)
         guard status == noErr else { throw MuteRigError(stage: "Creating the audio device", status: status) }
+        // A small IO buffer keeps the added delay low (a big one puts sound behind the picture).
+        if bufferFrames > 0 {
+            var frames = bufferFrames
+            var bufferAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyBufferFrameSize, mScope: kAudioObjectPropertyScopeGlobal,
+                                                           mElement: kAudioObjectPropertyElementMain)
+            AudioObjectSetPropertyData(aggregate, &bufferAddress, 0, nil, UInt32(MemoryLayout<UInt32>.size), &frames)
+        }
 
         let state = self.state, left = self.left, right = self.right
         status = AudioDeviceCreateIOProcIDWithBlock(&ioProc, aggregate, nil) { _, input, _, output, _ in
@@ -124,9 +153,11 @@ public final class VolumeRig {
     }
 
     /// Retargets the tap to the app's current sound processes; false if Core Audio refuses.
-    public func update(processes newProcesses: [AudioObjectID]) -> Bool {
-        guard newProcesses != processes else { return true }
+    public func update(processes newProcesses: [AudioObjectID], bundleIDs newBundleIDs: [String]? = nil) -> Bool {
+        let newBundleIDs = newBundleIDs ?? bundleIDs
+        guard newProcesses != processes || newBundleIDs != bundleIDs else { return true }
         description.processes = newProcesses
+        if #available(macOS 26.0, *), !newBundleIDs.isEmpty { description.bundleIDs = newBundleIDs }
         var address = AudioObjectPropertyAddress(mSelector: kAudioTapPropertyDescription, mScope: kAudioObjectPropertyScopeGlobal,
                                                  mElement: kAudioObjectPropertyElementMain)
         var value: CATapDescription? = description
@@ -135,10 +166,33 @@ public final class VolumeRig {
         }
         guard status == noErr else { return false }
         processes = newProcesses
+        bundleIDs = newBundleIDs
         return true
     }
 
     public func stop() { teardown() }
+
+    /// True once the audio thread has run: the rig is reading the tap and playing it.
+    public var isReading: Bool { state.pointee.reading }
+
+    /// Audio cycles run so far.
+    public var cycles: UInt64 { state.pointee.cycles }
+
+    /// Changes how the tapped app is held back from the speakers. A rig made while the app plays
+    /// starts "muted while read" (it keeps playing until the rig takes over, so there's no gap),
+    /// then becomes "muted" (so a later start is never heard unprocessed).
+    @discardableResult
+    public func setMuteBehavior(_ behavior: CATapMuteBehavior) -> Bool {
+        guard description.muteBehavior != behavior, tap != kAudioObjectUnknown else { return true }
+        description.muteBehavior = behavior
+        var address = AudioObjectPropertyAddress(mSelector: kAudioTapPropertyDescription, mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var value: CATapDescription? = description
+        let status = withUnsafeMutablePointer(to: &value) {
+            AudioObjectSetPropertyData(tap, &address, 0, nil, UInt32(MemoryLayout<CATapDescription?>.size), $0)
+        }
+        return status == noErr
+    }
 
     /// Stops the device and arms it again, so it sleeps until the app plays again (tap auto-start).
     @discardableResult
@@ -165,6 +219,8 @@ public final class VolumeRig {
                                state: UnsafeMutablePointer<State>, left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>) {
         let inputs = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
         let outputs = UnsafeMutableAudioBufferListPointer(output)
+        if !state.pointee.reading { state.pointee.reading = true }
+        state.pointee.cycles &+= 1
         var frames = 0
         let first = max(inputs.count - state.pointee.tapStreams, 0)
         if first < inputs.count, let data = inputs[first].mData?.assumingMemoryBound(to: Float.self) {

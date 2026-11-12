@@ -52,7 +52,7 @@ final class SoundModule: ModuleController {
         return false
     }
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private static let mutedKey = "sound.muted"
     private static let volumesKey = "sound.volumes"
     private static let excluded: Set<String> = ["com.apple.finder", Bundle.main.bundleIdentifier ?? "ca.bryanyao.Tutto"]
@@ -62,6 +62,10 @@ final class SoundModule: ModuleController {
     /// Bundle ID → its VolumeRig, and the sound processes they cover.
     private var volumeRigs: [String: AnyObject] = [:]
     private var volumeTargets: [String: [AudioObjectID]] = [:]
+    /// The output device whose format the rigs follow, and its listeners.
+    private var watchedDevice = AudioObjectID(kAudioObjectUnknown)
+    private var deviceListeners: [(AudioObjectPropertyAddress, AudioObjectPropertyListenerBlock)] = []
+    private var deviceChangeWork: DispatchWorkItem?
     private var volumeRearmWork: DispatchWorkItem?
     private var watchers = 0
     private var timer: DispatchSourceTimer?
@@ -72,10 +76,17 @@ final class SoundModule: ModuleController {
     private var refreshWork: DispatchWorkItem?
     private let lookups = DispatchQueue(label: "ca.bryanyao.Tutto.sound.lookups", qos: .userInitiated)
 
-    init() {
-        muted = Set(UserDefaults.standard.stringArray(forKey: Self.mutedKey) ?? [])
-        volumes = (UserDefaults.standard.dictionary(forKey: Self.volumesKey) as? [String: Double]) ?? [:]
+    /// `defaults`: where mutes and levels are kept (the probe passes a throwaway suite).
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        muted = Set(defaults.stringArray(forKey: Self.mutedKey) ?? [])
+        volumes = (defaults.dictionary(forKey: Self.volumesKey) as? [String: Double]) ?? [:]
     }
+
+    #if DEBUG
+    /// The probe: what waking from sleep does.
+    func simulateWake() { rebuild() }
+    #endif
 
     // MARK: Lifecycle
 
@@ -256,6 +267,7 @@ final class SoundModule: ModuleController {
     }
 
     private func rebuild() {
+        watchOutputDevice()
         applyVolumes(rebuild: true)
         guard #available(macOS 14.2, *), !muted.isEmpty else { return }
         lookUpTargets { [weak self] targets in
@@ -312,6 +324,7 @@ final class SoundModule: ModuleController {
     // MARK: Core Audio notifications
 
     private func addSystemListeners() {
+        watchOutputDevice()
         guard systemListeners.isEmpty else { return }
         let system = AudioObjectID(kAudioObjectSystemObject)
         let selectors: [AudioObjectPropertySelector] = [
@@ -334,6 +347,7 @@ final class SoundModule: ModuleController {
     }
 
     private func removeSystemListeners() {
+        unwatchOutputDevice()
         let system = AudioObjectID(kAudioObjectSystemObject)
         for (selector, block) in systemListeners {
             var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
@@ -375,6 +389,7 @@ final class SoundModule: ModuleController {
         rearmWork?.cancel()
         if watchers > 0 { refreshUsage() }
         scheduleVolumeRearm()
+        checkVolumeRigsStart()
         guard #available(macOS 14.2, *), rig != nil else { return }
         guard !rigTargets.contains(where: AudioProcessList.isRunningOutput) else { return }
         let work = DispatchWorkItem { [weak self] in
@@ -400,7 +415,7 @@ final class SoundModule: ModuleController {
             }
         }
         refreshWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
     }
 
     // MARK: Volume
@@ -471,37 +486,156 @@ final class SoundModule: ModuleController {
     }
 
     @available(macOS 14.2, *)
-    private func placeVolumeRigs(_ byApp: [String: [AudioObjectID]], rebuild: Bool) {
-        for id in Array(volumeRigs.keys) {
-            let keep = !rebuild && volumes[id] != nil && !muted.contains(id) && !(byApp[id] ?? []).isEmpty
-            if !keep {
-                (volumeRigs[id] as? VolumeRig)?.stop()
-                volumeRigs[id] = nil
-                volumeTargets[id] = nil
-            }
+    private func placeVolumeRigs(_ byApp: [String: AppSound], rebuild: Bool) {
+        // On macOS 26 a rig follows the app by bundle ID, so it stays while the app is open, even
+        // between sounds, and takes in a new sound process with no gap. Before that, a rig needs
+        // the app's processes.
+        let followsBundles: Bool
+        if #available(macOS 26.0, *) { followsBundles = true } else { followsBundles = false }
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        func needed(_ id: String) -> Bool {
+            guard volumes[id] != nil, !muted.contains(id), let sound = byApp[id] else { return false }
+            return !sound.processes.isEmpty || (followsBundles && running.contains(id))
         }
-        for (id, processes) in byApp where !processes.isEmpty {
-            guard let percent = volumes[id], !muted.contains(id) else { continue }
+        for id in Array(volumeRigs.keys) where !needed(id) {
+            (volumeRigs[id] as? VolumeRig)?.stop()
+            volumeRigs[id] = nil
+            volumeTargets[id] = nil
+        }
+        let output = AudioDevices.defaultOutputID()
+        for (id, sound) in byApp where needed(id) {
+            guard let percent = volumes[id] else { continue }
             let gain = VolumeCurve.gain(percent: percent)
-            if let rig = volumeRigs[id] as? VolumeRig {
-                if rig.update(processes: processes) {
-                    rig.setGain(gain)
-                    volumeTargets[id] = processes
+            let bundleIDs = followsBundles ? sound.bundleIDs : []
+            let old = volumeRigs[id] as? VolumeRig
+            // Kept unless the output changed under it or a rebuild was asked for.
+            if let old, !rebuild, old.outputDevice == output {
+                if old.update(processes: sound.processes, bundleIDs: bundleIDs) {
+                    old.setGain(gain)
+                    volumeTargets[id] = sound.processes
                     continue
                 }
-                rig.stop()
-                volumeRigs[id] = nil
             }
+            // The new rig is made before the old one goes, so the app is never left untapped. One
+            // made while the app plays lets it keep playing until it takes over (no gap), then holds
+            // it back for good; the old rig stops once the new one is playing.
+            let playing = sound.processes.contains(where: AudioProcessList.isRunningOutput)
             do {
-                volumeRigs[id] = try VolumeRig(processes: processes, gain: gain)
-                volumeTargets[id] = processes
+                var behavior: CATapMuteBehavior = playing ? .mutedWhenTapped : .muted
+                #if DEBUG
+                if Self.probeForceMuted { behavior = .muted; Self.probeForceMuted = false }
+                #endif
+                let rig = try VolumeRig(processes: sound.processes, bundleIDs: bundleIDs, gain: gain, muteBehavior: behavior)
+                volumeRigs[id] = rig
+                volumeTargets[id] = sound.processes
                 problem = nil
+                handOver(to: rig, from: old, promote: playing)
             } catch {
                 NSLog("Tutto: volume rig for \(id): \(error)")
                 problem = "Couldn't change the volume: \(error)."
+                volumeRigs[id] = nil
+                volumeTargets[id] = nil
+                old?.stop()
             }
         }
         watchOutput(of: (rigTargets + volumeTargets.values.flatMap { $0 }).sorted())
+        // An app that was already playing sends no "started" event: check its rig runs.
+        checkVolumeRigsStart()
+    }
+
+    /// Once the new rig is reading (or after half a second), the old one stops and a rig made
+    /// "muted while read" becomes "muted".
+    @available(macOS 14.2, *)
+    private func handOver(to rig: VolumeRig, from old: VolumeRig?, promote: Bool, waited: Double = 0) {
+        guard old != nil || promote else { return }
+        if rig.isReading || waited >= 0.5 {
+            old?.stop()
+            if promote { rig.setMuteBehavior(.muted) }
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self, weak rig] in
+            MainActor.assumeIsolated {
+                guard let self, let rig else { old?.stop(); return }
+                self.handOver(to: rig, from: old, promote: promote, waited: waited + 0.01)
+            }
+        }
+    }
+
+    #if DEBUG
+    /// Probes: make every rig "muted" from the start, to prove the start check catches a stuck one.
+    nonisolated(unsafe) static var probeForceMuted = false
+    #endif
+
+    /// An adjusted app started playing: 0.35 s later its rig must be running audio. One that
+    /// isn't (made "muted" just as the app began, which Core Audio never starts) would leave the
+    /// app silent, so every rig is made again then, without a gap.
+    private func checkVolumeRigsStart() {
+        guard #available(macOS 14.2, *), !volumeRigs.isEmpty else { return }
+        let before = volumeRigs.compactMapValues { ($0 as? VolumeRig)?.cycles }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let stuck = self.volumeRigs.contains { id, object in
+                    guard let rig = object as? VolumeRig, let was = before[id], rig.cycles == was else { return false }
+                    return (self.volumeTargets[id] ?? []).contains(where: AudioProcessList.isRunningOutput)
+                }
+                if stuck {
+                    NSLog("Tutto: a volume rig didn't start; making it again")
+                    self.applyVolumes(rebuild: true)
+                }
+            }
+        }
+    }
+
+    // MARK: The output device
+
+    /// Follows the current output's sample rate, layout and presence: a headset that switches to
+    /// its call profile, a display that changes rate, or a device that goes away leaves rigs
+    /// playing in the wrong format until they're made again, so they're made again.
+    private func watchOutputDevice() {
+        let device = AudioDevices.defaultOutputID() ?? AudioObjectID(kAudioObjectUnknown)
+        guard device != watchedDevice else { return }
+        unwatchOutputDevice()
+        guard device != kAudioObjectUnknown else { return }
+        watchedDevice = device
+        let watched: [(AudioObjectPropertySelector, AudioObjectPropertyScope)] = [
+            (kAudioDevicePropertyNominalSampleRate, kAudioObjectPropertyScopeGlobal),
+            (kAudioDevicePropertyStreamConfiguration, kAudioObjectPropertyScopeOutput),
+            (kAudioDevicePropertyDeviceIsAlive, kAudioObjectPropertyScopeGlobal),
+        ]
+        for (selector, scope) in watched {
+            var address = AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+            let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.outputFormatChanged() }
+            }
+            if AudioObjectAddPropertyListenerBlock(device, &address, .main, block) == noErr {
+                deviceListeners.append((address, block))
+            }
+        }
+    }
+
+    private func unwatchOutputDevice() {
+        for (address, block) in deviceListeners {
+            var address = address
+            AudioObjectRemovePropertyListenerBlock(watchedDevice, &address, .main, block)
+        }
+        deviceListeners.removeAll()
+        watchedDevice = AudioObjectID(kAudioObjectUnknown)
+        deviceChangeWork?.cancel()
+    }
+
+    /// Changes come in bursts (rate, then layout): one rebuild a moment after the last.
+    private func outputFormatChanged() {
+        deviceChangeWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.watchedDevice = AudioObjectID(kAudioObjectUnknown)  // re-read: it may have gone
+                self.rebuild()
+            }
+        }
+        deviceChangeWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
     private func tearDownVolumeRigs() {
@@ -511,8 +645,10 @@ final class SoundModule: ModuleController {
         volumeTargets.removeAll()
     }
 
-    /// Half a second after an adjusted app goes quiet, its device is stopped and armed again, so
-    /// it sleeps (no CPU, no keeping the Mac awake) until the app plays again.
+    /// Two minutes after an adjusted app goes quiet, its device is stopped and armed again, so it
+    /// sleeps (no CPU, no keeping the Mac or a headset awake) until the app plays again. Sounds
+    /// within that time go straight through; the first one after it starts about 0.15 s late
+    /// (quiet, never loud), which is what waking an output takes.
     private func scheduleVolumeRearm() {
         guard #available(macOS 14.2, *), !volumeRigs.isEmpty else { return }
         volumeRearmWork?.cancel()
@@ -527,17 +663,31 @@ final class SoundModule: ModuleController {
             }
         }
         volumeRearmWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120, execute: work)
     }
 
-    nonisolated private static func processesByApp(_ ids: Set<String>, owners: [AudioOwnership.App]) -> [String: [AudioObjectID]] {
-        var result: [String: [AudioObjectID]] = [:]
+    /// Each wanted app's sound processes, and the bundle IDs a tap can follow for it: its own,
+    /// and its helpers' when they're named after it (com.google.Chrome.helper). A helper ID
+    /// other apps could share (a generic one) is left to the process list.
+    nonisolated private static func processesByApp(_ ids: Set<String>, owners: [AudioOwnership.App]) -> [String: AppSound] {
+        var result: [String: AppSound] = [:]
+        for id in ids { result[id] = AppSound(processes: [], bundleIDs: [id]) }
         for process in AudioProcessList.read() {
             let owner = process.bundleID.flatMap { ids.contains($0) ? $0 : nil }
                 ?? AudioOwnership.owner(of: process.pid, among: owners)?.bundleID
-            if let owner, ids.contains(owner) { result[owner, default: []].append(process.objectID) }
+            guard let owner, ids.contains(owner) else { continue }
+            result[owner]?.processes.append(process.objectID)
+            if let helper = process.bundleID, helper != owner, helper.hasPrefix(owner + "."),
+               result[owner]?.bundleIDs.contains(helper) == false {
+                result[owner]?.bundleIDs.append(helper)
+            }
         }
-        return result.mapValues { $0.sorted() }
+        return result.mapValues { AppSound(processes: $0.processes.sorted(), bundleIDs: $0.bundleIDs.sorted()) }
+    }
+
+    struct AppSound: Sendable {
+        var processes: [AudioObjectID]
+        var bundleIDs: [String]
     }
 
     // MARK: App list
