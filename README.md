@@ -11,12 +11,12 @@ Tutto is fifteen everyday tools in one native Swift app. **The app is 9 MB, it u
 
 - **System:** battery (watts, health, cycles), CPU, GPU, memory, disk, network, temperatures and fan control, in the menu bar and in the app.
 - **Window switcher:** ⌘Tab with a card for every window, not just every app.
-- **Windows:** snap to halves, thirds and quarters from a palette or a key.
+- **Windows:** drag a window to an edge or corner to snap it, or snap it to halves, thirds and quarters from a palette or a key.
 - **Scrolling Strip:** every window side by side on one strip that scrolls.
 - **Screenshots:** capture to the clipboard or an editor (draw, crop, copy text, pick colors); **scrolling captures** of whole pages; **screen recording** saved as an MP4.
 - **Convert:** pictures, video, sound, PDFs, documents and subtitles into other formats, or smaller, on this Mac; tap ⇧ while dragging files for a wheel of formats.
 - **Clean Up:** leftovers from apps you removed, caches, logs and the Trash, reviewed first; what you remove goes to the Trash.
-- **Clipboard history:** searchable, with pins.
+- **Clipboard history:** searchable, with pins; ⌥⇧⌘V pastes anything as plain text.
 - **Sound:** any app's own level, up to 300 % for quiet ones, or muted at the speakers.
 - **Stay Awake:** the Mac stays on for a time you type, lid closed included.
 - **Auto clicker:** up to 100 clicks a second, from a switch or ⌃⇧A.
@@ -57,7 +57,8 @@ If another app already uses one of the shortcuts below, macOS may deliver the ke
 | `⌘⇧2` | Select an area → copied to the clipboard (no editor to dismiss) |
 | `` ⌘⇧` `` | The whole screen under the pointer → clipboard (it takes these keys from macOS's "back through an app's windows"; ⌘` still goes through them) |
 | `⌘⇧1` | Select an area → screenshot editor |
-| `⌃⇧V` | Clipboard history: type to search, double-click or `↩` to paste into the app you were in (your clipboard stays as it was; Clipboard › "Keep pasted items on the clipboard" changes that), `⌘↩` copy, `⇥` filter by type, `⇧⌘P` pin, `⌘⌫` delete |
+| `⌃⇧V` | Clipboard history: type to search, double-click or `↩` to paste into the app you were in (your clipboard stays as it was; Clipboard › "Keep pasted items on the clipboard" changes that), `⇧↩` paste as plain text, `⌘↩` copy, `⇥` filter by type, `⇧⌘P` pin, `⌘⌫` delete |
+| `⌥⇧⌘V` | Paste as plain text, in any app: what you copied, without its fonts, colors or links (your clipboard keeps them) |
 | `⌃⇧B` | Window palette: type "left half", "max", "next display"…, `↩` |
 | `⌃⇧R` | Record the screen: pick an area, a window or the whole screen; press again (or Stop in the menu bar) to save an MP4 |
 | `⌃⇧S` | Scrolling capture: pick the part that scrolls; Tutto scrolls it and stitches one tall picture |
@@ -97,6 +98,8 @@ Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press th
 **Scrolling strip** (off until you turn it on, on its page under Tools › Scrolling Strip): every window sits side by side on one strip, full height between the menu bar and the Dock, and the screen scrolls along it — nothing overlaps and opening a window never shrinks the others. Windows are arranged when you use a strip key (or ⌘Tab to one that's out of view); otherwise they stay wherever you or the window palette put them ("Arrange windows › All the time" makes the strip hold its shape constantly). Hold `⌃⌥` to see the strip bar, with a picture of each window. All your apps in full screen? "Bring Them Here" puts them on the strip, full width. `⌃⌥←` `⌃⌥→` move between windows and loop round at the ends (→ on the last window carries on to the first, which comes in from the right; a held key stops at the end, press again to loop), `⌃⌥⇧←` `⌃⌥⇧→` move a window along (round the ends too, as do `⌃⌥↑` `⌃⌥↓` in a stack), `⌃⌥1`–`9` jump (9 is the last), `⌃⌥R` cycles the width (25 → 33 → 50 → 66 → 75 %), `⌃⌥F` full width, `⌃⌥⇧F` every window into full screen, as its green button would, or back to the strip (also the Strip · Full switch at the bottom of the menu bar panel; apps you keep in full screen yourself stay there), `⌃⌥C` centre, `⌃⌥]` / `⌃⌥[` stack into the left / right column, `⌃⌥⇧]` pop out, `⌃⌥⇧T` tabbed column, `⌃⌥P` pin to the left edge, `⌃⌥T` float, `⌃⌥N` next display, `⌃⌥Q` stop (every window goes back on screen). Every key can be changed in Shortcuts. ⌃⌥ + scroll moves along the strip, a three- or four-finger swipe can too, and a frosted bar of app icons shows where you are. Dialogs, Quick Look and fixed-size windows float; native full screen is left alone.
 
 **Trackpad Corner:** click or tap a bottom corner of the trackpad to right-click (pick the corner and its size on the page). Switch on **Three-finger click is a middle click** and a press with three fingers anywhere becomes a middle click — links open in a new tab, tabs close, Terminal pastes — and holding it drags with the middle button, for panning and orbiting in 3D and CAD apps. It waits while macOS's three-finger drag is on.
+
+**Snap by dragging (Windows page):** drag a window to the left or right edge for a half, a corner for a quarter, the top to fill the screen, or the bottom for thirds (slide from an outer third into the middle for two thirds). An outline shows where it will go before you let go, and Esc cancels. Drag a window Tutto snapped and it gets its old size back. macOS 15 and later have their own edge tiling; while it's on, Tutto stays out of its way (switch it off in System Settings › Desktop & Dock to use Tutto's, with thirds, the gap you set and sizes given back).
 
 **Finder:** right-click an archive for **Extract Here**, **Extract to "Name"**, **Extract to…**; right-click anything for **Compress to ZIP**, and files for **Convert ›** (their formats, Compress, More…). Archives can also be opened with Tutto by double-clicking (Archives › Make Default).
 
