@@ -170,6 +170,7 @@ Rules (they extend principles 1–7):
 9. **Depth on demand, not on show** (25, 26, 9). The busiest apps are one row of chips (icon and CPU %; the name on hover), not three rows. Levels replace the app strip instead of adding a mixer under it, and list only the apps that matter now (playing, not at 100 %, or muted; five at most); "All apps" opens the Sound page.
 10. **The tools are a bar, keys on hover** (12, 2, 27). One row of icon buttons; pointing at one shows a small floating label with its name and keys (no layout shift); a click still lights the keys as if pressed.
 11. **No tabs** (29). Tabs hide what you came for behind a guess, and an icon-only tab capsule is the competitor's signature. Tutto stays one calm scroll of cards in its own monochrome ink-and-paper look.
+12. **Three tiles for the controls, a grid for the readings** (14, 16, 26; Bryan 2026-11-12: "its still so cluttered … just make it cleaner"). The six readings sit three across as a label and a number with a faint line; their details are in the tooltip, their charts on the pages they open. Stay awake, the auto clicker and the fan are three small tiles (symbol, name, state); a click opens a native menu with their options (durations, speed, Auto / Max). Nothing on the panel is a form. Measured: 938 pt (v4) → 512 pt.
 
 ## 6. Anti-goals
 

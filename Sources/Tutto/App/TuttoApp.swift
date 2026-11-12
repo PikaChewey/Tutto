@@ -15,13 +15,26 @@ struct TuttoApp: App {
     @State private var model = AppModel.shared
 
     var body: some Scene {
-        MenuBarExtra {
+        MenuBarExtra(isInserted: .constant(!Self.isProbeRun)) {
             MenuPanel(model: model)
         } label: {
             MenuBarLabel(model: model)
         }
         .menuBarExtraStyle(.window)
     }
+
+    /// A debug copy run for a probe, a lab or offscreen renders: no icon in the menu bar (a second
+    /// Tutto icon appearing for a few seconds is confusing).
+    static let isProbeRun: Bool = {
+        #if DEBUG
+        let flags = ["--snapshot", "--record-probe", "--scroll-probe", "--scroll-events-probe", "--scroll-fade-probe", "--editor-probe",
+                     "--convert-probe", "--cleanup-probe", "--audio-probe", "--volume-probe", "--volume-glitch-probe",
+                     "--sound-module-probe", "--live-volume-check", "--tone-player", "--memory-lab", "--switcher-lab"]
+        return CommandLine.arguments.contains(where: flags.contains)
+        #else
+        return false
+        #endif
+    }()
 }
 
 /// The menu bar icon; while Stay Awake runs, the time left beside it; while the auto clicker

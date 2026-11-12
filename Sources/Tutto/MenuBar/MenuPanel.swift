@@ -139,16 +139,27 @@ private struct WidgetGrid: View {
     var body: some View {
         let lines = PanelLayout.lines(model.layout.slots(model, editing: editing != nil))
         VStack(spacing: PanelGrid.gap) {
-            ForEach(lines, id: \.self) { line in
-                switch line {
-                case .cards(let ids):
+            ForEach(Self.blocks(lines), id: \.self) { block in
+                switch block {
+                case .line(.cards(let ids)):
                     HStack(spacing: PanelGrid.gap) {
                         ForEach(ids, id: \.self) { id in
                             Editable(id: id, editing: editing) { card(id, wide: ids.count == 1) }
                         }
                     }
-                case .rows(let ids):
+                case .line(.rows(let ids)):
                     ControlRows(model: model, ids: ids, editing: editing)
+                case .vitals(let ids):
+                    // The readings together: three across, the label and the number (details on hover).
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: PanelGrid.gap), count: 3), spacing: PanelGrid.gap) {
+                        ForEach(ids, id: \.self) { id in
+                            Editable(id: id, editing: editing) {
+                                if let system = model.system, case .card(let reading) = PanelLayoutStore.Widget(id: id) {
+                                    ReadingTile(reading: reading, system: system, sensors: model.sensors, wide: false, compact: true)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -157,6 +168,28 @@ private struct WidgetGrid: View {
         .background {
             if model.layout.layout.widgets.isShown(PanelLayoutStore.Card.devices.id) { Color.clear.watchingBluetoothBatteries() }
         }
+    }
+
+    enum Block: Hashable {
+        case line(WidgetLine)
+        case vitals([String])
+    }
+
+    /// Lines of nothing but readings next to each other become one grid.
+    static func blocks(_ lines: [WidgetLine]) -> [Block] {
+        var blocks: [Block] = []
+        for line in lines {
+            if case .cards(let ids) = line, ids.allSatisfy(PanelLayout.readingIDs.contains) {
+                if case .vitals(let earlier)? = blocks.last {
+                    blocks[blocks.count - 1] = .vitals(earlier + ids)
+                } else {
+                    blocks.append(.vitals(ids))
+                }
+            } else {
+                blocks.append(.line(line))
+            }
+        }
+        return blocks
     }
 
     @ViewBuilder
@@ -587,9 +620,12 @@ private struct ReadingTile: View {
     var system: SystemMonitor
     var sensors: SensorsModule?
     var wide: Bool
+    /// In the readings grid: the label and the number; the detail moves into the tooltip.
+    var compact = false
 
     var body: some View {
         tile(reading, wide: wide)
+            .environment(\.compactTile, compact)
             .background {
                 if reading == .temperature, let sensors {
                     VisibilityReader { visible in visible ? sensors.begin() : sensors.end() }
@@ -691,6 +727,14 @@ private struct ReadingTile: View {
     }
 }
 
+private struct CompactTileKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var compactTile: Bool {
+        get { self[CompactTileKey.self] }
+        set { self[CompactTileKey.self] = newValue }
+    }
+}
+
 /// One tile: an engraved caption and a detail on top, the number and its line beneath. The number
 /// never shrinks or truncates: the line gives way instead (down to 26 pt) when it needs the room.
 private struct StatTile<Graph: View>: View {
@@ -709,8 +753,58 @@ private struct StatTile<Graph: View>: View {
     var wide = false
     @ViewBuilder var graph: Graph
     @State private var hovering = false
+    @Environment(\.compactTile) private var compact
 
     var body: some View {
+        if compact { compactBody } else { fullBody }
+    }
+
+    /// Three across: the label, the number and a faint line; the detail is in the tooltip.
+    private var compactBody: some View {
+        Button {
+            showInApp(page)
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(caption)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.ink3)
+                    .lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: unit.first?.isLetter == true ? 2 : 1) {
+                    if let prefix {
+                        Text(prefix)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(Color.ink3)
+                    }
+                    Text(value)
+                        .font(.figure(19, weight: .medium))
+                        .foregroundStyle(alert ? Color.alert : Color.ink)
+                    if !unit.isEmpty {
+                        Text(unit)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(Color.ink3)
+                    }
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                graph
+                    .frame(height: 10)
+                    .opacity(0.8)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(CardSurface(radius: 10, hovering: hovering))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(detail.isEmpty ? help : "\(help) · \(detail)")
+        .accessibilityLabel(spokenName)
+        .accessibilityValue(spokenValue)
+        .accessibilityHint("Shows details")
+    }
+
+    private var fullBody: some View {
         Button {
             showInApp(page)
         } label: {
@@ -780,23 +874,153 @@ private struct ControlRows: View {
     var editing: PanelEditing?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(ids.enumerated()), id: \.element) { index, id in
-                Editable(id: id, editing: editing, radius: 8) {
+        HStack(spacing: PanelGrid.gap) {
+            ForEach(ids, id: \.self) { id in
+                Editable(id: id, editing: editing, radius: 10) {
                     Group {
                         switch id {
-                        case "awake": if let awake = model.awake { AwakeRow(awake: awake) }
-                        case "clicker": if let clicker = model.clicker { ClickerRow(clicker: clicker, model: model) }
-                        case "fan": if let sensors = model.sensors { FanRow(sensors: sensors) }
+                        case "awake": if let awake = model.awake { AwakeTile(awake: awake) }
+                        case "clicker": if let clicker = model.clicker { ClickerTile(clicker: clicker) }
+                        case "fan": if let sensors = model.sensors { FanTile(sensors: sensors) }
                         default: EmptyView()
                         }
                     }
-                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity)
                 }
-                if index < ids.count - 1 { Hairline().opacity(0.5) }
             }
         }
-        .panelCard(vertical: 3)
+    }
+}
+
+/// A control as a small tile: its symbol, its name and what it's doing; a click opens its menu.
+/// While it's running, the symbol takes the accent (the panel's one colour for what's live).
+private struct QuickTile<Items: View>: View {
+    var symbol: String
+    var title: String
+    var state: String
+    var live: Bool
+    var help: String
+    @ViewBuilder var items: Items
+    @State private var hovering = false
+
+    var body: some View {
+        Menu {
+            items
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Image(systemName: symbol)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(live ? Color.themeAccent : Color.ink2)
+                    .frame(height: 18)
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.ink)
+                    .lineLimit(1)
+                Text(state)
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(live ? Color.themeAccent : Color.ink3)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(CardSurface(radius: 10, hovering: hovering))
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .onHover { hovering = $0 }
+        .help(help)
+        .accessibilityLabel(title)
+        .accessibilityValue(state)
+    }
+}
+
+private struct AwakeTile: View {
+    @Bindable var awake: StayAwakeModule
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { _ in
+            QuickTile(symbol: ModuleID.awake.symbol, title: "Awake", state: state, live: awake.session != nil,
+                      help: awake.session == nil ? "Keep the Mac on, lid closed included" : "Stay awake: running") {
+                if awake.session == nil {
+                    ForEach(AwakeDuration.presets, id: \.self) { seconds in
+                        Button("For \(AwakeDuration.label(seconds))") { awake.start(for: seconds) }
+                    }
+                    Divider()
+                    Button("Other Time…") { showInApp(.awake) }
+                } else {
+                    ForEach(AwakeDuration.additions, id: \.self) { seconds in
+                        Button("Add \(AwakeDuration.label(seconds))") { awake.start(for: seconds) }
+                    }
+                    Divider()
+                    Button("End Now") { awake.endNow() }
+                }
+            }
+        }
+    }
+
+    private var state: String {
+        guard let session = awake.session else { return "Off" }
+        if session.agents == true { return "While agents work" }
+        let left = max(Int(session.endsAt.timeIntervalSinceNow), 0)
+        return left >= 3600 ? "\(left / 3600) h \(left % 3600 / 60) min left" : "\(max(left / 60, 1)) min left"
+    }
+}
+
+private struct ClickerTile: View {
+    @Bindable var clicker: ClickerModule
+
+    var body: some View {
+        let cps = clicker.settings.clicksPerSecond
+        QuickTile(symbol: ModuleID.clicker.symbol, title: "Clicker",
+                  state: clicker.isOn ? "Clicking" : "\(Format.number(Int(cps.rounded()))) CPS",
+                  live: clicker.isOn, help: clicker.isOn ? "Stop clicking" : "Auto clicker") {
+            if clicker.isOn {
+                Button("Stop") { clicker.end("Stopped") }
+            } else {
+                Button("Start") { afterPanelCloses { clicker.begin(fromPanel: true) } }
+            }
+            Divider()
+            Picker("Speed", selection: Binding(get: { Int(cps.rounded()) }, set: { value in clicker.update { $0.clicksPerSecond = Double(value) } })) {
+                ForEach([1, 5, 10, 20, 50, 100], id: \.self) { Text("\($0) CPS").tag($0) }
+            }
+            Toggle("Double-Click", isOn: Binding(get: { clicker.settings.double }, set: { value in clicker.update { $0.double = value } }))
+            Divider()
+            Button("All Settings…") { showInApp(.clicker) }
+        }
+    }
+}
+
+private struct FanTile: View {
+    @Bindable var sensors: SensorsModule
+
+    var body: some View {
+        let fan = sensors.fans.first
+        let command = fan.flatMap { sensors.commands[$0.index] }
+        let mode: String = switch command {
+        case .none, .auto?: "Auto"
+        case .rpm?: "Custom"
+        case .maximum?: "Max"
+        }
+        let speed = fan.map { $0.isStopped ? "off" : "\(Format.number(Int($0.currentRPM))) rpm" } ?? ""
+        QuickTile(symbol: "fan", title: "Fan", state: mode, live: mode != "Auto",
+                  help: (speed.isEmpty ? "" : "Now \(speed) · ") + "Auto: macOS controls the fan · Max: full speed, for heavy work") {
+            Button { apply(.auto) } label: { menuLabel("Auto", on: mode == "Auto") }
+            Button { apply(.maximum) } label: { menuLabel("Max", on: mode == "Max") }
+            Button("Custom Speed…") { showInApp(.sensors) }
+        }
+        .background(VisibilityReader { visible in visible ? sensors.begin() : sensors.end() })
+    }
+
+    private func menuLabel(_ title: String, on: Bool) -> some View {
+        on ? Text("✓ " + title) : Text(title)
+    }
+
+    private func apply(_ command: FanCommand) {
+        for fan in sensors.fans { sensors.set(command, for: fan) }
     }
 }
 
