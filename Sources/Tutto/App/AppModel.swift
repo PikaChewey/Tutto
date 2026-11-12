@@ -118,7 +118,7 @@ final class AppModel {
 
     /// Checks whether the menu bar icon landed under the camera notch (macOS hides it there).
     func checkMenuBarIconVisibility() {
-        guard let item = NSApp.windows.first(where: { $0.className.contains("StatusBarWindow") }),
+        guard let item = MenuBarItemsModule.tuttoIconWindow(excluding: menuBarItems?.dividerWindow),
               let screen = item.screen ?? NSScreen.main,
               let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea else {
             menuBarIconHidden = false

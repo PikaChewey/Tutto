@@ -176,6 +176,17 @@ struct SnapshotExtras {
                 .split(separator: ":").map { URL(fileURLWithPath: String($0)) }
             return AnyView(ConvertView(module: converter, selection: selection).frame(height: 760))
         })
+        // Menu Bar Icons' settings, tucked away and showing (no status item is made), and the notice
+        // for Tutto's own icon on the wrong side of the divider.
+        for (suffix, collapsed, order) in [("hidden", true, MenuBarOrder.fine), ("showing", false, .fine), ("wrong-side", false, .tuttoWouldBeTucked)] {
+            extras.append(SnapshotExtras(name: "menu-bar-icons-\(suffix)", inDefaultSet: false) { model in
+                let module = MenuBarItemsModule()
+                module.previewState(collapsed: collapsed, order: order)
+                return AnyView(MenuBarItemsSettings(module: module, model: model)
+                    .frame(width: 680, height: order == .fine ? 440 : 540, alignment: .top).padding(20)
+                    .background(Color.paper))
+            })
+        }
         extras.append(SnapshotExtras(name: "clipboard-palette") { model in
             guard let clipboard = model.clipboard else { return AnyView(EmptyView()) }
             let palette = ClipboardPaletteModel(module: clipboard)
