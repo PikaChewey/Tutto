@@ -24,12 +24,13 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
     case clicker
     case converter
     case cleaner
+    case menuBarItems
 
     var id: String { rawValue }
 
     /// On for a new install (and when a new tool arrives). The strip rearranges every window,
     /// so it waits until you ask for it.
-    var isOnByDefault: Bool { self != .strip }
+    var isOnByDefault: Bool { self != .strip && self != .menuBarItems }
 
     /// The tools listed with on/off switches in Overview, General and the welcome window. The
     /// strip is switched on and off on its own page only.
@@ -52,6 +53,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .clicker: "Auto Clicker"
         case .converter: "Convert"
         case .cleaner: "Clean Up"
+        case .menuBarItems: "Menu Bar Icons"
         }
     }
 
@@ -72,6 +74,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .clicker: "cursorarrow.click.2"
         case .converter: "arrow.triangle.2.circlepath"
         case .cleaner: "sparkles"
+        case .menuBarItems: "menubar.rectangle"
         }
     }
 
@@ -93,6 +96,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .clicker: "Clicks for you at the speed you set. ⌃⇧A or a switch in the menu bar starts and stops it."
         case .converter: "Pictures, video, sound, PDFs and documents into other formats, or smaller. Tap ⇧ while dragging files."
         case .cleaner: "Leftovers from removed apps, caches, logs and the Trash. You review it all; it goes to the Trash."
+        case .menuBarItems: "Tuck away the menu bar icons you rarely use; one click brings them back."
         }
     }
 
@@ -112,6 +116,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .clicker: "Nothing but its shortcut until you start it."
         case .converter: "Nothing but a glance at each mouse press and modifier key, for the wheel. Work runs only when you convert."
         case .cleaner: "Nothing. It looks only when you scan."
+        case .menuBarItems: "Nothing. Its divider waits for a click."
         }
     }
 }

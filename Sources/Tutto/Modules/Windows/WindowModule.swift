@@ -35,6 +35,8 @@ final class WindowModule: ModuleController {
     /// when they're dragged away.
     private var snapped: [CGWindowID: (size: CGSize, before: CGSize)] = [:]
     @ObservationIgnored private var snapper: WindowDragSnap?
+    /// Windows kept on top of the others (WindowPins).
+    let pins = WindowPins()
     /// The window's frame when the drag began (after any size given back).
     @ObservationIgnored private var dragStartFrame: CGRect?
 
@@ -56,6 +58,7 @@ final class WindowModule: ModuleController {
         snapped.removeAll()
         snapper?.stop()
         snapper = nil
+        pins.unpinAll()
     }
 
     // MARK: Dragging to an edge

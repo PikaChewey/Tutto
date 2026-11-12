@@ -44,6 +44,7 @@ final class AppModel {
     private(set) var clicker: ClickerModule?
     private(set) var converter: ConverterModule?
     private(set) var cleaner: CleanupModule?
+    private(set) var menuBarItems: MenuBarItemsModule?
 
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
     /// On notched MacBooks a crowded menu bar puts new icons behind the notch, where they can't be clicked.
@@ -74,6 +75,7 @@ final class AppModel {
     func launch(quietly: Bool = false) {
         // The theme's light or dark, and your theme files.
         ThemeStore.shared.start()
+        if !quietly { ChargeLimitController.shared.start(model: self) }
         hotkeys.onSuspendChange = { [weak self] suspended in
             self?.strip?.setShortcutsSuspended(suspended)
             self?.switcher?.suspendClaims(suspended)
@@ -129,6 +131,7 @@ final class AppModel {
 
     func shutdown() {
         MemoryRelief.stop()
+        ChargeLimitController.shared.stop()
         for id in ModuleID.allCases { stop(id) }
     }
 
@@ -177,6 +180,7 @@ final class AppModel {
             case .clicker: if clicker == nil { clicker = ClickerModule() }
             case .converter: if converter == nil { converter = ConverterModule() }
             case .cleaner: if cleaner == nil { cleaner = CleanupModule() }
+            case .menuBarItems: if menuBarItems == nil { menuBarItems = MenuBarItemsModule() }
             case .switcher, .strip, .system, .sensors: break
             }
             return
@@ -228,6 +232,9 @@ final class AppModel {
         case .cleaner:
             if cleaner == nil { cleaner = CleanupModule() }
             cleaner?.start()
+        case .menuBarItems:
+            if menuBarItems == nil { menuBarItems = MenuBarItemsModule() }
+            menuBarItems?.start()
         }
     }
 
@@ -281,6 +288,9 @@ final class AppModel {
         case .cleaner:
             cleaner?.stop()
             cleaner = nil
+        case .menuBarItems:
+            menuBarItems?.stop()
+            menuBarItems = nil
         }
     }
 
@@ -334,6 +344,9 @@ final class AppModel {
         switch action {
         case .clipboardHistory: clipboard?.showPalette()
         case .pastePlainText: clipboard?.pastePlainText()
+        case .pinWindow: windows?.pins.toggleFrontWindow()
+        case .cleanKeyboard: KeyboardCleaner.shared.start()
+        case .showMenuBarIcons: menuBarItems?.toggle()
         case .windowPalette: windows?.showPalette()
         case .captureArea: screenshots?.capture(.areaToClipboard)
         case .captureScreen: screenshots?.capture(.screenToClipboard)

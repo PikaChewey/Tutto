@@ -1922,6 +1922,7 @@ private struct PanelFooter: View {
                     Toggle("Pause Trackpad Corner", isOn: Binding(get: { !corner.isEnabled }, set: { corner.isEnabled = !$0 }))
                 }
                 if model.clipboard != nil || model.corner != nil { Divider() }
+                Button("Clean the Keyboard…") { model.perform(.cleanKeyboard) }
                 Toggle("Open at Login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
                 Button("Shortcuts…") { showInApp(.shortcuts) }
                 Button("Permissions…") { showInApp(.permissions) }

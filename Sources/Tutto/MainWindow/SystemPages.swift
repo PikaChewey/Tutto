@@ -138,6 +138,8 @@ struct BatteryPage: View {
                         }
                     }
                 }
+                ChargeLimitSection(model: model)
+                BluetoothDevicesSection(model: model)
                 ProcessTable(title: "Using energy now", processes: monitor.energyProcesses,
                              value: { String(format: "%.1f", $0.energyImpact) }, valueCaption: "energy impact")
                 Text("Energy impact is Activity Monitor's measure of how much power an app is using right now, including CPU, GPU, disk and wake-ups.")

@@ -16,6 +16,9 @@ import TuttoKit
 enum ShortcutAction: Hashable, Identifiable {
     case clipboardHistory
     case pastePlainText
+    case pinWindow
+    case cleanKeyboard
+    case showMenuBarIcons
     case windowPalette
     case captureArea
     case captureScreen
@@ -38,6 +41,9 @@ enum ShortcutAction: Hashable, Identifiable {
         switch self {
         case .clipboardHistory: "clipboard.history"
         case .pastePlainText: "clipboard.pastePlain"
+        case .pinWindow: "windows.pin"
+        case .cleanKeyboard: "keyboard.clean"
+        case .showMenuBarIcons: "menubar.toggle"
         case .windowPalette: "windows.palette"
         case .captureArea: "screenshot.area"
         case .captureScreen: "screenshot.screen"
@@ -61,6 +67,9 @@ enum ShortcutAction: Hashable, Identifiable {
         switch self {
         case .clipboardHistory: "Clipboard history"
         case .pastePlainText: "Paste as plain text"
+        case .pinWindow: "Keep the front window on top (again to stop)"
+        case .cleanKeyboard: "Clean the keyboard (locks keys and trackpad)"
+        case .showMenuBarIcons: "Show or hide tucked-away menu bar icons"
         case .windowPalette: "Window palette"
         case .captureArea: "Capture area to clipboard"
         case .captureScreen: "Capture full screen to clipboard"
@@ -83,7 +92,9 @@ enum ShortcutAction: Hashable, Identifiable {
     var module: ModuleID? {
         switch self {
         case .clipboardHistory, .pastePlainText: .clipboard
-        case .windowPalette, .window: .windows
+        case .windowPalette, .window, .pinWindow: .windows
+        case .showMenuBarIcons: .menuBarItems
+        case .cleanKeyboard: nil
         case .captureArea, .captureScreen, .captureAreaEdit, .recordScreen, .scrollingCapture: .screenshots
         case .convertFiles: .converter
         case .cleanUp: .cleaner
@@ -113,13 +124,13 @@ enum ShortcutAction: Hashable, Identifiable {
         case .wordCounter: DefaultShortcuts.wordCounter
         case .toggleClicker: DefaultShortcuts.toggleClicker
         case .strip(let command): command.defaultShortcut
-        case .openTutto, .toggleCorner, .muteFrontApp, .window, .plugin: nil
+        case .openTutto, .toggleCorner, .muteFrontApp, .window, .plugin, .pinWindow, .cleanKeyboard, .showMenuBarIcons: nil
         }
     }
 
     static var fixed: [ShortcutAction] {
         [.clipboardHistory, .pastePlainText, .windowPalette, .captureArea, .captureScreen, .captureAreaEdit, .recordScreen, .scrollingCapture, .convertFiles,
-         .cleanUp, .wordCounter,
+         .cleanUp, .wordCounter, .pinWindow, .showMenuBarIcons, .cleanKeyboard,
          .toggleClicker,
          .muteFrontApp, .openTutto, .toggleCorner]
     }

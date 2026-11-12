@@ -195,6 +195,9 @@ enum DeepLinks {
         case "clean-up": .cleanUp
         case "clipboard": .clipboardHistory
         case "paste-plain-text": .pastePlainText
+        case "pin-window": .pinWindow
+        case "clean-keyboard": .cleanKeyboard
+        case "menu-bar-icons": .showMenuBarIcons
         case "windows": .windowPalette
         case "word-counter": .wordCounter
         case "mute-front-app": .muteFrontApp
