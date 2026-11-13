@@ -280,7 +280,17 @@ struct CardSurface: View {
 
     var body: some View {
         let tokens = ThemeStore.shared.tokens
-        if tokens.liquid {
+        if tokens.liquid, GlassLook.current == .floating {
+            // Prototype: the card is its own piece of glass.
+            let shape = RoundedRectangle(cornerRadius: Radius.of(radius), style: .continuous)
+            Color.clear
+                .prototypeGlass(shape)
+                .overlay(GlassRim(shape: shape, strength: hovering ? 1.3 : 1))
+        } else if tokens.liquid, GlassLook.current == .clear {
+            let shape = RoundedRectangle(cornerRadius: Radius.of(radius), style: .continuous)
+            shape.fill(Color.white.opacity(hovering ? 0.12 : 0.07))
+                .overlay(GlassRim(shape: shape, strength: 0.7))
+        } else if tokens.liquid {
             LiquidPlatter(radius: Radius.of(radius), hovering: hovering)
         } else {
             RoundedRectangle(cornerRadius: Radius.of(radius), style: .continuous)

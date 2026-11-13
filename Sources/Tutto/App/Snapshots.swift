@@ -96,6 +96,9 @@ enum Snapshots {
         // `glass-stage wall-dark:<image> wall-light:<image>`: Liquid Glass can't be drawn offscreen, so the
         // panel is put on screen over a wallpaper, one window per appearance; each window's number is
         // written to stage-<appearance>.window and it stays up until stage-<appearance>.window.done exists.
+        if let look = only.first(where: { $0.hasPrefix("glass-look:") }).flatMap({ GlassLook(rawValue: String($0.dropFirst(11))) }) {
+            GlassLook.current = look
+        }
         if only.contains("glass-stage") {
             for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {
                 let prefix = "wall-\(name):"
@@ -131,8 +134,9 @@ enum Snapshots {
         host.appearance = NSAppearance(named: appearance)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: appearance)
-        window.isOpaque = true
-        window.backgroundColor = .black
+        // No wallpaper: a clear window over whatever is on screen, the way the panel really sits.
+        window.isOpaque = wallpaper != nil
+        window.backgroundColor = wallpaper != nil ? .black : .clear
         window.level = .floating
         window.ignoresMouseEvents = true
         window.isReleasedWhenClosed = false
@@ -184,7 +188,7 @@ private struct GlassStage<Panel: View>: View {
                 Image(nsImage: wallpaper).resizable().aspectRatio(contentMode: .fill)
                     .frame(width: size.width, height: size.height)
             } else {
-                LinearGradient(colors: [.blue, .purple, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+                Color.clear
             }
             panel
                 .shadow(color: .black.opacity(0.18), radius: 18, y: 8)

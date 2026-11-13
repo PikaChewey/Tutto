@@ -39,6 +39,50 @@ extension ThemeStore {
     @MainActor static var liquid: Bool { shared.tokens.liquid }
 }
 
+/// Prototypes of a glassier panel (Bryan 2026-11-13: "i dont think it looks glassy enough"), drawn
+/// on the glass stage only: `glass-look:floating` or `glass-look:clear`.
+enum GlassLook: String {
+    /// One sheet (the system's in the menu bar), cards as platters: what ships.
+    case sheet
+    /// No sheet: every card is its own piece of glass floating over the desktop, the header and the
+    /// footer glass capsules, gaps between them.
+    case floating
+    /// One sheet of the most transparent glass, lightly dimmed for the text, cards barely there.
+    case clear
+
+    nonisolated(unsafe) static var current: GlassLook = .sheet
+}
+
+extension View {
+    /// Glass of the prototype look in `shape` (regular, or clear with `clear`).
+    @ViewBuilder
+    func prototypeGlass<S: Shape>(_ shape: S, clear: Bool = false) -> some View {
+        if #available(macOS 26, *), ThemeStore.shared.tokens.liquid {
+            glassEffect(clear ? Glass.clear : Glass.regular, in: shape)
+        } else {
+            self
+        }
+    }
+}
+
+/// A thin line of light around a piece of glass: bright on the top-left edge, faint below.
+struct GlassRim<S: InsettableShape>: View {
+    var shape: S
+    var strength: Double = 1
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let dark = scheme == .dark
+        shape.strokeBorder(
+            LinearGradient(stops: [.init(color: .white.opacity((dark ? 0.55 : 0.95) * strength), location: 0),
+                                   .init(color: .white.opacity((dark ? 0.08 : 0.3) * strength), location: 0.45),
+                                   .init(color: .white.opacity((dark ? 0.22 : 0.6) * strength), location: 1)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            lineWidth: 1)
+        .allowsHitTesting(false)
+    }
+}
+
 /// A card on the glass: a translucent platter that keeps text legible over any wallpaper, with a
 /// hairline of light along its top edge. Under the pointer it lifts into glass.
 struct LiquidPlatter: View {

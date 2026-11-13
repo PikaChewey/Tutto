@@ -85,7 +85,7 @@ struct MenuPanel: View {
         .fixedSize(horizontal: false, vertical: true)
         // Liquid Glass: nothing over the glass (the system's in the menu bar, its own on the stage).
         .background { if !(drawsGlass && ThemeStore.liquid) { PanelBackdrop() } }
-        .liquidGlass(RoundedRectangle(cornerRadius: 26, style: .continuous), enabled: drawsGlass)
+        .modifier(StageSheet(enabled: drawsGlass))
         .watching(model.system, model.system?.panelFeeds ?? [])
         .background { if !preview { PanelWindowReader() } }
         .tint(Color.themeAccent)
@@ -108,6 +108,46 @@ struct MenuPanel: View {
     @MainActor static var cardsHeightLimit: CGFloat {
         let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 900
         return max(visible - 24 - 104, 320)
+    }
+}
+
+/// The glass stage's sheet: regular glass (what ships), none for the floating prototype (each card is
+/// glass), or clear glass with a light dimming layer under the text for the clear prototype.
+private struct StageSheet: ViewModifier {
+    var enabled: Bool
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        if !enabled || !ThemeStore.liquid {
+            content
+        } else {
+            switch GlassLook.current {
+            case .sheet:
+                content.liquidGlass(shape)
+            case .floating:
+                content
+            case .clear:
+                content
+                    .background(shape.fill(Color.black.opacity(scheme == .dark ? 0.28 : 0.04)))
+                    .prototypeGlass(shape, clear: true)
+                    .overlay(GlassRim(shape: shape))
+            }
+        }
+    }
+}
+
+/// The floating prototype's header and footer: a glass capsule each.
+private struct FloatingCapsule: ViewModifier {
+    func body(content: Content) -> some View {
+        if ThemeStore.liquid, GlassLook.current == .floating {
+            content
+                .padding(.vertical, 6)
+                .prototypeGlass(Capsule())
+                .overlay(GlassRim(shape: Capsule()))
+        } else {
+            content
+        }
     }
 }
 
@@ -456,6 +496,7 @@ private struct PanelHeader: View {
         }
         .frame(height: 22)
         .padding(.horizontal, PanelGrid.inset)
+        .modifier(FloatingCapsule())
     }
 }
 
@@ -2307,6 +2348,7 @@ private struct PanelFooter: View {
         }
         .padding(.leading, PanelGrid.inset)
         .padding(.trailing, PanelGrid.inset - 6)
+        .modifier(FloatingCapsule())
     }
 
     private func ownCost(_ footprint: Double, _ cpu: Double?) -> String {
