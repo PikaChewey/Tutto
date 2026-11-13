@@ -5,12 +5,12 @@
 //  The menu bar icon and the panel under it, in a window of Tutto's own. macOS's menu bar
 //  window (SwiftUI's MenuBarExtra) comes with a solid material drawn by the window server,
 //  under every view, that no app setting removes; Liquid Glass needs a clear window, so the
-//  floating cards are glass over the desktop itself (Bryan picked "A · Floating glass",
+//  panel draws its own frosted sheet of clear glass with the cards as glass on it (GlassLook.frost,
 //  2026-11-13). The Classic look draws the system's popover material itself.
 //
 //  It behaves as the menu bar window did: a click on the icon opens and closes it; a click
 //  anywhere else, Esc, or switching apps closes it. A click that turns into dragging files stays
-//  open, so files can be dragged from Finder onto the Compress card; dragging files onto the icon
+//  open, so files can be dragged from Finder onto the Convert & Compress card; dragging files onto the icon
 //  opens it, and dropping them on the icon compresses (or converts, resizes, crops) them. The
 //  panel is built fresh each time it opens and dropped when it closes, so its readings run only
 //  while it's on screen.
@@ -19,6 +19,14 @@
 import AppKit
 import SwiftUI
 import TuttoKit
+
+/// Whether files are being dragged while the panel is up: the Convert & Compress card opens its actions.
+@MainActor
+@Observable
+final class PanelDrag {
+    static let shared = PanelDrag()
+    var files = false
+}
 
 @MainActor
 final class PanelController: NSObject {
@@ -31,8 +39,11 @@ final class PanelController: NSObject {
     /// A press outside the panel: it closes on release, unless the press turns into dragging files.
     private var closeOnRelease = false
     private var dragCountAtPress = 0
-    /// Files are being dragged while it's open: it stays until they're dropped.
-    private var draggingFiles = false
+    /// Files are being dragged while it's open: it stays until they're dropped (and the Convert &
+    /// Compress card opens to take them).
+    private var draggingFiles = false {
+        didSet { if PanelDrag.shared.files != draggingFiles { PanelDrag.shared.files = draggingFiles } }
+    }
     private let iconDrop = StatusIconDrop()
 
     var isOpen: Bool { panel?.isVisible == true }
@@ -71,7 +82,7 @@ final class PanelController: NSObject {
         self.item = item
     }
 
-    /// Files dragged onto the icon open the panel (on the Compress card's drop zone they can be dropped).
+    /// Files dragged onto the icon open the panel (its Convert & Compress card opens to take them).
     func openForDrag() {
         guard !isOpen else { return }
         open()
@@ -162,7 +173,7 @@ final class PanelController: NSObject {
 
     private func watchForDismissal(button: NSStatusBarButton) {
         // A click in another app: right and middle presses close it at once; a left press closes it on
-        // release, unless it became a drag of files (from Finder to the Compress card).
+        // release, unless it became a drag of files (from Finder to the Convert & Compress card).
         if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged, .leftMouseUp],
                                                           handler: { [weak self] event in
             let type = event.type
@@ -348,8 +359,8 @@ struct StatusLabel: View {
     }
 }
 
-/// Files dragged onto the menu bar icon: the panel opens (to drop on its Compress card); dropped on
-/// the icon itself, they're compressed (or converted, resized, cropped, as the card is set).
+/// Files dragged onto the menu bar icon: the panel opens (to drop on one of its Convert & Compress
+/// actions); dropped on the icon itself, they get the action used last.
 @MainActor
 private final class StatusIconDrop: NSObject, NSWindowDelegate, NSDraggingDestination {
     private var converter: ConverterModule? { AppModel.shared.converter }
@@ -368,12 +379,7 @@ private final class StatusIconDrop: NSObject, NSWindowDelegate, NSDraggingDestin
         guard let converter else { return false }
         let files = files(sender)
         guard !files.isEmpty else { return false }
-        if let action = converter.panelAction(for: files), !NSEvent.modifierFlags.contains(.option) {
-            converter.run(action, on: files)
-        } else {
-            PanelController.shared.close()
-            ConvertWindowController.shared.show(module: converter, files: files)
-        }
+        converter.panelDrop(files)
         return true
     }
 

@@ -288,8 +288,7 @@ struct CardSurface: View {
                 .overlay(GlassRim(shape: shape, strength: hovering ? 1.3 : 1))
         } else if tokens.liquid, GlassLook.current == .clear || GlassLook.current == .pane {
             let shape = RoundedRectangle(cornerRadius: Radius.of(radius), style: .continuous)
-            shape.fill(Color.white.opacity(hovering ? 0.12 : 0.07))
-                .overlay(GlassRim(shape: shape, strength: 0.7))
+            CardPlatter(shape: shape, hovering: hovering)
         } else if tokens.liquid {
             LiquidPlatter(radius: Radius.of(radius), hovering: hovering)
         } else {
@@ -297,5 +296,21 @@ struct CardSurface: View {
                 .fill(hovering ? tokens.cardHover : tokens.card)
                 .overlay(RoundedRectangle(cornerRadius: Radius.of(radius), style: .continuous).strokeBorder(tokens.cardStroke))
         }
+    }
+}
+
+/// A card on the clear sheet: a platter, darker than the glass in the dark look (text reads over a white
+/// page behind), paler in the light look, with a rim of light.
+private struct CardPlatter: View {
+    var shape: RoundedRectangle
+    var hovering: Bool
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let fill: Color = scheme == .dark
+            ? (GlassSheet.cardDim > 0 ? Color.black.opacity(GlassSheet.cardDim - (hovering ? 0.05 : 0)) : Color.white.opacity(hovering ? 0.12 : 0.07))
+            : Color.white.opacity(hovering ? 0.12 : 0.07)
+        shape.fill(fill)
+            .overlay(GlassRim(shape: shape, strength: 0.7))
     }
 }

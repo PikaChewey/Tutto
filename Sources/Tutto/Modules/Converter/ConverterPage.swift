@@ -35,7 +35,7 @@ private struct ConverterSettings: View {
         VStack(alignment: .leading, spacing: 22) {
             AutoCompressGroup(converter: converter)
             InkGroup("Ways in") {
-                LabeledRow("The panel's Compress card", detail: "Pick Compress, Convert, Resize or Crop and drop files on it (the panel stays open while you drag from Finder), or drop them on Tutto's menu bar icon. ⌥ when you drop opens the window instead.") {
+                LabeledRow("The panel's Convert & Compress card", detail: "Drop files on Compress, Convert, Resize or Crop (the card opens while you drag from Finder, and the panel stays open), or click one to choose files; drop on Tutto's menu bar icon for the one used last. Compress can make a .zip instead; archives dropped on it are unpacked. ⌥ when you drop opens the window instead.") {
                     EmptyView()
                 }
                 Hairline().opacity(0.6)

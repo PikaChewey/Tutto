@@ -3,7 +3,7 @@
 //  Tutto
 //
 //  Convert and compress files on this Mac. Four ways in:
-//    • the Compress card in the menu bar panel: drop files to compress, convert, resize or crop;
+//    • the Convert & Compress card in the menu bar panel: drop files to compress (or zip), convert, resize or crop;
 //    • the Convert window (⌃⇧K): drop files on it, pick a format, a size or a shape, or set how
 //      hard Compress works and run it;
 //    • while dragging files anywhere, tap ⇧: a wheel of formats opens at the pointer; drop on one;
@@ -67,6 +67,8 @@ final class ConverterModule: ModuleController {
     var panelFormat: OutputFormat { didSet { defaults.set(panelFormat.rawValue, forKey: Keys.panelFormat) } }
     var panelResize: ResizeSpec { didSet { defaults.set(panelResize.code, forKey: Keys.panelResize) } }
     var panelCrop: CropSpec { didSet { defaults.set(panelCrop.code, forKey: Keys.panelCrop) } }
+    /// Compress on the panel makes one .zip of what's dropped instead of smaller copies.
+    var panelZip: Bool { didSet { defaults.set(panelZip, forKey: Keys.panelZip) } }
 
     /// What was made lately, newest first (the panel's card and the window list it).
     private(set) var made: [Made] = []
@@ -122,6 +124,7 @@ final class ConverterModule: ModuleController {
         panelFormat = d.string(forKey: Keys.panelFormat).flatMap(OutputFormat.init(rawValue:)) ?? .jpeg
         panelResize = d.string(forKey: Keys.panelResize).flatMap(ResizeSpec.init(code:)) ?? .scale(0.5)
         panelCrop = d.string(forKey: Keys.panelCrop).flatMap(CropSpec.init(code:)) ?? .aspect(16, 9)
+        panelZip = d.bool(forKey: Keys.panelZip)
         savedBytes = Int64(d.integer(forKey: Keys.saved))
     }
 
@@ -494,15 +497,45 @@ final class ConverterModule: ModuleController {
     }
 
     /// The action the panel's card runs on files dropped on it (nil: they need the window).
-    func panelAction(for files: [URL]) -> ConvertAction? {
+    func panelAction(for files: [URL], mode: PanelDropMode? = nil) -> ConvertAction? {
         let kinds = files.map(FileKind.of)
-        let action: ConvertAction = switch panelMode {
+        let action: ConvertAction = switch mode ?? panelMode {
         case .compress: .compress
         case .convert: .convert(panelFormat)
         case .resize: .resize(panelResize)
         case .crop: .crop(panelCrop)
         }
         return action.applies(to: kinds) ? action : nil
+    }
+
+    /// Whether Compress on the panel zips (the archives module is on and Zip is chosen).
+    var zips: Bool { panelZip && AppModel.shared.archives != nil }
+
+    /// Files dropped on the panel's card (on one of its actions) or on the menu bar icon (the last
+    /// action used). Zip makes one archive; archives that the action doesn't take are unpacked; files
+    /// that don't fit it, or ⌥ held, open the Convert window with every option.
+    func panelDrop(_ files: [URL], mode: PanelDropMode? = nil) {
+        guard !files.isEmpty else { return }
+        let mode = mode ?? panelMode
+        panelMode = mode
+        let window = { @MainActor [self] in
+            PanelController.shared.close()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                MainActor.assumeIsolated { ConvertWindowController.shared.show(module: self, files: files) }
+            }
+        }
+        if NSEvent.modifierFlags.contains(.option) { return window() }
+        if mode == .compress, zips, let archives = AppModel.shared.archives {
+            archives.compress(files)
+            return
+        }
+        if let action = panelAction(for: files, mode: mode) {
+            run(action, on: files)
+        } else if files.allSatisfy({ ArchiveNames.isArchive($0.lastPathComponent) }), let archives = AppModel.shared.archives {
+            archives.extract(files, mode: .preferred)
+        } else {
+            window()
+        }
     }
 
     #if DEBUG
@@ -547,6 +580,7 @@ final class ConverterModule: ModuleController {
         static let panelFormat = "convert.panelFormat"
         static let panelResize = "convert.panelResize"
         static let panelCrop = "convert.panelCrop"
+        static let panelZip = "convert.panelZip"
     }
 }
 

@@ -64,8 +64,12 @@ enum Snapshots {
             while cleaner.state != .ready, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
         }
         if only.contains("clicker-open") { ClickerRow.startsExpanded = true }
-        // `compress-demo`: the Compress card with a result under it and a total saved.
+        // `compress-demo`: the Convert & Compress card with a result under it and a total saved.
         if only.contains("compress-demo") { model.converter?.previewDemo() }
+        // `convert-open`: the Convert & Compress card open (it starts closed).
+        if only.contains("convert-open") { ConvertCard.startsOpen = true }
+        // `convert-drag`: as while files are dragged over the panel (the card opens, its actions dashed).
+        if only.contains("convert-drag") { PanelDrag.shared.files = true }
         ToolsCard.startsHovered = only.first(where: { $0.hasPrefix("tool-hover:") }).map { String($0.dropFirst(11)) }
         // `sound-levels`: the Sound card's levels open, with some apps turned down and up.
         if only.contains("sound-levels"), let sound = model.sound {
@@ -104,6 +108,10 @@ enum Snapshots {
         if let rim = only.first(where: { $0.hasPrefix("sheet-rim:") }).flatMap({ Double($0.dropFirst(10)) }) { GlassSheet.rim = rim }
         if let tint = only.first(where: { $0.hasPrefix("sheet-tint:") }).flatMap({ Double($0.dropFirst(11)) }) { GlassSheet.tint = tint }
         if only.contains("flat-cards") { GlassSheet.flatCards = true }
+        if let value = only.first(where: { $0.hasPrefix("sheet-glass:") }).flatMap({ Double($0.dropFirst(12)) }) { GlassSheet.glassOpacity = value }
+        if let value = only.first(where: { $0.hasPrefix("sheet-frost:") }).flatMap({ Double($0.dropFirst(12)) }) { GlassSheet.frost = value }
+        if let value = only.first(where: { $0.hasPrefix("card-dim:") }).flatMap({ Double($0.dropFirst(9)) }) { GlassSheet.cardDim = value }
+        if only.contains("glass-cards") { GlassSheet.glassCardsOnSheet = true }
         if let look = only.first(where: { $0.hasPrefix("glass-look:") }).flatMap({ GlassLook(rawValue: String($0.dropFirst(11))) }) {
             GlassLook.current = look
         }

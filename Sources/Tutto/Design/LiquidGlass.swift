@@ -55,14 +55,28 @@ enum GlassLook: String {
     /// platters. Over a colourful wallpaper it's glass; over a dark window it blurs everything behind it
     /// away and reads as a dark slab (seen over the real desktop), so it was replaced the same day.
     case clear
-    /// What ships: a pane. The frame is an unblurred, lightly tinted sheet (the desktop shows through it,
-    /// as through a pane of glass, over any window), with a rim and a sheen of light of its own; the
-    /// cards on it are each their own piece of glass (as A), so what's on them reads over anything.
+    /// A pane: an unblurred, lightly tinted sheet with a rim and a sheen, the cards their own glass.
+    /// Over a window the frame all but vanished (only its rim showed), so it read as no frame at all
+    /// (Bryan: "I meant the frame that encompasses the entirety of the menu bar"); replaced the same day.
     case pane
+    /// What ships: B's one sheet of clear glass around everything, frosted rather than dimmed (light
+    /// scattered by the glass, so over a dark window it reads as frosted glass, not a dark slab), with a
+    /// sheen and a rim; the cards on it are their own glass (A), which keeps their text readable over a
+    /// white page as well as a dark window.
+    case frost
 
-    nonisolated(unsafe) static var current: GlassLook = .pane
-    /// The cards are their own glass (floating, or on the pane).
-    static var glassCards: Bool { current == .floating || (current == .pane && !GlassSheet.flatCards) }
+    nonisolated(unsafe) static var current: GlassLook = .frost
+    /// The cards are their own glass.
+    static var glassCards: Bool {
+        switch current {
+        case .floating, .frost: true
+        case .pane: !GlassSheet.flatCards
+        case .clear: GlassSheet.glassCardsOnSheet
+        case .sheet: false
+        }
+    }
+    /// The panel draws a sheet of its own behind the cards (its window is clear).
+    static var drawsSheet: Bool { current == .clear || current == .pane || current == .frost }
 }
 
 /// The clear sheet's dimming: how much darker (dark look) or paler (light look) than the glass alone.
@@ -72,12 +86,21 @@ enum GlassSheet {
     nonisolated(unsafe) static var lightVeil = 0.08
     /// Light of the glass's own, strongest at the top: over a flat dark window (where clear glass shows
     /// nothing behind it) the sheet still reads as a pane of glass, not a dark slab.
-    nonisolated(unsafe) static var sheen = 0.12
+    nonisolated(unsafe) static var sheen = 0.1
     nonisolated(unsafe) static var rim = 1.5
     /// A white tint in the clear glass itself (0: none).
     nonisolated(unsafe) static var tint = 0.0
     /// The pane with B's flat cards instead of glass ones.
     nonisolated(unsafe) static var flatCards = false
+    /// How much of the clear sheet is blurred glass (the rest: the desktop as it is, unblurred).
+    nonisolated(unsafe) static var glassOpacity = 1.0
+    /// A white frost in the dark look (light scattered by the glass), instead of dimming it: the frost
+    /// look's, picked from renders over the real desktop, Sonoma, a white page and Tahoe.
+    nonisolated(unsafe) static var frost = 0.06
+    /// Cards on the clear sheet: darker (dark look) by this much, instead of a white platter.
+    nonisolated(unsafe) static var cardDim = 0.0
+    /// Cards on the clear sheet as glass of their own.
+    nonisolated(unsafe) static var glassCardsOnSheet = false
 }
 
 /// The sheet's sheen: white, brightest along the top edge, faint below, a little light again at the bottom.

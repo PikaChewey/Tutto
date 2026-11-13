@@ -101,7 +101,7 @@ struct MenuPanel: View {
     /// The glass stage draws its sheet, and so does the menu bar panel in the clear and pane looks:
     /// its window is Tutto's own and clear, so the sheet is the frame under the cards. (In macOS's
     /// menu bar window a second sheet doubled the system's glass and darkened it.)
-    private var drawsGlass: Bool { glassRoot || (!preview && (GlassLook.current == .clear || GlassLook.current == .pane)) }
+    private var drawsGlass: Bool { glassRoot || (!preview && GlassLook.drawsSheet) }
 
     private var cards: some View {
         VStack(alignment: .leading, spacing: PanelGrid.gap) {
@@ -144,17 +144,24 @@ private struct StageSheet: ViewModifier {
                         }
                     }
                     .overlay(GlassRim(shape: shape, strength: GlassSheet.rim))
-            case .clear:
-                // A light dimming layer under the text, kept thin so the sheet stays glass (Bryan: the frame
-                // should be "more glassy", not "almost completely opaque").
+            case .clear, .frost:
+                // Clear glass around everything. B dimmed it, which made it "almost completely opaque" over a
+                // dark window; the frost lightens it instead, as frosted glass scatters light.
+                let frosted = GlassLook.current == .frost
                 content
                     .background {
                         ZStack {
-                            shape.fill(scheme == .dark ? Color.black.opacity(GlassSheet.darkDim) : Color.white.opacity(GlassSheet.lightVeil))
+                            Color.clear.prototypeGlass(shape, clear: true).opacity(GlassSheet.glassOpacity)
+                            if scheme == .light {
+                                shape.fill(Color.white.opacity(GlassSheet.lightVeil))
+                            } else if frosted {
+                                shape.fill(Color.white.opacity(GlassSheet.frost))
+                            } else {
+                                shape.fill(Color.black.opacity(GlassSheet.darkDim))
+                            }
                             if GlassSheet.sheen > 0 { GlassSheen(shape: shape, strength: GlassSheet.sheen) }
                         }
                     }
-                    .prototypeGlass(shape, clear: true)
                     .overlay(GlassRim(shape: shape, strength: GlassSheet.rim))
             }
         }
@@ -293,7 +300,7 @@ private struct WidgetGrid: View {
         case .card(.devices):
             DevicesCard(placeholder: editing != nil)
         case .card(.compress):
-            if let converter = model.converter { CompressCard(converter: converter, placeholder: editing != nil) }
+            if let converter = model.converter { ConvertCard(converter: converter, placeholder: editing != nil) }
         case .card(.sound):
             if let sound = model.sound, SoundModule.isSupported { SoundCard(sound: sound) }
         case .card(.tools):
@@ -1597,9 +1604,12 @@ struct SoundCard: View {
     @State private var order: [String] = []
     /// The levels, opened from the title, stay open the next time the panel opens.
     @AppStorage("panel.soundLevels") private var keptLevels = false
+    /// This panel's state (a stored setting changes the view outside the animation, so the levels
+    /// snapped open; this animates, and the setting follows it).
+    @State private var levelsOpen: Bool?
     private var showLevels: Bool {
-        get { SoundCard.startsShowingLevels || keptLevels }
-        nonmutating set { keptLevels = newValue }
+        get { SoundCard.startsShowingLevels || (levelsOpen ?? keptLevels) }
+        nonmutating set { levelsOpen = newValue }
     }
     /// Snapshots render it open (`sound-levels`).
     nonisolated(unsafe) static var startsShowingLevels = false
@@ -1617,7 +1627,9 @@ struct SoundCard: View {
                     }
                     if !sound.apps.isEmpty && SoundModule.isSupported {
                         Button {
-                            withAnimation(Motion.snappy) { showLevels.toggle() }
+                            let open = !showLevels
+                            withAnimation(Motion.snappy) { showLevels = open }
+                            keptLevels = open
                         } label: {
                             HStack(spacing: 4) {
                                 Text("Levels")
@@ -1806,204 +1818,162 @@ struct SoundCard: View {
     }
 }
 
-// MARK: - Compress
+// MARK: - Convert & Compress
 
-/// Compress, convert, resize or crop, on the panel itself (Bryan, 2026-11-13: "make this like feature
-/// a bigger part of the tutto menu bar gui ... not something hidden in like the horizontal taskbar").
-/// Pick what a drop does, drop files on it (the panel stays open while you drag from Finder), and
-/// the last result is right under it, to undo. Its Auto switch compresses new screenshots, screen
-/// recordings and PDFs on the Desktop, and pictures copied to the clipboard, by themselves.
-private struct CompressCard: View {
+/// Convert & Compress, on the panel itself (Bryan, 2026-11-13: a "bigger part of the tutto menu bar
+/// gui", then "isn't just compress—it also has file conversion and stuff" and "don't make it
+/// automatically expanded ... it's currently just taking up too much space"). Closed, one line: its
+/// name, Auto (compressing new screenshots and copied pictures by itself) and an arrow. Open, or as
+/// soon as files are dragged while the panel is up, four actions side by side, each a place to drop
+/// files or click to choose them: Compress (smaller copies, or one .zip), Convert (to a format),
+/// Resize and Crop, each with its choice under its name. Archives dropped on an action that doesn't
+/// take them are unpacked; ⌥ on the drop opens the Convert window with every option.
+struct ConvertCard: View {
     @Bindable var converter: ConverterModule
-    /// On the Customize page: shown, not used.
+    /// On the Customize page: shown closed, not used.
     var placeholder = false
-    @State private var targeted = false
-    @State private var hoveringZone = false
+    /// Opened from its arrow, it stays open the next time the panel opens.
+    @AppStorage("panel.convertOpen") private var keptOpen = false
+    /// The arrow's state for this panel (a stored setting changes the view outside the animation, so
+    /// opening snapped; this animates, and the setting follows it).
+    @State private var opened: Bool?
+    /// Opened by files dragged over the panel: open until the panel closes.
+    @State private var openedForDrop = false
+    @State private var headerTargeted = false
+    @State private var hoveringHeader = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Snapshots render it open (`convert-open`).
+    nonisolated(unsafe) static var startsOpen = false
+
+    private var isOpen: Bool { !placeholder && (Self.startsOpen || (opened ?? keptOpen) || openedForDrop) }
+    private var dragging: Bool { PanelDrag.shared.files || headerTargeted }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 6) {
-                RowLabel(symbol: ModuleID.converter.symbol, title: "Compress", live: converter.working != nil,
-                         help: "Compress, convert, resize or crop files")
-                Spacer(minLength: 6)
-                Text("Auto")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(Color.ink3)
-                InkSwitch(isOn: $converter.auto.isOn, label: "Compress by itself")
-                    .help(converter.auto.isOn ? "New screenshots, recordings and PDFs there, and copied pictures, are compressed by themselves; each card has Undo" : "Compress new screenshots, recordings and copied pictures by themselves")
-            }
-            .frame(height: 26)
-            InkSegmented(selection: $converter.panelMode,
-                         options: ConverterModule.PanelDropMode.allCases.map { ($0, $0.title) },
-                         help: { mode in
-                             switch mode {
-                             case .compress: "Smaller copies, beside the originals"
-                             case .convert: "Copies in another format"
-                             case .resize: "Copies with fewer pixels"
-                             case .crop: "Copies cut to a shape, around what's in them"
-                             }
-                         })
-                .frame(maxWidth: .infinity)
-            dropZone
-            if let latest = converter.made.first, Date().timeIntervalSince(latest.date) < 12 * 3_600 {
-                LatestResult(made: latest, converter: converter)
-            }
-            status
-        }
-        .panelCard(vertical: 10)
-        .allowsHitTesting(!placeholder)
-    }
-
-    // MARK: The drop zone
-
-    private var dropZone: some View {
-        let shape = RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous)
-        // A tap target, not a button: the format chip inside it is a button of its own.
-        return VStack(spacing: 3) {
-            if let working = converter.working {
-                ProgressView(value: min(max(converter.progress, 0), 1))
-                    .progressViewStyle(.linear)
-                    .controlSize(.small)
-                    .tint(Color.themeAccent)
-                    .padding(.horizontal, 24)
-                Text(working)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(Color.ink2)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .padding(.horizontal, 12)
-            } else {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            if isOpen {
                 HStack(spacing: 6) {
-                    Image(systemName: targeted ? "arrow.down.circle.fill" : "arrow.down.doc")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(targeted ? Color.themeAccent : Color.ink2)
-                        .contentTransition(.symbolEffect(.replace))
-                    Text(targeted ? "Release to \(converter.panelMode.rawValue)" : headline)
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(Color.ink)
-                    if !targeted { choice }
-                }
-                Text(detail)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Color.ink3)
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 58)
-        .background(shape.fill(Color.ink.opacity(targeted ? 0.1 : (hoveringZone ? 0.06 : 0.035))))
-        .overlay(shape.strokeBorder(targeted ? Color.themeAccent : Color.ink.opacity(0.2),
-                                    style: StrokeStyle(lineWidth: targeted ? 1.5 : 1, dash: [5, 4])))
-        .scaleEffect(targeted && !reduceMotion ? 1.02 : 1)
-        .animation(reduceMotion ? nil : .spring(duration: 0.25, bounce: 0.2), value: targeted)
-        .contentShape(shape)
-        .onTapGesture(perform: choose)
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: "Choose Files", choose)
-        .onHover { hoveringZone = $0 }
-        .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
-            Self.urls(providers) { files in dropped(files) }
-            return true
-        }
-        .help("Drop files here, or click to choose them · ⌥ when you drop: the Convert window, with every option")
-        .accessibilityLabel("Drop files to \(converter.panelMode.rawValue)")
-    }
-
-    private var headline: String {
-        switch converter.panelMode {
-        case .compress: "Drop to compress"
-        case .convert: "Drop to convert to"
-        case .resize: "Drop to resize to"
-        case .crop: "Drop to crop to"
-        }
-    }
-
-    private var detail: String {
-        switch converter.panelMode {
-        case .compress: "Smaller copies, beside the originals"
-        case .convert: "Copies in the new format, beside them"
-        case .resize: converter.panelResize.detail + " · pictures, video"
-        case .crop: "Around the subject · pictures, video, PDFs"
-        }
-    }
-
-    /// The format, size or shape a drop uses: a chip that pops up the choices.
-    @ViewBuilder
-    private var choice: some View {
-        switch converter.panelMode {
-        case .compress:
-            EmptyView()
-        case .convert:
-            choiceButton(converter.panelFormat.title) {
-                let groups: [(String, [OutputFormat])] = [("Pictures", [.jpeg, .png, .heic, .avif, .pdf, .tiff, .gif]),
-                                                          ("Video", [.mp4, .mp4HEVC, .mov, .gif, .m4a]),
-                                                          ("Sound", [.m4a, .wav, .flac, .aiff]), ("Documents", [.pdf, .docx, .txt])]
-                return groups.flatMap { section, formats in
-                    formats.enumerated().map { index, format in
-                        ChoiceMenu.Item(title: format.title, section: index == 0 ? section : nil, checked: format == converter.panelFormat) {
-                            converter.panelFormat = format
-                        }
+                    ForEach(ConverterModule.PanelDropMode.allCases, id: \.self) { mode in
+                        ActionTile(mode: mode, converter: converter, dragging: dragging)
                     }
                 }
-            }
-        case .resize:
-            choiceButton(converter.panelResize.title) {
-                ResizeSpec.picturePresets.map { spec in
-                    ChoiceMenu.Item(title: spec.title, detail: spec.detail, checked: spec == converter.panelResize) { converter.panelResize = spec }
+                .transition(.opacity)
+                if converter.working == nil, let latest = converter.made.first, Date().timeIntervalSince(latest.date) < 12 * 3_600 {
+                    LatestResult(made: latest, converter: converter)
+                        .transition(.opacity)
                 }
+                status
+                    .transition(.opacity)
+            } else if converter.working != nil {
+                progress
+                    .transition(.opacity)
             }
-        case .crop:
-            choiceButton(converter.panelCrop.title) {
-                ChoiceMenu.crops(pdf: false, current: converter.panelCrop) { converter.panelCrop = $0 }
-            }
+        }
+        .panelCard(vertical: 10)
+        .clipped()
+        .allowsHitTesting(!placeholder)
+        .onAppear { if PanelDrag.shared.files { openedForDrop = true } }
+        .onChange(of: PanelDrag.shared.files) { _, on in
+            if on { withAnimation(Motion.adaptive(Motion.snappy, reduceMotion: reduceMotion)) { openedForDrop = true } }
+        }
+        .onChange(of: headerTargeted) { _, on in
+            if on { withAnimation(Motion.adaptive(Motion.snappy, reduceMotion: reduceMotion)) { openedForDrop = true } }
         }
     }
 
-    private func choiceButton(_ title: String, items: @escaping () -> [ChoiceMenu.Item]) -> some View {
-        Button { ChoiceMenu.show(items()) } label: { choiceLabel(title) }
+    // MARK: The line
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            RowLabel(symbol: ModuleID.converter.symbol, title: "Convert & Compress", live: converter.working != nil,
+                     help: "Compress, convert, resize, crop or zip files")
+            Spacer(minLength: 6)
+            Text("Auto")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(Color.ink3)
+            InkSwitch(isOn: $converter.auto.isOn, label: "Compress by itself")
+                .help(converter.auto.isOn ? "New screenshots, recordings and PDFs there, and copied pictures, are compressed by themselves; each has Undo" : "Compress new screenshots, recordings and copied pictures by themselves")
+            Button(action: toggle) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(hoveringHeader ? Color.ink : Color.ink3)
+                    .rotationEffect(.degrees(isOpen ? 180 : 0))
+                    .frame(width: 18, height: 22)
+                    .contentShape(Rectangle())
+            }
             .buttonStyle(.plain)
-            .help("Change it")
+            .accessibilityLabel(isOpen ? "Hide actions" : "Show actions")
+        }
+        .frame(height: 26)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: toggle)
+        .onHover { hoveringHeader = $0 }
+        .onDrop(of: [.fileURL], isTargeted: $headerTargeted) { providers in
+            ConvertCard.urls(providers) { files in converter.panelDrop(files) }
+            return true
+        }
+        .help(isOpen ? "Hide the actions" : "Compress, convert, resize, crop or zip: drag files onto the panel, or open this")
     }
 
-    private func choiceLabel(_ title: String) -> some View {
-        HStack(spacing: 3) {
-            Text(title).font(.system(size: 12.5, weight: .semibold))
-            Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+    private func toggle() {
+        let open = !isOpen
+        withAnimation(Motion.adaptive(Motion.snappy, reduceMotion: reduceMotion)) {
+            opened = open
+            if !open { openedForDrop = false }
         }
-        .foregroundStyle(Color.themeAccent)
-        .padding(.horizontal, 7)
-        .frame(height: 22)
-        .background(Capsule().fill(Color.themeAccent.opacity(0.12)))
+        keptOpen = open
     }
 
     // MARK: Status
 
-    private var status: some View {
-        Button {
-            showInApp(.converter)
-        } label: {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(converter.auto.isOn ? Color.themeAccent : Color.ink4)
-                    .frame(width: 5, height: 5)
-                Text(statusText)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(Color.ink3)
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                if converter.savedBytes > 0 {
-                    Text("\(SavedBytes.text(converter.savedBytes)) saved")
-                        .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(Color.ink2)
-                        .contentTransition(.numericText())
-                }
-            }
-            .contentShape(Rectangle())
+    /// While it works: what, and how far along.
+    private var progress: some View {
+        HStack(spacing: 8) {
+            ProgressView(value: min(max(converter.progress, 0), 1))
+                .progressViewStyle(.linear)
+                .controlSize(.small)
+                .tint(Color.themeAccent)
+                .frame(width: 70)
+            Text(converter.working ?? "")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.ink2)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        .buttonStyle(.plain)
-        .help("Compress settings")
+        .frame(height: 14)
+    }
+
+    private var status: some View {
+        Group {
+            if converter.working != nil {
+                progress
+            } else {
+                Button {
+                    showInApp(.converter)
+                } label: {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(converter.auto.isOn ? Color.themeAccent : Color.ink4)
+                            .frame(width: 5, height: 5)
+                        Text(statusText)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(Color.ink3)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        if converter.savedBytes > 0 {
+                            Text("\(SavedBytes.text(converter.savedBytes)) saved")
+                                .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                                .foregroundStyle(Color.ink2)
+                                .contentTransition(.numericText())
+                        }
+                    }
+                    .frame(height: 14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Convert & Compress settings")
+            }
+        }
     }
 
     private var statusText: String {
@@ -2014,31 +1984,6 @@ private struct CompressCard: View {
         }
         if converter.auto.clipboard { parts.append("clipboard") }
         return parts.isEmpty ? "Auto is on" : "Watching " + parts.joined(separator: " · ")
-    }
-
-    // MARK: Doing it
-
-    private func dropped(_ files: [URL]) {
-        guard !files.isEmpty else { return }
-        // ⌥ on the drop, or files the choice doesn't fit: the window, with every option.
-        if NSEvent.modifierFlags.contains(.option) || converter.panelAction(for: files) == nil {
-            afterPanelCloses { ConvertWindowController.shared.show(module: converter, files: files) }
-            return
-        }
-        if let action = converter.panelAction(for: files) { converter.run(action, on: files) }
-    }
-
-    private func choose() {
-        afterPanelCloses {
-            let panel = NSOpenPanel()
-            panel.allowsMultipleSelection = true
-            panel.canChooseDirectories = false
-            panel.message = "Choose files to \(converter.panelMode.rawValue)"
-            panel.prompt = converter.panelMode.title
-            NSApp.activate()
-            guard panel.runModal() == .OK else { return }
-            dropped(panel.urls)
-        }
     }
 
     /// The file URLs in a drop, all at once.
@@ -2059,6 +2004,172 @@ private struct CompressCard: View {
         }
         group.notify(queue: .main) {
             MainActor.assumeIsolated { done(urls) }
+        }
+    }
+}
+
+/// One of the card's actions: its symbol, its name and its choice (the format, size, shape, or
+/// smaller/zip), a place to drop files and a button to choose them. While files are being dragged,
+/// every action shows a dashed edge, and the one under them lights up.
+private struct ActionTile: View {
+    var mode: ConverterModule.PanelDropMode
+    @Bindable var converter: ConverterModule
+    var dragging: Bool
+    @State private var targeted = false
+    @State private var hovering = false
+    @State private var chipHover = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous)
+        VStack(spacing: 2) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(targeted ? Color.themeAccent : Color.ink2)
+                .frame(height: 19)
+                .contentTransition(.symbolEffect(.replace))
+            Text(mode.title)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(Color.ink)
+                .lineLimit(1)
+            choice
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 64)
+        .background { surface(shape) }
+        .overlay {
+            if dragging || targeted {
+                shape.strokeBorder(targeted ? Color.themeAccent : Color.ink.opacity(0.3),
+                                   style: StrokeStyle(lineWidth: targeted ? 1.5 : 1, dash: [4, 3]))
+            }
+        }
+        .scaleEffect(targeted && !reduceMotion ? 1.05 : 1)
+        .animation(reduceMotion ? nil : .spring(duration: 0.22, bounce: 0.25), value: targeted)
+        .animation(Motion.micro, value: hovering)
+        .contentShape(shape)
+        .onTapGesture(perform: choose)
+        .onHover { hovering = $0 }
+        .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
+            ConvertCard.urls(providers) { files in converter.panelDrop(files, mode: mode) }
+            return true
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(mode.title)
+        .accessibilityAction(named: "Choose Files", choose)
+        .help(help)
+    }
+
+    @ViewBuilder
+    private func surface(_ shape: RoundedRectangle) -> some View {
+        if ThemeStore.liquid {
+            LiquidFill(shape: shape, raise: targeted ? 1.6 : 1, hovering: hovering || targeted)
+        } else {
+            shape.fill(Color.ink.opacity(targeted ? 0.12 : (hovering ? 0.08 : 0.045)))
+        }
+    }
+
+    private var symbol: String {
+        switch mode {
+        case .compress: converter.zips ? "doc.zipper" : "arrow.down.right.and.arrow.up.left"
+        case .convert: "arrow.triangle.2.circlepath"
+        case .resize: "arrow.up.left.and.arrow.down.right"
+        case .crop: "crop"
+        }
+    }
+
+    private var help: String {
+        let what = switch mode {
+        case .compress: converter.zips ? "One .zip of the files and folders, beside them" : "Smaller copies of pictures, video and PDFs, beside them"
+        case .convert: "Copies in \(converter.panelFormat.title), beside them"
+        case .resize: "Copies with fewer pixels (\(converter.panelResize.detail)), pictures and video"
+        case .crop: "Copies cut to \(converter.panelCrop.title) around the subject: pictures, video, PDFs"
+        }
+        return what + " · drop files here or click to choose them · ⌥ when you drop: every option"
+    }
+
+    /// The choice under the name: a chip that pops up the others.
+    @ViewBuilder
+    private var choice: some View {
+        switch mode {
+        case .compress:
+            if AppModel.shared.archives != nil {
+                chip(converter.zips ? "Zip" : "Smaller") {
+                    [ChoiceMenu.Item(title: "Smaller", detail: "Pictures, video, PDFs in their own format", checked: !converter.panelZip) { converter.panelZip = false },
+                     ChoiceMenu.Item(title: "Zip", detail: "Anything, into one .zip", checked: converter.panelZip) { converter.panelZip = true }]
+                }
+            } else {
+                Text("Smaller")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(Color.ink3)
+                    .frame(height: 18)
+            }
+        case .convert:
+            chip(converter.panelFormat.title) {
+                let groups: [(String, [OutputFormat])] = [("Pictures", [.jpeg, .png, .heic, .avif, .pdf, .tiff, .gif]),
+                                                          ("Video", [.mp4, .mp4HEVC, .mov, .gif, .m4a]),
+                                                          ("Sound", [.m4a, .wav, .flac, .aiff]), ("Documents", [.pdf, .docx, .txt])]
+                return groups.flatMap { section, formats in
+                    formats.enumerated().map { index, format in
+                        ChoiceMenu.Item(title: format.title, section: index == 0 ? section : nil, checked: format == converter.panelFormat) {
+                            converter.panelFormat = format
+                        }
+                    }
+                }
+            }
+        case .resize:
+            chip(converter.panelResize.title) {
+                ResizeSpec.picturePresets.map { spec in
+                    ChoiceMenu.Item(title: spec.title, detail: spec.detail, checked: spec == converter.panelResize) { converter.panelResize = spec }
+                }
+            }
+        case .crop:
+            chip(converter.panelCrop.title) {
+                ChoiceMenu.crops(pdf: false, current: converter.panelCrop) { converter.panelCrop = $0 }
+            }
+        }
+    }
+
+    private func chip(_ title: String, items: @escaping () -> [ChoiceMenu.Item]) -> some View {
+        Button { ChoiceMenu.show(items()) } label: {
+            HStack(spacing: 2) {
+                Text(title)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 6.5, weight: .heavy))
+            }
+            // Ink, not the accent: the accent is for what's live, and blue on blue glass didn't read.
+            .foregroundStyle(chipHover ? Color.ink : Color.ink2)
+            .padding(.horizontal, 6)
+            .frame(height: 18)
+            .background(Capsule().fill(Color.ink.opacity(chipHover ? 0.16 : 0.09)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressStyle())
+        .padding(.horizontal, 3)
+        .onHover { chipHover = $0 }
+        .help("Change it")
+    }
+
+    private func choose() {
+        let mode = mode
+        let converter = converter
+        afterPanelCloses {
+            let panel = NSOpenPanel()
+            panel.allowsMultipleSelection = true
+            panel.canChooseDirectories = mode == .compress && converter.zips
+            panel.message = switch mode {
+            case .compress: converter.zips ? "Choose files and folders to zip" : "Choose pictures, video or PDFs to compress"
+            case .convert: "Choose files to convert to \(converter.panelFormat.title)"
+            case .resize: "Choose pictures or video to resize to \(converter.panelResize.title)"
+            case .crop: "Choose pictures, video or PDFs to crop to \(converter.panelCrop.title)"
+            }
+            panel.prompt = mode.title
+            NSApp.activate()
+            guard panel.runModal() == .OK else { return }
+            converter.panelDrop(panel.urls, mode: mode)
         }
     }
 }
@@ -2397,7 +2508,7 @@ enum ShortcutRows {
         if model.wordCounter != nil {
             rows.append(Row(action: .wordCounter, title: "Count Words", short: "Words", symbol: ModuleID.wordCounter.symbol))
         }
-        // The Compress card has it, bigger; the tool stays for a panel without the card.
+        // The Convert & Compress card has it, bigger; the tool stays for a panel without the card.
         if model.converter != nil, !model.layout.layout.widgets.isShown(PanelLayoutStore.Card.compress.id) {
             rows.append(Row(action: .convertFiles, title: "Convert Files", short: "Convert", symbol: ModuleID.converter.symbol))
         }
