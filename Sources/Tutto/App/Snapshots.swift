@@ -98,6 +98,12 @@ enum Snapshots {
         // `glass-stage wall-dark:<image> wall-light:<image>`: Liquid Glass can't be drawn offscreen, so the
         // panel is put on screen over a wallpaper, one window per appearance; each window's number is
         // written to stage-<appearance>.window and it stays up until stage-<appearance>.window.done exists.
+        if let dim = only.first(where: { $0.hasPrefix("sheet-dim:") }).flatMap({ Double($0.dropFirst(10)) }) { GlassSheet.darkDim = dim }
+        if let veil = only.first(where: { $0.hasPrefix("sheet-veil:") }).flatMap({ Double($0.dropFirst(11)) }) { GlassSheet.lightVeil = veil }
+        if let sheen = only.first(where: { $0.hasPrefix("sheet-sheen:") }).flatMap({ Double($0.dropFirst(12)) }) { GlassSheet.sheen = sheen }
+        if let rim = only.first(where: { $0.hasPrefix("sheet-rim:") }).flatMap({ Double($0.dropFirst(10)) }) { GlassSheet.rim = rim }
+        if let tint = only.first(where: { $0.hasPrefix("sheet-tint:") }).flatMap({ Double($0.dropFirst(11)) }) { GlassSheet.tint = tint }
+        if only.contains("flat-cards") { GlassSheet.flatCards = true }
         if let look = only.first(where: { $0.hasPrefix("glass-look:") }).flatMap({ GlassLook(rawValue: String($0.dropFirst(11))) }) {
             GlassLook.current = look
         }

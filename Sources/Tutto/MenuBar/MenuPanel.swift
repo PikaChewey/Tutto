@@ -98,10 +98,10 @@ struct MenuPanel: View {
         .tint(Color.themeAccent)
     }
 
-    /// The glass stage draws its sheet, and so does the menu bar panel in the clear look (option B):
-    /// its window is Tutto's own and clear, so the sheet is the only glass under the cards. (In
-    /// macOS's menu bar window a second sheet doubled the system's glass and darkened it.)
-    private var drawsGlass: Bool { glassRoot || (!preview && GlassLook.current == .clear) }
+    /// The glass stage draws its sheet, and so does the menu bar panel in the clear and pane looks:
+    /// its window is Tutto's own and clear, so the sheet is the frame under the cards. (In macOS's
+    /// menu bar window a second sheet doubled the system's glass and darkened it.)
+    private var drawsGlass: Bool { glassRoot || (!preview && (GlassLook.current == .clear || GlassLook.current == .pane)) }
 
     private var cards: some View {
         VStack(alignment: .leading, spacing: PanelGrid.gap) {
@@ -134,13 +134,28 @@ private struct StageSheet: ViewModifier {
                 content.liquidGlass(shape)
             case .floating:
                 content
-            case .clear:
-                // Clear glass needs a dimming layer over bright content (Apple's guidance: about 35 %); in
-                // the light look a pale veil does the same for dark text over a dark page.
+            case .pane:
+                // No blur: the desktop shows through, darkened (or paled) a little, with light of its own.
                 content
-                    .background(shape.fill(scheme == .dark ? Color.black.opacity(0.38) : Color.white.opacity(0.22)))
+                    .background {
+                        ZStack {
+                            shape.fill(scheme == .dark ? Color.black.opacity(GlassSheet.darkDim) : Color.white.opacity(GlassSheet.lightVeil))
+                            if GlassSheet.sheen > 0 { GlassSheen(shape: shape, strength: GlassSheet.sheen) }
+                        }
+                    }
+                    .overlay(GlassRim(shape: shape, strength: GlassSheet.rim))
+            case .clear:
+                // A light dimming layer under the text, kept thin so the sheet stays glass (Bryan: the frame
+                // should be "more glassy", not "almost completely opaque").
+                content
+                    .background {
+                        ZStack {
+                            shape.fill(scheme == .dark ? Color.black.opacity(GlassSheet.darkDim) : Color.white.opacity(GlassSheet.lightVeil))
+                            if GlassSheet.sheen > 0 { GlassSheen(shape: shape, strength: GlassSheet.sheen) }
+                        }
+                    }
                     .prototypeGlass(shape, clear: true)
-                    .overlay(GlassRim(shape: shape))
+                    .overlay(GlassRim(shape: shape, strength: GlassSheet.rim))
             }
         }
     }
@@ -149,7 +164,7 @@ private struct StageSheet: ViewModifier {
 /// The floating prototype's header and footer: a glass capsule each.
 private struct FloatingCapsule: ViewModifier {
     func body(content: Content) -> some View {
-        if ThemeStore.liquid, GlassLook.current == .floating {
+        if ThemeStore.liquid, GlassLook.glassCards {
             content
                 .padding(.vertical, 6)
                 .prototypeGlass(Capsule())

@@ -42,20 +42,59 @@ extension ThemeStore {
 
 /// How the Liquid Glass panel is built (Bryan 2026-11-13: "i dont think it looks glassy enough";
 /// shown three, picked floating; then, of the Notification Center frost behind the floating cards:
-/// "doesnt look the best, take more from the outer frame from the original option B"). The glass
-/// stage renders the others with `glass-look:<name>`.
+/// "doesnt look the best, take more from the outer frame from the original option B"; then, of B's
+/// sheet: "almost completely opaque ... make it so that like it's more glassy"). The glass stage
+/// renders the others with `glass-look:<name>`.
 enum GlassLook: String {
     /// One sheet, cards as platters on it (the first version).
     case sheet
     /// Every card its own piece of glass floating over the desktop on a colourless frosted frame,
     /// the header and the footer glass capsules (shipped 2026-11-13, replaced the same day).
     case floating
-    /// What ships (option B): one sheet of Apple's most see-through glass, lightly dimmed so the
-    /// text reads over any wallpaper, a rim of light around it; the cards on it barely-there
-    /// platters with their own rims. The desktop's colour comes through, not a grey frost.
+    /// Option B: one sheet of Apple's most see-through glass, lightly dimmed, cards barely-there
+    /// platters. Over a colourful wallpaper it's glass; over a dark window it blurs everything behind it
+    /// away and reads as a dark slab (seen over the real desktop), so it was replaced the same day.
     case clear
+    /// What ships: a pane. The frame is an unblurred, lightly tinted sheet (the desktop shows through it,
+    /// as through a pane of glass, over any window), with a rim and a sheen of light of its own; the
+    /// cards on it are each their own piece of glass (as A), so what's on them reads over anything.
+    case pane
 
-    nonisolated(unsafe) static var current: GlassLook = .clear
+    nonisolated(unsafe) static var current: GlassLook = .pane
+    /// The cards are their own glass (floating, or on the pane).
+    static var glassCards: Bool { current == .floating || (current == .pane && !GlassSheet.flatCards) }
+}
+
+/// The clear sheet's dimming: how much darker (dark look) or paler (light look) than the glass alone.
+enum GlassSheet {
+    /// Picked from renders over a colourful wallpaper, a light one and the real (dark) desktop.
+    nonisolated(unsafe) static var darkDim = 0.16
+    nonisolated(unsafe) static var lightVeil = 0.08
+    /// Light of the glass's own, strongest at the top: over a flat dark window (where clear glass shows
+    /// nothing behind it) the sheet still reads as a pane of glass, not a dark slab.
+    nonisolated(unsafe) static var sheen = 0.12
+    nonisolated(unsafe) static var rim = 1.5
+    /// A white tint in the clear glass itself (0: none).
+    nonisolated(unsafe) static var tint = 0.0
+    /// The pane with B's flat cards instead of glass ones.
+    nonisolated(unsafe) static var flatCards = false
+}
+
+/// The sheet's sheen: white, brightest along the top edge, faint below, a little light again at the bottom.
+struct GlassSheen<S: Shape>: View {
+    var shape: S
+    var strength: Double
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let k = strength * (scheme == .dark ? 1 : 1.8)
+        shape.fill(LinearGradient(stops: [.init(color: .white.opacity(k), location: 0),
+                                          .init(color: .white.opacity(k * 0.35), location: 0.35),
+                                          .init(color: .white.opacity(k * 0.25), location: 0.8),
+                                          .init(color: .white.opacity(k * 0.45), location: 1)],
+                                  startPoint: .top, endPoint: .bottom))
+            .allowsHitTesting(false)
+    }
 }
 
 extension View {
@@ -63,7 +102,7 @@ extension View {
     @ViewBuilder
     func prototypeGlass<S: Shape>(_ shape: S, clear: Bool = false) -> some View {
         if #available(macOS 26, *), ThemeStore.shared.tokens.liquid {
-            glassEffect(clear ? Glass.clear : Glass.regular, in: shape)
+            glassEffect(clear ? (GlassSheet.tint > 0 ? Glass.clear.tint(.white.opacity(GlassSheet.tint)) : Glass.clear) : Glass.regular, in: shape)
         } else {
             self
         }
