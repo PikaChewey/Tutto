@@ -28,6 +28,7 @@ IDENTITY=${IDENTITY:--}
 swift build -c $CONFIG --arch arm64 --product Tutto
 swift build -c $CONFIG --arch arm64 --product TuttoFinder
 swift build -c $CONFIG --arch arm64 --product TuttoHelper
+swift build -c $CONFIG --arch arm64 --product TuttoQuickLook
 BIN=.build/arm64-apple-macosx/$CONFIG
 
 APP=build/Products.noindex/Tutto.app   # .noindex: Spotlight lists only the installed copy
@@ -45,20 +46,24 @@ fi
 EXT=$APP/Contents/PlugIns/TuttoFinder.appex
 mkdir -p $EXT/Contents/MacOS
 cp $BIN/TuttoFinder $EXT/Contents/MacOS/TuttoFinder
+QL=$APP/Contents/PlugIns/TuttoQuickLook.appex
+mkdir -p $QL/Contents/MacOS
+cp $BIN/TuttoQuickLook $QL/Contents/MacOS/TuttoQuickLook
 
 # Release: the symbols go to build/Symbols as dSYMs (crash reports, `sample` and `atos` find them by
 # UUID), and the shipped binaries leave their symbol tables out: the app binary goes from about
 # 11 MB to under 5 MB. Debug builds keep everything.
 if [[ $CONFIG == release ]]; then
   rm -rf build/Symbols && mkdir -p build/Symbols
-  for name in Tutto TuttoHelper TuttoFinder; do
+  for name in Tutto TuttoHelper TuttoFinder TuttoQuickLook; do
     dsymutil $BIN/$name -o build/Symbols/$name.dSYM 2>/dev/null || echo "dsymutil failed for $name (symbols stay in the binary)" >&2
   done
-  for binary in $APP/Contents/MacOS/Tutto $APP/Contents/MacOS/TuttoHelper $EXT/Contents/MacOS/TuttoFinder; do
+  for binary in $APP/Contents/MacOS/Tutto $APP/Contents/MacOS/TuttoHelper $EXT/Contents/MacOS/TuttoFinder $QL/Contents/MacOS/TuttoQuickLook; do
     [[ -d build/Symbols/${binary:t}.dSYM ]] && strip -x $binary 2>/dev/null
   done
 fi
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Resources/FinderExtension-Info.plist > $EXT/Contents/Info.plist
+sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Resources/QuickLook-Info.plist > $QL/Contents/Info.plist
 
 # actool reports failures in its plist output; show them instead of stopping silently. Paths are
 # absolute: actool hands them to a shared ibtoold daemon, which reads relative ones from its own
@@ -75,6 +80,7 @@ SIGN=(codesign --force --sign "$IDENTITY" --timestamp=none)
 [[ $IDENTITY != "-" ]] && SIGN+=(--options runtime)
 $SIGN --identifier ca.bryanyao.Tutto.helper $APP/Contents/MacOS/TuttoHelper
 $SIGN --entitlements Resources/FinderExtension.entitlements $EXT
+$SIGN --entitlements Resources/QuickLook.entitlements $QL
 $SIGN --entitlements Resources/Tutto.entitlements $APP
 codesign --verify --deep --strict $APP
 
@@ -91,8 +97,10 @@ if (( INSTALL )); then
   ditto $APP /Applications/Tutto.app
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/Tutto.app
   pluginkit -a /Applications/Tutto.app/Contents/PlugIns/TuttoFinder.appex 2>/dev/null || true
+  pluginkit -a /Applications/Tutto.app/Contents/PlugIns/TuttoQuickLook.appex 2>/dev/null || true
   # Leave only the installed copy registered (the build folder copy would otherwise compete).
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$PWD/$APP" 2>/dev/null || true
   pluginkit -r "$PWD/$EXT" 2>/dev/null || true
+  pluginkit -r "$PWD/$QL" 2>/dev/null || true
   echo "installed /Applications/Tutto.app"
 fi

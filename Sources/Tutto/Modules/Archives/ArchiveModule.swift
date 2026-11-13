@@ -12,6 +12,14 @@ import AppKit
 import Observation
 import TuttoKit
 
+/// What double-clicking an archive (with Tutto as its app) does.
+enum ArchiveOpenAction: String, CaseIterable {
+    /// A window on what's inside, nothing unpacked.
+    case browse
+    /// Extract it straight away, as before.
+    case extract
+}
+
 enum ArchiveDestination: String, CaseIterable {
     case sameFolder, ask, fixed
 
@@ -59,6 +67,7 @@ final class ArchiveModule: ModuleController {
     var folderRule: ArchiveFolderRule { didSet { defaults.set(folderRule.rawValue, forKey: Keys.folderRule) } }
     var trashAfterExtracting: Bool { didSet { defaults.set(trashAfterExtracting, forKey: Keys.trash) } }
     var revealAfterExtracting: Bool { didSet { defaults.set(revealAfterExtracting, forKey: Keys.reveal) } }
+    var openAction: ArchiveOpenAction { didSet { defaults.set(openAction.rawValue, forKey: Keys.openAction) } }
     /// nil = detect automatically.
     var encodingOverride: UInt? { didSet { defaults.set(encodingOverride.map { Int($0) } ?? 0, forKey: Keys.encoding) } }
 
@@ -75,6 +84,7 @@ final class ArchiveModule: ModuleController {
         folderRule = ArchiveFolderRule(rawValue: defaults.string(forKey: Keys.folderRule) ?? "") ?? .smart
         trashAfterExtracting = defaults.bool(forKey: Keys.trash)
         revealAfterExtracting = defaults.bool(forKey: Keys.reveal)
+        openAction = ArchiveOpenAction(rawValue: defaults.string(forKey: Keys.openAction) ?? "") ?? .browse
         let encoding = defaults.integer(forKey: Keys.encoding)
         encodingOverride = encoding == 0 ? nil : UInt(encoding)
     }
@@ -84,6 +94,7 @@ final class ArchiveModule: ModuleController {
     /// Registers the Finder extension once per build of Tutto (two `pluginkit` runs), not at every
     /// launch: macOS keeps the registration until the app changes.
     func start() {
+        ArchiveBrowserWindows.clearOldFiles()
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
         guard defaults.string(forKey: Keys.registeredBuild) != build else { return }
         model?.permissions.setFinderExtension(enabled: true)
@@ -291,6 +302,7 @@ final class ArchiveModule: ModuleController {
         static let trash = "archives.trashAfter"
         static let reveal = "archives.revealAfter"
         static let encoding = "archives.encoding"
+        static let openAction = "archives.openAction"
     }
 }
 
@@ -315,6 +327,7 @@ enum ArchiveRequests {
         case "extract-folder": archives.extract(paths, mode: .ownFolder)
         case "extract-choose": archives.extract(paths, mode: .choose)
         case "compress": archives.compress(paths)
+        case "browse": paths.forEach { ArchiveBrowserWindows.shared.open($0) }
         default: break
         }
     }
@@ -326,6 +339,9 @@ enum ArchiveRequests {
             Toast.shared.show("Archives is off", detail: "Turn it on in Tutto › General", duration: 3)
             return
         }
-        module.extract(archives, mode: .preferred)
+        switch module.openAction {
+        case .browse: archives.forEach { ArchiveBrowserWindows.shared.open($0) }
+        case .extract: module.extract(archives, mode: .preferred)
+        }
     }
 }

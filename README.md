@@ -24,7 +24,7 @@ Tutto is sixteen everyday tools in one native Swift app. **The app is 10 MB, it 
 - **Keyboard cleaning:** keys and trackpad locked for 30 s while you wipe them.
 - **Stay Awake:** the Mac stays on for a time you type, lid closed included.
 - **Auto clicker:** up to 100 clicks a second, from a switch or ⌃⇧A.
-- **Archives:** RAR, 7z, zip and more, from Finder's right-click menu.
+- **Archives:** look inside RAR, 7z, zip and more without unpacking, take out just what you need, add and remove files; space in Finder shows what's inside.
 - **Trackpad Corner:** click or tap a corner to right-click; a three-finger click can be a middle click.
 - **Word counter:** words, characters and reading time of any text.
 
@@ -119,7 +119,9 @@ Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press th
 
 **Snap by dragging (Windows page):** drag a window to the left or right edge for a half, a corner for a quarter, the top to fill the screen, or the bottom for thirds (slide from an outer third into the middle for two thirds). An outline shows where it will go before you let go, and Esc cancels. Drag a window Tutto snapped and it gets its old size back. macOS 15 and later have their own edge tiling; while it's on, Tutto stays out of its way (switch it off in System Settings › Desktop & Dock to use Tutto's, with thirds, the gap you set and sizes given back).
 
-**Finder:** right-click an archive for **Extract Here**, **Extract to "Name"**, **Extract to…**; right-click anything for **Compress to ZIP**, and files for **Convert ›** (their formats, Compress, More…). Archives can also be opened with Tutto by double-clicking (Archives › Make Default).
+**Archives:** open one (double-click with Tutto as the archive app, **Open in Tutto** in Finder's right-click menu, or Archives › Open…) and a window shows what's inside without unpacking anything: folders with their sizes and file counts, dates, kinds, a path along the top to click back through, and search across the whole archive. Double-click a folder to go in, an archive inside the archive to open it in place, anything else to open it in its app; space shows it in Quick Look. **Extract** takes out only what's selected (into a folder you pick), or drag rows straight to Finder. In zip, 7z and tar archives (plain, .gz, .bz2, .xz), **Add** (or drop files in) and **Remove** (or ⌫) change the archive in place, in its own format; the old copy goes to the Trash, so a change can be undone. RAR, ISO, CAB, split and encrypted archives, and archives inside archives, are read only, and the window says why. In Finder, select an archive and press space: Quick Look shows its folders and files. Archives › When you open an archive switches double-click back to extracting straight away.
+
+**Finder:** right-click an archive for **Open in Tutto**, **Extract Here**, **Extract to "Name"**, **Extract to…**; right-click anything for **Compress to ZIP**, and files for **Convert ›** (their formats, Compress, More…). Archives can also be opened with Tutto by double-clicking (Archives › Make Default).
 
 **Automation:** `tutto://do/capture-area`, `capture-screen`, `capture-edit`, `record-screen`, `scrolling-capture`, `clean-up`, `clipboard`, `windows`, `word-counter`, `mute-front-app`, `quit` run an action; `tutto://convert?to=png&path=…` (or `compress=1`, or `open=1` for the window) converts files; `tutto://do/clicker` starts or stops the auto clicker (with optional `cps`, `button`, `double`, `at=x,y`, `for` seconds, `clicks`); `tutto://do/stay-awake?for=2h` starts Stay Awake (or adds the time to the session running) and `tutto://do/stay-awake-end` ends it, so an agent can keep the Mac on for its own run (`open -g "tutto://do/stay-awake?for=3h"`); `tutto://open/<page>` (e.g. `battery`, `shortcuts`) opens a page — handy from Shortcuts, scripts or a Stream Deck.
 
@@ -136,7 +138,7 @@ Every shortcut can be re-recorded in **Tutto › Shortcuts** (click it, press th
 | System Audio Recording | Muting apps and setting their levels in Sound (Tutto holds their sound back or plays it louder or quieter; nothing is recorded) | The first time you mute an app or change its level |
 | Microphone | Your voice in a screen recording, only when "The microphone" is on | The first recording with it on |
 | Full Disk Access (optional) | Clean Up's look into apps' containers and the Trash | Clean Up page, when you choose to |
-| Finder extension | The Extract / Compress right-click items | Archives page (System Settings › General › Login Items & Extensions › Extensions) |
+| Finder extension | The Open / Extract / Compress right-click items | Archives page (System Settings › General › Login Items & Extensions › Extensions) |
 | Tutto's helper (App Background Activity) | Setting fan speeds (reading never needs it), and Stay Awake keeping the Mac on with the lid closed | When you first choose Custom or Max, or set up Stay Awake |
 | Location Services | Only Stay Awake's hotspot option, which needs to see Wi-Fi names; Tutto never reads your location | When you turn the hotspot option on |
 | Files & folders | Saving to Downloads, extracting in Desktop/Documents/Downloads | macOS asks once per folder |
@@ -161,7 +163,7 @@ Measurements and comparisons with comparable utilities are in [docs/PERFORMANCE.
 
 - **Fan control** writes the SMC through a root helper you approve once (System Settings › General › Login Items & Extensions). Verified on an M5: Max spins the fan to about 6,550 rpm and quitting returns it to Auto.
 - **Temperatures:** Apple doesn't document which sensor is the CPU or GPU on Apple silicon. Tutto labels CPU/GPU only from published SMC key tables (on M5, confirmed to respond to CPU and GPU load on this Mac) and shows the rest as SoC die, battery and SSD.
-- **Archives:** Tutto uses the libarchive built into macOS, so encrypted RAR and 7z archives and zstd/lz4 compression can't be opened (password-protected zip works). Compression produces zip.
+- **Archives:** Tutto uses the libarchive built into macOS, so encrypted RAR and 7z archives and zstd/lz4 compression can't be opened (password-protected zip works), and RAR can be read but not written. Compression produces zip, 7z, tar.gz or tar.xz.
 - **Screen Recording:** macOS may periodically ask you to re-confirm it; that's macOS policy.
 - **Window switcher:** while you type in a password field macOS hides keystrokes from every app, so ⌘Tab shows macOS's own switcher there. If Tutto quits or crashes, macOS's ⌘Tab is back immediately (nothing in the system is switched off). It relies on private window-server calls to list windows on other Spaces and switch to them; a window on another Space that nothing has touched since its app started is reached through that app's Window menu. Video that apps protect from capture shows as a dark picture.
 - **Scrolling strip:** macOS doesn't let an app hide another app's window, so a window out of view waits at the left or right edge of its display with one point showing (level with the screen, so Mission Control shows every window at its usual size). Strip keys are caught before other apps' shortcuts (so they win while the strip is on), except in password fields, where macOS hides keystrokes; there the regular shortcut answers if no other app took the keys first. A three-finger swipe can clash with macOS's own swipe between full-screen apps: Mac Setup on the strip's page points out the setting.

@@ -132,7 +132,7 @@ struct ArchivesPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PageHeader(title: "Archives",
-                       subtitle: "Open RAR, 7z, zip, tar, ISO, CAB and more — from Finder's right-click menu or by double-clicking.",
+                       subtitle: "Look inside RAR, 7z, zip, tar, ISO, CAB and more without unpacking them, take out just what you need, and add or remove files in zip, 7z and tar archives.",
                        module: .archives)
             if let archives = model.archives {
                 ArchiveSettings(archives: archives, model: model)
@@ -163,7 +163,13 @@ private struct ArchiveSettings: View {
                     }
                 }
                 Hairline().opacity(0.6)
-                LabeledRow("Open archives with Tutto", detail: isDefault ? "Double-clicking an archive extracts it with Tutto." : "Make Tutto the app that opens archives when you double-click them.") {
+                LabeledRow("When you open an archive", detail: archives.openAction == .browse
+                           ? "A window shows what's inside; nothing is unpacked until you take something out."
+                           : "It's extracted straight away, with the settings below.") {
+                    InkSegmented(selection: $archives.openAction, options: [(.browse, "Show What's Inside"), (.extract, "Extract It")])
+                }
+                Hairline().opacity(0.6)
+                LabeledRow("Open archives with Tutto", detail: isDefault ? "Double-clicking an archive opens it in Tutto." : "Make Tutto the app that opens archives when you double-click them.") {
                     if isDefault {
                         Text("Default").font(.system(size: 12)).foregroundStyle(Color.ink2)
                     } else {
@@ -172,8 +178,9 @@ private struct ArchiveSettings: View {
                     }
                 }
                 Hairline().opacity(0.6)
-                LabeledRow("Extract or compress files…", detail: "Pick files here instead of in Finder.") {
+                LabeledRow("Open, extract or compress…", detail: "Pick files here instead of in Finder.") {
                     HStack {
+                        Button("Open…") { pickToOpen() }.buttonStyle(OutlineButtonStyle(compact: true))
                         Button("Extract…") { pick(extract: true) }.buttonStyle(OutlineButtonStyle(compact: true))
                         Button("Compress…") { pick(extract: false) }.buttonStyle(OutlineButtonStyle(compact: true))
                     }
@@ -217,7 +224,7 @@ private struct ArchiveSettings: View {
                 }
             }
             InkGroup("Formats") {
-                Text("Extracts zip, RAR (including RAR5 and multi-part), 7z, tar, gzip, bzip2, xz, lzma, ISO, CAB, LHA/LZH, XAR/pkg, cpio, ar/deb and more through the libarchive built into macOS. Password-protected zip files are supported; encrypted RAR and 7z files and zstd/lz4 compression are not (macOS's libarchive can't decrypt or decode them). Compresses to zip.")
+                Text("Opens and extracts zip, RAR (including RAR5 and multi-part), 7z, tar, gzip, bzip2, xz, lzma, ISO, CAB, LHA/LZH, XAR/pkg, cpio, ar/deb and more through the libarchive built into macOS, archives inside archives included. Files can be added to and removed from zip, 7z and tar archives (plain, .gz, .bz2, .xz); RAR and the rest are read only, since macOS has no writer for them. Password-protected zip files are supported; encrypted RAR and 7z files and zstd/lz4 compression are not (macOS's libarchive can't decrypt or decode them). Compresses to zip, 7z, tar.gz and tar.xz. In Finder, space on an archive shows what's inside.")
                     .font(.system(size: 12))
                     .lineSpacing(3)
                     .foregroundStyle(Color.ink2)
@@ -252,6 +259,14 @@ private struct ArchiveSettings: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url { archives.fixedFolderPath = url.path }
+    }
+
+    private func pickToOpen() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Open"
+        guard panel.runModal() == .OK else { return }
+        panel.urls.forEach { ArchiveBrowserWindows.shared.open($0) }
     }
 
     private func pick(extract: Bool) {

@@ -74,6 +74,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `--no-shortcuts`: for measurement runs alongside other apps that own the same keys.
         model.launch(quietly: CommandLine.arguments.contains("--no-shortcuts"))
         if !TuttoApp.isProbeRun { PanelController.shared.install(model: model) }
+        #if DEBUG
+        // `--open-archive <path>`: the archive window, for trying it without Launch Services.
+        if let flag = CommandLine.arguments.firstIndex(of: "--open-archive"), CommandLine.arguments.count > flag + 1 {
+            ArchiveBrowserWindows.shared.open(URL(fileURLWithPath: CommandLine.arguments[flag + 1]))
+        }
+        #endif
         AppActivation.followSpaceSwitchesOnActivation()
         // Once the menu bar has settled, see whether the icon ended up behind the notch.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {

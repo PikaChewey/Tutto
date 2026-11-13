@@ -41,6 +41,7 @@ final class FinderSync: FIFinderSync {
         let icon = NSImage(systemSymbolName: "archivebox", accessibilityDescription: nil)
 
         if archives.count == 1, let archive = archives.first {
+            menu.addItem(item("Open in Tutto", #selector(browse(_:)), NSImage(systemSymbolName: "archivebox", accessibilityDescription: nil)))
             menu.addItem(item("Extract Here", #selector(extractHere(_:)), icon))
             let base = Self.baseName(archive)
             menu.addItem(item("Extract to “\(base)”", #selector(extractToFolder(_:)), icon))
@@ -133,6 +134,7 @@ final class FinderSync: FIFinderSync {
         return item
     }
 
+    @objc func browse(_ sender: AnyObject?) { send("browse", archivesOnly: true) }
     @objc func extractHere(_ sender: AnyObject?) { send("extract-here", archivesOnly: true) }
     @objc func extractToFolder(_ sender: AnyObject?) { send("extract-folder", archivesOnly: true) }
     @objc func extractChoose(_ sender: AnyObject?) { send("extract-choose", archivesOnly: true) }

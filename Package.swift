@@ -32,6 +32,7 @@ let package = Package(
                 .linkedFramework("CoreAudio"), .linkedFramework("AudioToolbox"),
                 .linkedFramework("CoreWLAN"), .linkedFramework("CoreLocation"), .linkedFramework("Network"),
                 .linkedFramework("Security"), .linkedFramework("IOKit"), .linkedFramework("LocalAuthentication"),
+                .linkedFramework("Quartz"),
             ]
         ),
         // Finder Sync extension: the right-click menu for archives.
@@ -40,6 +41,16 @@ let package = Package(
             path: "Sources/TuttoFinder",
             linkerSettings: [
                 .linkedFramework("FinderSync"),
+                .unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"]),
+            ]
+        ),
+        // Quick Look extension: space on an archive in Finder shows what's inside.
+        .executableTarget(
+            name: "TuttoQuickLook",
+            dependencies: ["TuttoKit"],
+            path: "Sources/TuttoQuickLook",
+            linkerSettings: [
+                .linkedFramework("Quartz"), .linkedFramework("SwiftUI"),
                 .unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"]),
             ]
         ),
