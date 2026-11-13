@@ -12,15 +12,11 @@ import TuttoKit
 @main
 struct TuttoApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var model = AppModel.shared
 
+    /// The menu bar icon and its panel are Tutto's own (PanelController): MenuBarExtra's window
+    /// brings a solid material that the Liquid Glass cards can't float over. Windows are AppKit.
     var body: some Scene {
-        MenuBarExtra(isInserted: .constant(!Self.isProbeRun)) {
-            MenuPanel(model: model)
-        } label: {
-            MenuBarLabel(model: model)
-        }
-        .menuBarExtraStyle(.window)
+        Settings { EmptyView() }
     }
 
     /// A debug copy run for a probe, a lab or offscreen renders: no icon in the menu bar (a second
@@ -35,41 +31,6 @@ struct TuttoApp: App {
         return false
         #endif
     }()
-}
-
-/// The menu bar icon; while Stay Awake runs, the time left beside it; while the auto clicker
-/// clicks, its symbol, so a running clicker is never forgotten.
-private struct MenuBarLabel: View {
-    var model: AppModel
-
-    var body: some View {
-        let awake = model.awake?.menuBarText
-        let agents = model.awake?.isAgentSession == true
-        let clicking = model.clicker?.isOn == true
-        let recording = model.screenshots?.recorder.recordingSince
-        if awake != nil || clicking || agents || recording != nil {
-            HStack(spacing: 3) {
-                Image(nsImage: MenuBarGlyph.image())
-                if let recording {
-                    // The time, a tick a second, only while recording.
-                    TimelineView(.periodic(from: recording, by: 1)) { context in
-                        HStack(spacing: 3) {
-                            Image(systemName: "record.circle")
-                            Text(RecordingRules.elapsed(context.date.timeIntervalSince(recording))).monospacedDigit()
-                        }
-                    }
-                }
-                if agents { Image(systemName: "cup.and.heat.waves") }
-                if clicking { Image(systemName: "cursorarrow.click.2") }
-                if let awake { Text(awake).monospacedDigit() }
-            }
-            .accessibilityLabel(["Tutto", recording != nil ? "recording the screen" : nil, agents ? "staying awake while agents work" : nil,
-                                 clicking ? "auto clicker on" : nil, awake.map { "staying awake, \($0) left" }]
-                .compactMap { $0 }.joined(separator: ", "))
-        } else {
-            Image(nsImage: MenuBarGlyph.image())
-        }
-    }
 }
 
 @MainActor
@@ -112,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let launchedAtLogin = Self.wasLaunchedAsLoginItem()
         // `--no-shortcuts`: for measurement runs alongside other apps that own the same keys.
         model.launch(quietly: CommandLine.arguments.contains("--no-shortcuts"))
+        if !TuttoApp.isProbeRun { PanelController.shared.install(model: model) }
         AppActivation.followSpaceSwitchesOnActivation()
         // Once the menu bar has settled, see whether the icon ended up behind the notch.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {

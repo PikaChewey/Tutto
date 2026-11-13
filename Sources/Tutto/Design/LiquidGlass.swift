@@ -39,18 +39,18 @@ extension ThemeStore {
     @MainActor static var liquid: Bool { shared.tokens.liquid }
 }
 
-/// Prototypes of a glassier panel (Bryan 2026-11-13: "i dont think it looks glassy enough"), drawn
-/// on the glass stage only: `glass-look:floating` or `glass-look:clear`.
+/// How the Liquid Glass panel is built (Bryan 2026-11-13: "i dont think it looks glassy enough";
+/// shown three, picked floating). The glass stage renders the others with `glass-look:<name>`.
 enum GlassLook: String {
-    /// One sheet (the system's in the menu bar), cards as platters: what ships.
+    /// One sheet, cards as platters on it (the first version).
     case sheet
-    /// No sheet: every card is its own piece of glass floating over the desktop, the header and the
-    /// footer glass capsules, gaps between them.
+    /// What ships: no sheet; every card is its own piece of glass floating over the desktop, the
+    /// header and the footer glass capsules, gaps between them, a rim of light around each.
     case floating
     /// One sheet of the most transparent glass, lightly dimmed for the text, cards barely there.
     case clear
 
-    nonisolated(unsafe) static var current: GlassLook = .sheet
+    nonisolated(unsafe) static var current: GlassLook = .floating
 }
 
 extension View {

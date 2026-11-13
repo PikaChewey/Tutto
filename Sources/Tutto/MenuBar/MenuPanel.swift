@@ -356,7 +356,7 @@ private struct CardDrop: DropDelegate {
 
 /// Remembers the panel's own window, so it's closed only while it's actually showing.
 @MainActor
-private enum PanelWindow {
+enum PanelWindow {
     static weak var current: NSWindow?
 }
 
@@ -432,9 +432,7 @@ private struct CardTitle<Trailing: View>: View {
 }
 
 /// Runs an action after the panel has closed, so it isn't in the picture or in the way, and
-/// the app you were in is the front app again. The panel is closed through the menu bar icon's
-/// own button, as a click on the icon closes it: closing its window directly left SwiftUI
-/// thinking it was still open, so the next click on the icon did nothing.
+/// the app you were in is the front app again.
 @MainActor
 private func afterPanelCloses(_ action: @escaping @MainActor () -> Void) {
     closePanel()
@@ -443,13 +441,11 @@ private func afterPanelCloses(_ action: @escaping @MainActor () -> Void) {
     }
 }
 
-/// Closes the panel the way a click on the icon does. Opening Tutto's window doesn't close it by
-/// itself (Tutto stays the active app), so anything that opens a page closes the panel first.
+/// Closes the panel. Opening Tutto's window doesn't close it by itself, so anything that opens a
+/// page closes the panel first.
 @MainActor
 private func closePanel() {
-    // A click on the icon toggles: only while the panel is up, or a late call would open it again.
-    guard PanelWindow.current?.isVisible ?? true else { return }
-    if let button = menuBarButton() { button.performClick(nil) } else { NSApp.keyWindow?.close() }
+    PanelController.shared.close()
 }
 
 /// Opens a page of the app (or the app where you left it) and closes the panel.
@@ -457,18 +453,6 @@ private func closePanel() {
 private func showInApp(_ page: MainPage? = nil) {
     closePanel()
     if let page { MainWindowController.shared.show(page: page) } else { MainWindowController.shared.show() }
-}
-
-/// The button SwiftUI makes for the menu bar icon.
-@MainActor
-private func menuBarButton() -> NSStatusBarButton? {
-    func find(_ view: NSView) -> NSStatusBarButton? {
-        (view as? NSStatusBarButton) ?? view.subviews.lazy.compactMap(find).first
-    }
-    return NSApp.windows.lazy
-        .filter { $0.className.contains("StatusBarWindow") }
-        .compactMap { $0.contentView.flatMap(find) }
-        .first
 }
 
 // MARK: - Header
