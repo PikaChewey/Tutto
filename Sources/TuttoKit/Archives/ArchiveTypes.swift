@@ -111,6 +111,8 @@ public struct ArchiveExtractionOptions: Sendable {
     /// Passphrase for encrypted zip entries (ZipCrypto and AES).
     public var password: String? = nil
     public var keepModificationDates = true
+    /// Only these entries (nil = everything).
+    public var selection: ArchiveSelection? = nil
 
     public init() {}
 
@@ -156,13 +158,42 @@ public struct ArchiveEntryInfo: Sendable, Equatable {
     /// Uncompressed size, nil when the format doesn't record it (raw single-file streams).
     public var size: Int64?
     public var isEncrypted: Bool
+    /// When it was last changed, if the archive says.
+    public var modified: Date?
 
-    public init(path: String, isDirectory: Bool, isSymlink: Bool = false, size: Int64?, isEncrypted: Bool) {
+    public init(path: String, isDirectory: Bool, isSymlink: Bool = false, size: Int64?, isEncrypted: Bool, modified: Date? = nil) {
         self.path = path
         self.isDirectory = isDirectory
         self.isSymlink = isSymlink
         self.size = size
         self.isEncrypted = isEncrypted
+        self.modified = modified
+    }
+}
+
+/// Which entries to extract, and the folder they're taken out of: extracting "Docs/img" while
+/// looking inside "Docs/" writes "img" (and what's in it), not "Docs/img".
+public struct ArchiveSelection: Sendable, Equatable {
+    /// Entry paths; a folder stands for everything in it.
+    public var paths: [String]
+    /// The folder being looked at ("" for the top, else ending in "/"), dropped from the names.
+    public var base: String
+
+    public init(paths: [String], base: String = "") {
+        self.paths = paths.map { $0.hasSuffix("/") ? String($0.dropLast()) : $0 }
+        self.base = base.isEmpty || base.hasSuffix("/") ? base : base + "/"
+    }
+
+    public func includes(_ path: String) -> Bool {
+        paths.contains { path == $0 || path.hasPrefix($0 + "/") }
+    }
+
+    /// The path as it lands, or nil when stripping the base would leave nothing.
+    public func landing(_ path: String) -> String? {
+        guard !base.isEmpty else { return path }
+        guard path.hasPrefix(base) else { return path }
+        let rest = String(path.dropFirst(base.count))
+        return rest.isEmpty ? nil : rest
     }
 }
 

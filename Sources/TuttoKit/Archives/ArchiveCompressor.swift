@@ -72,7 +72,8 @@ public enum ArchiveCompressor {
         var entries: [PlannedEntry] = []
         var totalBytes: Int64 = 0
 
-        init(items: [URL]) throws {
+        /// `folder` ("" or "Docs/") puts the items inside a folder of the archive (adding to one).
+        init(items: [URL], under folder: String = "") throws {
             var usedRoots = Set<String>()
             for item in items {
                 guard let st = FileSystem.lstatInfo(item) else {
@@ -86,7 +87,7 @@ public enum ArchiveCompressor {
                     root = "\(root) \(n)"
                 }
                 usedRoots.insert(root.lowercased())
-                try walk(item, archivePath: root, info: st)
+                try walk(item, archivePath: folder + root, info: st)
             }
         }
 
@@ -165,50 +166,63 @@ public enum ArchiveCompressor {
 
         for planned in plan.entries {
             if isCancelled() { throw ArchiveError.cancelled }
-            guard let entry = archive_entry_new() else { throw ArchiveError.writeFailed("Out of memory") }
-            defer { archive_entry_free(entry) }
-            var info = planned.info
-            archive_entry_copy_stat(entry, &info)
-            archive_entry_copy_pathname(entry, planned.archivePath)
-            switch planned.kind {
-            case .directory:
-                archive_entry_set_size(entry, 0)
-            case .symlink:
-                guard let target = readLink(planned.source) else { continue }
-                archive_entry_copy_symlink(entry, target)
-                archive_entry_set_size(entry, 0)
-            case .file:
-                break
-            }
             report(planned.archivePath)
-            try check(archive_write_header(a, entry))
-
-            if planned.kind == .file && planned.info.st_size > 0 {
-                let fd = planned.source.withUnsafeFileSystemRepresentation { open($0!, O_RDONLY | O_NOFOLLOW) }
-                guard fd >= 0 else {
-                    throw ArchiveError.cannotOpen("\(planned.archivePath): \(String(cString: strerror(errno)))")
-                }
-                defer { close(fd) }
-                var remaining = Int64(planned.info.st_size)
-                while remaining > 0 {
-                    let n = read(fd, buffer, min(chunkSize, Int(remaining)))
-                    if n < 0 {
-                        if errno == EINTR { continue }
-                        throw ArchiveError.cannotOpen("\(planned.archivePath): \(String(cString: strerror(errno)))")
-                    }
-                    if n == 0 { break }   // file shrank; libarchive pads the entry
-                    if archive_write_data(a, buffer, n) < 0 {
-                        throw ArchiveError.writeFailed(archive_error_string(a).map { String(cString: $0) } ?? "write error")
-                    }
-                    remaining -= Int64(n)
-                    bytesRead += Int64(n)
-                    if isCancelled() { throw ArchiveError.cancelled }
-                    report(planned.archivePath)
-                }
+            try writeEntry(planned, to: a, buffer: buffer, chunkSize: chunkSize, isCancelled: isCancelled) { n in
+                bytesRead += Int64(n)
+                report(planned.archivePath)
             }
-            try check(archive_write_finish_entry(a))
         }
         try check(archive_write_close(a))
+    }
+
+    /// Writes one file, folder or symlink from disk into the open archive `a`.
+    static func writeEntry(_ planned: PlannedEntry, to a: OpaquePointer, buffer: UnsafeMutableRawPointer, chunkSize: Int,
+                           isCancelled: () -> Bool, wrote: (Int) -> Void) throws {
+        func check(_ status: Int32) throws {
+            if status < ARCHIVE_WARN {
+                throw ArchiveError.writeFailed(archive_error_string(a).map { String(cString: $0) } ?? "unknown error")
+            }
+        }
+        guard let entry = archive_entry_new() else { throw ArchiveError.writeFailed("Out of memory") }
+        defer { archive_entry_free(entry) }
+        var info = planned.info
+        archive_entry_copy_stat(entry, &info)
+        archive_entry_copy_pathname(entry, planned.archivePath)
+        switch planned.kind {
+        case .directory:
+            archive_entry_set_size(entry, 0)
+        case .symlink:
+            guard let target = readLink(planned.source) else { return }
+            archive_entry_copy_symlink(entry, target)
+            archive_entry_set_size(entry, 0)
+        case .file:
+            break
+        }
+        try check(archive_write_header(a, entry))
+
+        if planned.kind == .file && planned.info.st_size > 0 {
+            let fd = planned.source.withUnsafeFileSystemRepresentation { open($0!, O_RDONLY | O_NOFOLLOW) }
+            guard fd >= 0 else {
+                throw ArchiveError.cannotOpen("\(planned.archivePath): \(String(cString: strerror(errno)))")
+            }
+            defer { close(fd) }
+            var remaining = Int64(planned.info.st_size)
+            while remaining > 0 {
+                let n = read(fd, buffer, min(chunkSize, Int(remaining)))
+                if n < 0 {
+                    if errno == EINTR { continue }
+                    throw ArchiveError.cannotOpen("\(planned.archivePath): \(String(cString: strerror(errno)))")
+                }
+                if n == 0 { break }   // file shrank; libarchive pads the entry
+                if archive_write_data(a, buffer, n) < 0 {
+                    throw ArchiveError.writeFailed(archive_error_string(a).map { String(cString: $0) } ?? "write error")
+                }
+                remaining -= Int64(n)
+                wrote(n)
+                if isCancelled() { throw ArchiveError.cancelled }
+            }
+        }
+        try check(archive_write_finish_entry(a))
     }
 
     private static func readLink(_ url: URL) -> String? {

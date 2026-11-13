@@ -50,7 +50,8 @@ public final class ArchiveExtractor: @unchecked Sendable {
             guard let path = EntryPath.sanitize(decoded), !EntryPath.isMacOSXMetadataFolder(path) else { continue }
             let encrypted = entry.isEncrypted || encryptedRAR5.contains(decoded)
             result.append(ArchiveEntryInfo(path: path, isDirectory: entry.isDirectory, isSymlink: entry.isSymlink,
-                                           size: entry.isDirectory ? 0 : entry.size, isEncrypted: encrypted))
+                                           size: entry.isDirectory ? 0 : entry.size, isEncrypted: encrypted,
+                                           modified: entry.modified))
         }
         return result
     }
@@ -130,6 +131,7 @@ public final class ArchiveExtractor: @unchecked Sendable {
         var isSymlink: Bool
         var size: Int64?
         var isEncrypted: Bool
+        var modified: Date?
     }
 
     struct HeaderScan {
@@ -152,7 +154,7 @@ public final class ArchiveExtractor: @unchecked Sendable {
         func record(_ e: OpaquePointer) {
             let v = EntryView(entry: e)
             entries.append(ScannedEntry(rawPath: v.rawPath, isDirectory: v.isDirectory, isSymlink: v.isSymlink,
-                                        size: v.size, isEncrypted: v.isEncrypted))
+                                        size: v.size, isEncrypted: v.isEncrypted, modified: v.modified))
         }
         guard let first = try reader.nextEntry() else {
             return HeaderScan(format: reader.formatCode, filterCount: reader.filterCount, entries: [], complete: true)
@@ -301,11 +303,16 @@ private struct ExtractionSession {
             nameEncoding = encoding(for: raw)
             decoded = FilenameEncoding.decode(raw, using: nameEncoding)
         }
-        guard let relative = EntryPath.sanitize(decoded) else {
+        guard var relative = EntryPath.sanitize(decoded) else {
             if !view.isDirectory { skipped.append(decoded) }   // "./" roots are just ignored
             return
         }
         if EntryPath.isMacOSXMetadataFolder(relative) { return }
+        // Only the chosen entries, named from the folder they were picked in.
+        if let selection = options.selection {
+            guard selection.includes(relative), let landing = selection.landing(relative) else { return }
+            relative = landing
+        }
 
         // 2. Encryption.
         if view.isEncrypted {
@@ -326,7 +333,11 @@ private struct ExtractionSession {
         archive_entry_copy_pathname(e, target)
         if let rawLink = view.rawHardlink, !rawLink.isEmpty {
             let linkName = FilenameEncoding.decode(rawLink, using: nameEncoding ?? encoding(for: rawLink))
-            guard let linkRelative = EntryPath.sanitize(linkName), isSafeHardlinkTarget(linkRelative) else {
+            var linkRelative = EntryPath.sanitize(linkName)
+            if let selection = options.selection, let link = linkRelative {
+                linkRelative = selection.includes(link) ? selection.landing(link) : nil
+            }
+            guard let linkRelative, isSafeHardlinkTarget(linkRelative) else {
                 skipped.append(relative)
                 return
             }

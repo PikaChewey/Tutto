@@ -183,4 +183,13 @@ int archive_read_support_format_zip(struct archive *);
 int archive_entry_is_data_encrypted(struct archive_entry *);
 int archive_entry_is_metadata_encrypted(struct archive_entry *);
 
+// Filters in a read stream (editing writes the same ones back)
+int archive_filter_code(struct archive *, int);
+#define ARCHIVE_FILTER_NONE 0
+#define ARCHIVE_FILTER_GZIP 1
+#define ARCHIVE_FILTER_BZIP2 2
+#define ARCHIVE_FILTER_COMPRESS 3
+#define ARCHIVE_FILTER_LZMA 5
+#define ARCHIVE_FILTER_XZ 6
+
 #endif /* LibArchive_h */

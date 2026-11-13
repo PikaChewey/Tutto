@@ -93,6 +93,12 @@ final class LibArchiveReader {
 
     var formatCode: Int32 { archive_format(handle) & ARCHIVE_FORMAT_BASE_MASK }
 
+    /// The stream's filters outermost first, without the final "none" (a tar.gz is [gzip]).
+    var filterCodes: [Int32] {
+        let count = Int(archive_filter_count(handle))
+        return (0..<max(count - 1, 0)).map { archive_filter_code(handle, Int32($0)) }
+    }
+
     var filterCount: Int32 { archive_filter_count(handle) }
 
     var compressedBytesRead: Int64 { archive_filter_bytes(handle, -1) }
@@ -227,4 +233,9 @@ struct EntryView {
     var isSymlink: Bool { fileType == AE_IFLNK }
     var size: Int64? { archive_entry_size_is_set(entry) != 0 ? archive_entry_size(entry) : nil }
     var isEncrypted: Bool { archive_entry_is_encrypted(entry) != 0 }
+    /// Modification time, when the archive records one.
+    var modified: Date? {
+        let t = archive_entry_mtime(entry)
+        return t > 0 ? Date(timeIntervalSince1970: TimeInterval(t)) : nil
+    }
 }
