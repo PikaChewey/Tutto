@@ -56,9 +56,34 @@ struct AppearancePage: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 22) {
+            if ThemeStore.liquidAvailable { look }
             gallery
             adjust
             files
+        }
+    }
+
+    // MARK: Look
+
+    /// Liquid Glass (the default) or the classic look: the theme you used before, as it was.
+    private var look: some View {
+        InkGroup("Look") {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(theme.isLiquid ? "Liquid Glass" : "Classic")
+                        .font(.system(size: 12.5, weight: .medium))
+                    Text(theme.isLiquid
+                         ? "The panel is one sheet of glass over whatever is behind it."
+                         : "Your theme as it was: \(theme.classic.name).")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.ink3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                InkSegmented(selection: Binding(get: { theme.isLiquid }, set: { on in withAnimation(Motion.snappy) { theme.setLiquid(on) } }),
+                             options: [(true, "Liquid Glass"), (false, "Classic")])
+                    .fixedSize()
+            }
         }
     }
 
@@ -75,7 +100,7 @@ struct AppearancePage: View {
                     .foregroundStyle(Color.ink3)
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 112, maximum: 160), spacing: 10)], alignment: .leading, spacing: 10) {
-                ForEach(ThemeSpec.builtIn, id: \.name) { spec in
+                ForEach((ThemeStore.liquidAvailable ? [ThemeSpec.liquidGlass] : []) + ThemeSpec.builtIn, id: \.name) { spec in
                     ThemeSwatch(spec: spec, selected: spec.looksLike(self.spec)) { apply(spec) }
                 }
                 ForEach(mine, id: \.url) { file in
@@ -104,7 +129,8 @@ struct AppearancePage: View {
                 Hairline().opacity(0.6)
                 choice("Contrast", \.contrast, [(.standard, "Standard"), (.high, "High")])
                 Hairline().opacity(0.6)
-                choice("Panel background", \.background, [(.glass, "Glass"), (.tinted, "Tinted"), (.solid, "Solid")])
+                choice("Panel background", \.background,
+                       (ThemeStore.liquidAvailable ? [(ThemeSpec.Background.liquid, "Liquid")] : []) + [(.glass, "Glass"), (.tinted, "Tinted"), (.solid, "Solid")])
                 Hairline().opacity(0.6)
                 choice("Cards", \.cards, [(.filled, "Filled"), (.outlined, "Outlined")])
                 Hairline().opacity(0.6)

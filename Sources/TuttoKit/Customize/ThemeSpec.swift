@@ -338,8 +338,7 @@ public struct ThemeSpec: Codable, Equatable, Sendable {
     /// Tutto's own look first.
     public static let tutto = ThemeSpec(name: "Tutto")
 
-    /// Liquid Glass, in preview: rendered on the glass stage, not offered on the Appearance page until
-    /// the menu bar window itself is glass (its own window brings a 16 pt plain material today).
+    /// Liquid Glass (macOS 26): the default look.
     public static let liquidGlass = ThemeSpec(name: "Liquid Glass", background: .liquid, corners: .large)
 
     public static let builtIn: [ThemeSpec] = [

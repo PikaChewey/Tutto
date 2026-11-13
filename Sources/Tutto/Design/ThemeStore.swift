@@ -57,10 +57,40 @@ final class ThemeStore {
     @ObservationIgnored private let defaults = UserDefaults.standard
 
     private init() {
-        let saved = UserDefaults.standard.data(forKey: Keys.current).flatMap { try? JSONDecoder().decode(ThemeSpec.self, from: $0) }
-        let spec = saved ?? .tutto
+        let defaults = UserDefaults.standard
+        let saved = defaults.data(forKey: Keys.current).flatMap { try? JSONDecoder().decode(ThemeSpec.self, from: $0) }
+        var spec = saved ?? (Self.liquidAvailable ? .liquidGlass : .tutto)
+        // Liquid Glass became the default look (Bryan, 2026-11-12): once, the theme in use moves to it
+        // and is kept as the Classic look, one click away on the Appearance page.
+        if Self.liquidAvailable, !defaults.bool(forKey: Keys.liquidDefault) {
+            defaults.set(true, forKey: Keys.liquidDefault)
+            if spec.background != .liquid {
+                if let data = try? JSONEncoder().encode(spec) { defaults.set(data, forKey: Keys.classic) }
+                spec = .liquidGlass
+                if let data = try? JSONEncoder().encode(spec) { defaults.set(data, forKey: Keys.current) }
+            }
+        }
         self.spec = spec
         tokens = Self.tokens(for: spec)
+    }
+
+    /// Liquid Glass or the classic look (the theme you had before, or Tutto's own).
+    var isLiquid: Bool { spec.background == .liquid }
+
+    /// The theme the Classic look brings back.
+    var classic: ThemeSpec {
+        defaults.data(forKey: Keys.classic).flatMap { try? JSONDecoder().decode(ThemeSpec.self, from: $0) } ?? .tutto
+    }
+
+    /// Switches between Liquid Glass and the classic look, keeping the classic theme for next time.
+    func setLiquid(_ on: Bool) {
+        guard on != isLiquid else { return }
+        if on {
+            if let data = try? JSONEncoder().encode(spec) { defaults.set(data, forKey: Keys.classic) }
+            apply(.liquidGlass)
+        } else {
+            apply(classic)
+        }
     }
 
     /// At launch, once the app exists: its light or dark, and the theme files.
@@ -87,7 +117,7 @@ final class ThemeStore {
 
     /// The built-in theme or theme file the current look matches, if any.
     var matching: ThemeSpec? {
-        (ThemeSpec.builtIn + files.map(\.spec)).first { $0.looksLike(spec) }
+        ([.liquidGlass] + ThemeSpec.builtIn + files.map(\.spec)).first { $0.looksLike(spec) }
     }
 
     /// Reads the themes folder again (a file added by hand shows up).
@@ -205,6 +235,10 @@ final class ThemeStore {
 
     private enum Keys {
         static let current = "theme.current"
+        /// The theme to go back to from Liquid Glass.
+        static let classic = "theme.classic"
+        /// Liquid Glass has been made the look once (it isn't forced again after you switch back).
+        static let liquidDefault = "theme.liquidDefault"
     }
 
     /// Liquid Glass needs macOS 26.

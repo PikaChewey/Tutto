@@ -83,12 +83,18 @@ struct MenuPanel: View {
         .padding(.bottom, 6)
         .frame(width: PanelGrid.width)
         .fixedSize(horizontal: false, vertical: true)
-        .background { if !(glassRoot && ThemeStore.liquid) { PanelBackdrop() } }
-        .liquidGlass(RoundedRectangle(cornerRadius: glassRoot ? 26 : 0, style: .continuous), enabled: glassRoot)
+        // Liquid Glass: nothing over the glass (the system's in the menu bar, its own on the stage).
+        .background { if !(drawsGlass && ThemeStore.liquid) { PanelBackdrop() } }
+        .liquidGlass(RoundedRectangle(cornerRadius: 26, style: .continuous), enabled: drawsGlass)
         .watching(model.system, model.system?.panelFeeds ?? [])
         .background { if !preview { PanelWindowReader() } }
         .tint(Color.themeAccent)
     }
+
+    /// Only the glass stage draws its own sheet. In the menu bar, macOS gives the panel's window its
+    /// own glass (drawn by the window server, under every view): a second sheet over it doubled the
+    /// glass and darkened it (measured over a bright wallpaper), so there the cards sit on the system's.
+    private var drawsGlass: Bool { glassRoot }
 
     private var cards: some View {
         VStack(alignment: .leading, spacing: PanelGrid.gap) {
