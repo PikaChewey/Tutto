@@ -57,6 +57,8 @@ struct MenuPanel: View {
     var preview = false
     /// On the Customize page: cards can be picked up, moved and selected.
     var editing: PanelEditing?
+    /// Draws its own sheet of Liquid Glass (the glass preview stage; the menu bar window brings its own).
+    var glassRoot = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: PanelGrid.gap) {
@@ -81,7 +83,8 @@ struct MenuPanel: View {
         .padding(.bottom, 6)
         .frame(width: PanelGrid.width)
         .fixedSize(horizontal: false, vertical: true)
-        .background { PanelBackdrop() }
+        .background { if !(glassRoot && ThemeStore.liquid) { PanelBackdrop() } }
+        .liquidGlass(RoundedRectangle(cornerRadius: glassRoot ? 26 : 0, style: .continuous), enabled: glassRoot)
         .watching(model.system, model.system?.panelFeeds ?? [])
         .background { if !preview { PanelWindowReader() } }
         .tint(Color.themeAccent)
@@ -133,8 +136,9 @@ private struct RecordingBanner: View {
 private struct PanelBackdrop: View {
     var body: some View {
         let tokens = ThemeStore.shared.tokens
+        // Liquid Glass: nothing over the window's own glass.
         Rectangle()
-            .fill(tokens.solidBackground ? tokens.canvas : tokens.tint)
+            .fill(tokens.liquid ? Color.clear : (tokens.solidBackground ? tokens.canvas : tokens.tint))
             .ignoresSafeArea()
     }
 }
@@ -1400,9 +1404,15 @@ private struct TimeChip: View {
             Text(title)
                 .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
                 .foregroundStyle(hovering ? Color.ink : Color.ink2)
-                .padding(.horizontal, 7)
+                .padding(.horizontal, ThemeStore.liquid ? 9 : 7)
                 .frame(height: 24)
-                .background(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink.opacity(hovering ? 0.12 : 0.07)))
+                .background {
+                    if ThemeStore.liquid {
+                        LiquidFill(shape: Capsule(), hovering: hovering)
+                    } else {
+                        RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink.opacity(hovering ? 0.12 : 0.07))
+                    }
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
@@ -2051,6 +2061,8 @@ struct ToolsCard: View {
     /// Renders with this tool's label up (`tool-hover:<id>`).
     nonisolated(unsafe) static var startsHovered: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Liquid Glass: the one lens that glides from icon to icon.
+    @Namespace private var lens
     private static let inset: CGFloat = 6
     private static let gap: CGFloat = 2
     /// Icons in a row before the bar wraps.
@@ -2086,7 +2098,10 @@ struct ToolsCard: View {
                 }
                 .offset(y: -30 + line * 32)
                 .animation(reduceMotion ? nil : .spring(duration: 0.22, bounce: 0.12), value: id)
-                .transition(.opacity.animation(reduceMotion ? nil : .easeOut(duration: 0.12)))
+                // Liquid Glass: the label grows out of its icon instead of fading in.
+                .transition(ThemeStore.liquid && !reduceMotion
+                    ? .scale(scale: 0.55, anchor: .bottom).combined(with: .opacity).animation(.spring(duration: 0.28, bounce: 0.2))
+                    : .opacity.animation(reduceMotion ? nil : .easeOut(duration: 0.12)))
                 .allowsHitTesting(false)
             }
         }
@@ -2100,10 +2115,22 @@ struct ToolsCard: View {
             Image(systemName: row.symbol)
                 .font(.system(size: 14.5))
                 .foregroundStyle(Color.ink)
+                // Under the lens the icon swells a little, as if magnified.
+                .scaleEffect(ThemeStore.liquid && hovered == row.id ? 1.14 : 1)
                 .frame(maxWidth: .infinity)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: Radius.of(8), style: .continuous)
-                    .fill(hovered == row.id ? Color.ink.opacity(0.08) : .clear))
+                .background {
+                    if ThemeStore.liquid {
+                        if hovered == row.id {
+                            LiquidFill(shape: RoundedRectangle(cornerRadius: 11, style: .continuous), raise: 1.5)
+                                .matchedGeometryEffect(id: "lens", in: lens)
+                        }
+                    } else {
+                        RoundedRectangle(cornerRadius: Radius.of(8), style: .continuous)
+                            .fill(hovered == row.id ? Color.ink.opacity(0.08) : .clear)
+                    }
+                }
+                .animation(reduceMotion ? nil : .spring(duration: 0.3, bounce: 0.18), value: hovered)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
@@ -2193,9 +2220,21 @@ private struct ToolLabel: View {
         }
         .padding(.horizontal, 9)
         .frame(height: 24)
-        .background(Capsule().fill(Color.paper))
-        .overlay(Capsule().strokeBorder(Color.hairline))
-        .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
+        .modifier(ToolLabelSurface())
+    }
+}
+
+/// The label's capsule: glass under Liquid Glass, else paper with a hairline and a soft shadow.
+private struct ToolLabelSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        if ThemeStore.liquid {
+            content.liquidGlass(Capsule())
+        } else {
+            content
+                .background(Capsule().fill(Color.paper))
+                .overlay(Capsule().strokeBorder(Color.hairline))
+                .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
+        }
     }
 }
 

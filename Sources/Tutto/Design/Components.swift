@@ -262,8 +262,14 @@ struct OutlineButtonStyle: ButtonStyle {
             .foregroundStyle(Color.ink)
             .padding(.vertical, compact ? 4 : 7)
             .padding(.horizontal, compact ? 10 : 14)
-            .background(Capsule().fill(configuration.isPressed ? Color.wash : Color.clear))
-            .overlay(Capsule().strokeBorder(Color.ink4, lineWidth: 1))
+            .background {
+                if ThemeStore.liquid {
+                    LiquidFill(shape: Capsule(), hovering: configuration.isPressed)
+                } else {
+                    Capsule().fill(configuration.isPressed ? Color.wash : Color.clear)
+                }
+            }
+            .overlay(Capsule().strokeBorder(ThemeStore.liquid ? Color.clear : Color.ink4, lineWidth: 1))
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .opacity(isEnabled ? 1 : 0.4)
             .animation(Motion.press, value: configuration.isPressed)

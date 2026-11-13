@@ -125,7 +125,9 @@ public struct ThemeSpec: Codable, Equatable, Sendable {
 
     public enum Neutrals: String, Codable, CaseIterable, Sendable { case neutral, warm, cool }
     public enum Contrast: String, Codable, CaseIterable, Sendable { case standard, high }
-    public enum Background: String, Codable, CaseIterable, Sendable { case glass, tinted, solid }
+    /// `liquid`: Apple's Liquid Glass (macOS 26): the panel one sheet of glass, cards quiet platters
+    /// on it, and what you point at lifting into glass. Before macOS 26 it looks like `glass`.
+    public enum Background: String, Codable, CaseIterable, Sendable { case glass, tinted, solid, liquid }
     public enum Cards: String, Codable, CaseIterable, Sendable { case filled, outlined }
     public enum Corners: String, Codable, CaseIterable, Sendable { case small, medium, large }
     public enum Density: String, Codable, CaseIterable, Sendable { case compact, standard, roomy }
@@ -335,6 +337,10 @@ public struct ThemeSpec: Codable, Equatable, Sendable {
 
     /// Tutto's own look first.
     public static let tutto = ThemeSpec(name: "Tutto")
+
+    /// Liquid Glass, in preview: rendered on the glass stage, not offered on the Appearance page until
+    /// the menu bar window itself is glass (its own window brings a 16 pt plain material today).
+    public static let liquidGlass = ThemeSpec(name: "Liquid Glass", background: .liquid, corners: .large)
 
     public static let builtIn: [ThemeSpec] = [
         tutto,

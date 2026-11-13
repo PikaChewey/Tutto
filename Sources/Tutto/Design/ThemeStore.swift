@@ -34,6 +34,8 @@ struct ThemeTokens {
     /// Laid over the panel's glass (clear when the theme's background is plain glass).
     var tint: Color
     var solidBackground: Bool
+    /// Liquid Glass (macOS 26 only; earlier systems draw the plain glass look).
+    var liquid: Bool
     var radiusScale: CGFloat
     var densityScale: CGFloat
     var numbers: Font.Design
@@ -182,6 +184,7 @@ final class ThemeStore {
                 : ink { _ in 1 },
             tint: light.tint > 0 ? accent.opacity(0.08) : .clear,
             solidBackground: light.solidBackground,
+            liquid: Self.liquidAvailable && spec.background == .liquid,
             radiusScale: CGFloat(spec.cornerScale),
             densityScale: CGFloat(spec.densityScale),
             numbers: numbers)
@@ -202,6 +205,11 @@ final class ThemeStore {
 
     private enum Keys {
         static let current = "theme.current"
+    }
+
+    /// Liquid Glass needs macOS 26.
+    static var liquidAvailable: Bool {
+        if #available(macOS 26, *) { true } else { false }
     }
 }
 
@@ -238,8 +246,12 @@ struct CardSurface: View {
 
     var body: some View {
         let tokens = ThemeStore.shared.tokens
-        RoundedRectangle(cornerRadius: Radius.of(radius), style: .continuous)
-            .fill(hovering ? tokens.cardHover : tokens.card)
-            .overlay(RoundedRectangle(cornerRadius: Radius.of(radius), style: .continuous).strokeBorder(tokens.cardStroke))
+        if tokens.liquid {
+            LiquidPlatter(radius: Radius.of(radius), hovering: hovering)
+        } else {
+            RoundedRectangle(cornerRadius: Radius.of(radius), style: .continuous)
+                .fill(hovering ? tokens.cardHover : tokens.card)
+                .overlay(RoundedRectangle(cornerRadius: Radius.of(radius), style: .continuous).strokeBorder(tokens.cardStroke))
+        }
     }
 }

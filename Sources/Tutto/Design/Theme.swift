@@ -111,12 +111,23 @@ struct InkSwitch: View {
             NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
         } label: {
             ZStack(alignment: isOn ? .trailing : .leading) {
-                Capsule()
-                    .fill(isOn ? Color.ink : Color.wash)
-                    .overlay(Capsule().strokeBorder(isOn ? Color.clear : Color.ink4, lineWidth: 1))
-                Circle()
-                    .fill(isOn ? Color.paper : Color.ink3)
-                    .padding(isOn ? 2.5 : 3.5)
+                if ThemeStore.liquid {
+                    // Liquid Glass: the system's own switch, an accent track and a white knob.
+                    Capsule()
+                        .fill(isOn ? Color.themeAccent : Color.ink.opacity(0.22))
+                    Capsule()
+                        .fill(Color.white)
+                        .shadow(color: .black.opacity(0.22), radius: 1.5, y: 0.5)
+                        .frame(width: 19)
+                        .padding(2)
+                } else {
+                    Capsule()
+                        .fill(isOn ? Color.ink : Color.wash)
+                        .overlay(Capsule().strokeBorder(isOn ? Color.clear : Color.ink4, lineWidth: 1))
+                    Circle()
+                        .fill(isOn ? Color.paper : Color.ink3)
+                        .padding(isOn ? 2.5 : 3.5)
+                }
             }
             .frame(width: 30, height: 17)
             .opacity(active ? 1 : 0.45)
@@ -148,13 +159,19 @@ struct InkSegmented<Value: Hashable>: View {
                     withAnimation(Motion.micro) { selection = option.value }
                 } label: {
                     Text(option.title)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(selected ? Color.paper : Color.ink2)
+                        .font(.system(size: 11, weight: selected && ThemeStore.liquid ? .semibold : .medium))
+                        .foregroundStyle(selected ? (ThemeStore.liquid ? Color.ink : Color.paper) : Color.ink2)
                         .padding(.horizontal, 9)
                         .frame(height: 22)
                         .background {
                             if selected {
-                                Capsule().fill(Color.ink).matchedGeometryEffect(id: "pill", in: pill)
+                                if ThemeStore.liquid {
+                                    // A raised thumb that slides to the choice.
+                                    LiquidFill(shape: Capsule(), raise: 2)
+                                        .matchedGeometryEffect(id: "pill", in: pill)
+                                } else {
+                                    Capsule().fill(Color.ink).matchedGeometryEffect(id: "pill", in: pill)
+                                }
                             }
                         }
                         .contentShape(Capsule())
@@ -166,10 +183,10 @@ struct InkSegmented<Value: Hashable>: View {
             }
         }
         .padding(2)
-        .background(Capsule().fill(Color.wash))
+        .background(Capsule().fill(ThemeStore.liquid ? Color.ink.opacity(0.07) : Color.wash))
         // The outline is drawn over the options and took their clicks: a mouse click on the fan card's
         // Max did nothing while an Accessibility press worked (measured). It only draws.
-        .overlay(Capsule().strokeBorder(Color.hairline, lineWidth: 1).allowsHitTesting(false))
+        .overlay(Capsule().strokeBorder(ThemeStore.liquid ? Color.clear : Color.hairline, lineWidth: 1).allowsHitTesting(false))
     }
 }
 

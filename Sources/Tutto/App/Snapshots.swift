@@ -34,7 +34,7 @@ enum Snapshots {
         }
         // Tutto's own theme, or `theme:Paper` for a built-in one; renders don't change the theme kept.
         let themeName = only.first(where: { $0.hasPrefix("theme:") }).map { String($0.dropFirst(6)) } ?? "Tutto"
-        let spec = ThemeSpec.builtIn.first { $0.name.caseInsensitiveCompare(themeName) == .orderedSame } ?? .tutto
+        let spec = (ThemeSpec.builtIn + [.liquidGlass]).first { $0.name.caseInsensitiveCompare(themeName) == .orderedSame } ?? .tutto
         ThemeStore.shared.apply(spec, remember: false)
         model.system?.begin([.load, .volumes, .apps, .energyProcesses, .cpuProcesses, .memoryProcesses])
         model.sensors?.begin()
@@ -93,6 +93,18 @@ enum Snapshots {
         if only.contains("charge-held") { ChargeLimitController.shared.previewHolding() }
         if only.contains("charge-nohelper") { ChargeLimitController.shared.previewHolding(percent: 64, helper: .requiresApproval) }
 
+        // `glass-stage wall-dark:<image> wall-light:<image>`: Liquid Glass can't be drawn offscreen, so the
+        // panel is put on screen over a wallpaper, one window per appearance; each window's number is
+        // written to stage-<appearance>.window and it stays up until stage-<appearance>.window.done exists.
+        if only.contains("glass-stage") {
+            for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {
+                let prefix = "wall-\(name):"
+                let wallpaper = only.first { $0.hasPrefix(prefix) }.flatMap { NSImage(contentsOfFile: String($0.dropFirst(prefix.count))) }
+                stage(model: model, appearance: appearance, wallpaper: wallpaper, marker: dir.appendingPathComponent("stage-\(name).window"))
+            }
+            model.shutdown()
+            return true
+        }
         for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {
             if only.isEmpty || only.contains("panel") {
                 render(MenuPanel(model: model).background(PanelMaterialStandIn()), appearance: appearance,
@@ -112,6 +124,35 @@ enum Snapshots {
         return true
     }
 
+    static func stage(model: AppModel, appearance: NSAppearance.Name, wallpaper: NSImage?, marker: URL) {
+        let size = NSSize(width: 700, height: 800)
+        let view = GlassStage(wallpaper: wallpaper, size: size) { MenuPanel(model: model, preview: true, glassRoot: true) }
+        let host = NSHostingView(rootView: view)
+        host.appearance = NSAppearance(named: appearance)
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: appearance)
+        window.isOpaque = true
+        window.backgroundColor = .black
+        window.level = .floating
+        window.ignoresMouseEvents = true
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        if let screen = NSScreen.main {
+            let area = screen.visibleFrame
+            window.setFrameOrigin(NSPoint(x: area.maxX - size.width - 12, y: max(area.maxY - size.height - 8, area.minY)))
+        }
+        window.orderFrontRegardless()
+        RunLoop.main.run(until: Date().addingTimeInterval(2))
+        try? "\(window.windowNumber)".write(to: marker, atomically: true, encoding: .utf8)
+        print("stage:", marker.lastPathComponent, window.windowNumber)
+        let done = marker.appendingPathExtension("done")
+        let deadline = Date().addingTimeInterval(20)
+        while !FileManager.default.fileExists(atPath: done.path), Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+        window.orderOut(nil)
+    }
+
     static func render(_ view: some View, appearance: NSAppearance.Name, to url: URL) {
         let host = NSHostingView(rootView: AnyView(view))
         host.appearance = NSAppearance(named: appearance)
@@ -128,6 +169,30 @@ enum Snapshots {
         host.cacheDisplay(in: host.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: url)
         print("snapshot:", url.lastPathComponent, size)
+    }
+}
+
+/// A wallpaper with the panel floating over it near the top right, as under the menu bar.
+private struct GlassStage<Panel: View>: View {
+    var wallpaper: NSImage?
+    var size: NSSize
+    @ViewBuilder var panel: Panel
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            if let wallpaper {
+                Image(nsImage: wallpaper).resizable().aspectRatio(contentMode: .fill)
+                    .frame(width: size.width, height: size.height)
+            } else {
+                LinearGradient(colors: [.blue, .purple, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+            panel
+                .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+                .padding(.top, 24)
+                .padding(.trailing, 44)
+        }
+        .frame(width: size.width, height: size.height)
+        .clipped()
     }
 }
 
