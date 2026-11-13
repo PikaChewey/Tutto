@@ -64,6 +64,11 @@ enum Snapshots {
             while cleaner.state != .ready, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
         }
         if only.contains("clicker-open") { ClickerRow.startsExpanded = true }
+        // `controls:rows` (tiles, rows, lines, drawer) and `drawer:clicker`: the controls drawn another way.
+        if let style = only.first(where: { $0.hasPrefix("controls:") }).flatMap({ ControlsStyle(rawValue: String($0.dropFirst(9))) }) {
+            ControlsStyle.current = style
+        }
+        ControlsStyle.startsOpen = only.first(where: { $0.hasPrefix("drawer:") }).map { String($0.dropFirst(7)) }
         // `sound-levels`: the Sound card's levels open, with some apps turned down and up.
         if only.contains("sound-levels"), let sound = model.sound {
             SoundCard.startsShowingLevels = true

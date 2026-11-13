@@ -41,8 +41,8 @@ final class ArchiveProgressController {
         let hosting = NSHostingView(rootView: ArchiveProgressView(module: module))
         hosting.sizingOptions = [.preferredContentSize]
         panel.contentView = hosting
-        if let visible = NSScreen.main?.visibleFrame {
-            panel.setFrameTopLeftPoint(NSPoint(x: visible.maxX - 400, y: visible.maxY - 20))
+        if let screen = NSScreen.main {
+            panel.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.maxX - 400, y: screen.hudTop - 20))
         }
         panel.orderFrontRegardless()
         self.panel = panel

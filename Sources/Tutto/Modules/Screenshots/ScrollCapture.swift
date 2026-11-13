@@ -391,11 +391,13 @@ final class ScrollHUD {
         host.sizingOptions = [.intrinsicContentSize]
         panel.contentView = host
         let size = host.fittingSize
-        // Above the area if there's room, else just inside its top.
+        // Above the area if there's room, else just inside its top; never under the menu bar or
+        // the notch (an area or a full-screen window can reach the top edge).
         let screen = NSScreen.screens.first { $0.frame.intersects(area) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? area
+        let top = screen?.hudTop ?? visible.maxY
         var y = area.maxY + 8
-        if y + size.height > visible.maxY { y = area.maxY - size.height - 8 }
+        if y + size.height > top - 6 { y = min(area.maxY, top) - size.height - 8 }
         let x = min(max(area.midX - size.width / 2, visible.minX + 8), visible.maxX - size.width - 8)
         panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height).integral, display: true)
         panel.orderFrontRegardless()

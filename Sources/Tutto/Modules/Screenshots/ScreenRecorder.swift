@@ -480,7 +480,8 @@ final class CapturePrompt {
             let mouse = NSEvent.mouseLocation
             let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
             let visible = screen?.visibleFrame ?? .zero
-            frame = NSRect(x: visible.midX - size.width / 2, y: visible.maxY - size.height - 14, width: size.width, height: size.height)
+            let top = screen?.hudTop ?? visible.maxY
+            frame = NSRect(x: visible.midX - size.width / 2, y: top - size.height - 14, width: size.width, height: size.height)
         }
         panel.setFrame(frame.integral, display: true)
         panel.orderFrontRegardless()

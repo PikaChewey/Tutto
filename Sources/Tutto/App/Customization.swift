@@ -176,8 +176,9 @@ final class PanelLayoutStore {
     func slots(_ model: AppModel, editing: Bool = false) -> [WidgetSlot] {
         // A tools row with every tile hidden isn't drawn as an empty card, nor is the devices
         // card when none reports a level (the Customize preview keeps it, to pick up and move).
+        // Until macOS lets Tutto read Bluetooth, the card stays, to offer it (AirPods need it).
         let noTools = ShortcutRows.visible(model).isEmpty
-        let noDevices = !editing && !BluetoothBatteries.shared.hasDevices
+        let noDevices = !editing && !BluetoothBatteries.shared.hasDevices && BluetoothBatteries.shared.access == .allowed
         return all(model).filter {
             layout.widgets.isShown($0.id) && !(noTools && $0 == .card(.tools)) && !(noDevices && $0 == .card(.devices))
         }

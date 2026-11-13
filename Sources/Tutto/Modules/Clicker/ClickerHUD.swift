@@ -64,7 +64,7 @@ final class ClickerHUD {
         guard let screen else { return }
         let size = panel.contentView?.fittingSize ?? NSSize(width: 260, height: 40)
         let area = screen.visibleFrame
-        panel.setFrame(NSRect(x: area.midX - size.width / 2, y: area.maxY - size.height - 10, width: size.width, height: size.height),
+        panel.setFrame(NSRect(x: area.midX - size.width / 2, y: screen.hudTop - size.height - 10, width: size.width, height: size.height),
                        display: true)
         if !panel.isVisible { panel.orderFrontRegardless() }
     }

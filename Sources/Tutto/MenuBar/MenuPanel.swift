@@ -29,6 +29,14 @@ private enum PanelGrid {
     static var gap: CGFloat { (8 * ThemeStore.shared.tokens.densityScale).rounded() }
     /// A tile: half the cards' width.
     static var tile: CGFloat { (width - 2 * outer - gap) / 2 }
+    /// The cards' width. Everything in the panel is laid out to it exactly: a grid left to size
+    /// itself took its tiles' widest content, pushed the panel past its window and cut it off.
+    static var content: CGFloat { width - 2 * outer }
+    /// One of `count` equal tiles across the cards' width.
+    static func across(_ count: Int) -> CGFloat {
+        let count = CGFloat(max(count, 1))
+        return (content - gap * (count - 1)) / count
+    }
 }
 
 /// The Customize page's preview while you arrange it: which card is selected, which is being
@@ -84,6 +92,7 @@ struct MenuPanel: View {
             WidgetGrid(model: model, editing: editing)
             Notices(model: model)
         }
+        .frame(width: PanelGrid.content)
     }
 
     /// The screen's usable height, less the header, the footer and a margin.
@@ -150,12 +159,18 @@ private struct WidgetGrid: View {
                 case .line(.rows(let ids)):
                     ControlRows(model: model, ids: ids, editing: editing)
                 case .vitals(let ids):
-                    // The readings together: three across, the label and the number (details on hover).
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: PanelGrid.gap), count: 3), spacing: PanelGrid.gap) {
-                        ForEach(ids, id: \.self) { id in
-                            Editable(id: id, editing: editing) {
-                                if let system = model.system, case .card(let reading) = PanelLayoutStore.Widget(id: id) {
-                                    ReadingTile(reading: reading, system: system, sensors: model.sensors, wide: false, compact: true)
+                    // The readings together: three across, the label and the number (details on hover),
+                    // each exactly a third of the cards' width.
+                    VStack(alignment: .leading, spacing: PanelGrid.gap) {
+                        ForEach(PanelLayout.rows(ids, perRow: 3), id: \.self) { row in
+                            HStack(spacing: PanelGrid.gap) {
+                                ForEach(row, id: \.self) { id in
+                                    Editable(id: id, editing: editing) {
+                                        if let system = model.system, case .card(let reading) = PanelLayoutStore.Widget(id: id) {
+                                            ReadingTile(reading: reading, system: system, sensors: model.sensors, wide: false, compact: true)
+                                        }
+                                    }
+                                    .frame(width: PanelGrid.across(3))
                                 }
                             }
                         }
@@ -868,12 +883,39 @@ private struct StatTile<Graph: View>: View {
 /// The things you switch on from the menu bar, one line each: Stay awake, the auto clicker and the
 /// fan. Next to each other on the panel they share a card. A row grows only while it's in use (a
 /// session's countdown, the clicker's count, the fan's custom speed).
+/// How the controls sit on the panel. Four to compare side by side (`controls:<style>` renders one).
+enum ControlsStyle: String, CaseIterable {
+    /// Three small tiles; a click opens a menu.
+    case tiles
+    /// One card, a line each, with the chips, switch and segments they had before the tiles.
+    case rows
+    /// One card, a line each: the symbol and name, what you set typed in place, and a switch.
+    case lines
+    /// The tiles, and under them the one you clicked, open with everything to type and pick.
+    case drawer
+
+    nonisolated(unsafe) static var current: ControlsStyle = .tiles
+    /// Renders open the drawer on this control (`drawer:clicker`).
+    nonisolated(unsafe) static var startsOpen: String?
+}
+
 private struct ControlRows: View {
     var model: AppModel
     var ids: [String]
     var editing: PanelEditing?
+    /// The drawer's open control.
+    @State private var open: String? = ControlsStyle.startsOpen
 
     var body: some View {
+        switch ControlsStyle.current {
+        case .tiles: tiles
+        case .rows: rows
+        case .lines: lines
+        case .drawer: drawer
+        }
+    }
+
+    private var tiles: some View {
         HStack(spacing: PanelGrid.gap) {
             ForEach(ids, id: \.self) { id in
                 Editable(id: id, editing: editing, radius: 10) {
@@ -885,10 +927,371 @@ private struct ControlRows: View {
                         default: EmptyView()
                         }
                     }
-                    .frame(maxWidth: .infinity)
                 }
+                .frame(width: PanelGrid.across(ids.count))
             }
         }
+    }
+
+    /// As they were before the tiles: one card, a hairline between the lines.
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(ids.enumerated()), id: \.element) { index, id in
+                Editable(id: id, editing: editing, radius: 8) {
+                    Group {
+                        switch id {
+                        case "awake": if let awake = model.awake { AwakeRow(awake: awake) }
+                        case "clicker": if let clicker = model.clicker { ClickerRow(clicker: clicker, model: model) }
+                        case "fan": if let sensors = model.sensors { FanRow(sensors: sensors) }
+                        default: EmptyView()
+                        }
+                    }
+                    .padding(.vertical, 5)
+                }
+                if index < ids.count - 1 { Hairline().opacity(0.5) }
+            }
+        }
+        .panelCard(vertical: 3)
+    }
+
+    /// One card, the same columns on every line: symbol, name, the value you type, the switch.
+    private var lines: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(ids.enumerated()), id: \.element) { index, id in
+                Editable(id: id, editing: editing, radius: 8) {
+                    Group {
+                        switch id {
+                        case "awake": if let awake = model.awake { AwakeLine(awake: awake) }
+                        case "clicker": if let clicker = model.clicker { ClickerLine(clicker: clicker) }
+                        case "fan": if let sensors = model.sensors { FanLine(sensors: sensors) }
+                        default: EmptyView()
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                if index < ids.count - 1 { Hairline().opacity(0.5) }
+            }
+        }
+        .panelCard(vertical: 4)
+    }
+
+    /// The tiles; the one clicked opens beneath them with all it has (click it again to close).
+    private var drawer: some View {
+        VStack(alignment: .leading, spacing: PanelGrid.gap) {
+            HStack(spacing: PanelGrid.gap) {
+                ForEach(ids, id: \.self) { id in
+                    Editable(id: id, editing: editing, radius: 10) {
+                        DrawerTile(model: model, id: id, open: open == id) {
+                            withAnimation(Motion.snappy) { open = open == id ? nil : id }
+                        }
+                    }
+                    .frame(width: PanelGrid.across(ids.count))
+                }
+            }
+            if let open, ids.contains(open), editing == nil {
+                Group {
+                    switch open {
+                    case "awake": if let awake = model.awake { AwakeRow(awake: awake) }
+                    case "clicker": if let clicker = model.clicker { ClickerRow(clicker: clicker, model: model, open: true) }
+                    case "fan": if let sensors = model.sensors { FanRow(sensors: sensors) }
+                    default: EmptyView()
+                    }
+                }
+                .panelCard(vertical: 10)
+                .transition(.opacity.combined(with: .offset(y: -6)))
+            }
+        }
+    }
+}
+
+/// A drawer's tile: like the menu tiles, but a click opens the control under the row.
+private struct DrawerTile: View {
+    var model: AppModel
+    var id: String
+    var open: Bool
+    var action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        let (symbol, title, state, live) = info
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Image(systemName: symbol)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(live ? Color.themeAccent : Color.ink2)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(open || hovering ? Color.ink2 : Color.ink4)
+                        .rotationEffect(.degrees(open ? 180 : 0))
+                }
+                .frame(height: 18)
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.ink)
+                    .lineLimit(1)
+                Text(state)
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(live ? Color.themeAccent : Color.ink3)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(CardSurface(radius: 10, hovering: hovering || open))
+            .overlay(RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous)
+                .strokeBorder(Color.themeAccent.opacity(open ? 0.6 : 0), lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(title)
+        .accessibilityValue(state)
+        .accessibilityHint(open ? "Hides its settings" : "Shows its settings")
+    }
+
+    private var info: (String, String, String, Bool) {
+        switch id {
+        case "awake":
+            let session = model.awake?.session
+            let state: String
+            if let session {
+                let left = max(Int(session.endsAt.timeIntervalSinceNow), 0)
+                state = session.agents == true ? "While agents work" : (left >= 3600 ? "\(left / 3600) h \(left % 3600 / 60) min left" : "\(max(left / 60, 1)) min left")
+            } else {
+                state = "Off"
+            }
+            return (ModuleID.awake.symbol, "Awake", state, session != nil)
+        case "clicker":
+            let on = model.clicker?.isOn ?? false
+            let cps = Int((model.clicker?.settings.clicksPerSecond ?? 10).rounded())
+            return (ModuleID.clicker.symbol, "Clicker", on ? "Clicking" : "\(Format.number(cps)) CPS", on)
+        default:
+            let fan = model.sensors?.fans.first
+            let mode: String = switch fan.flatMap({ model.sensors?.commands[$0.index] }) {
+            case .none, .auto?: "Auto"
+            case .rpm?: "Custom"
+            case .maximum?: "Max"
+            }
+            return ("fan", "Fan", mode, mode != "Auto")
+        }
+    }
+}
+
+// MARK: Lines (option C)
+
+/// A control as one line: the symbol (accent while it runs) and the name in fixed columns, so the
+/// three lines line up; then what you set, typed in place; then its switch.
+private struct ControlLine<Editor: View, Trailing: View>: View {
+    var symbol: String
+    var title: String
+    /// Under the name, small: what it's doing ("Off", "1:24 left", "2,571 rpm").
+    var state: String
+    var live: Bool
+    var help: String
+    @ViewBuilder var editor: Editor
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 7) {
+                Image(systemName: symbol)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(live ? Color.themeAccent : Color.ink2)
+                    .frame(width: 16)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(title)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(Color.ink)
+                    Text(state)
+                        .font(.system(size: 10.5).monospacedDigit())
+                        .foregroundStyle(live ? Color.themeAccent : Color.ink3)
+                }
+                .lineLimit(1)
+            }
+            .frame(width: 82, alignment: .leading)
+            .help(help)
+            .accessibilityElement(children: .combine)
+            editor
+            Spacer(minLength: 4)
+            trailing
+        }
+        .frame(height: 34)
+    }
+}
+
+private struct AwakeLine: View {
+    @Bindable var awake: StayAwakeModule
+    @State private var visible = false
+
+    var body: some View {
+        ControlLine(symbol: ModuleID.awake.symbol, title: "Awake", state: awake.session == nil ? "Off" : (awake.session?.agents == true ? "Agents" : "On"),
+                    live: awake.session != nil, help: "Keeps the Mac on, lid closed included") {
+            if let session = awake.session {
+                if session.agents == true {
+                    Text("while agents work")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Color.ink3)
+                        .lineLimit(1)
+                } else {
+                    countdown(session)
+                }
+                TimeChip(title: "+1h", help: "Add an hour") { awake.start(for: 3600) }
+            } else {
+                AwakeTimeField(awake: awake, placeholder: "Time…")
+                    .frame(width: 62)
+                ForEach([3600.0, 4 * 3600.0], id: \.self) { seconds in
+                    TimeChip(title: AwakeDuration.label(seconds), help: "Stay awake for \(AwakeDuration.label(seconds))") {
+                        awake.start(for: seconds)
+                    }
+                }
+            }
+        } trailing: {
+            InkSwitch(isOn: Binding(get: { awake.session != nil }, set: { on in
+                if on { awake.start(for: 3600) } else { awake.endNow() }
+            }), label: "Stay awake")
+            .help(awake.session == nil ? "Stay awake for an hour (or type a time)" : "Let the Mac sleep as usual again")
+        }
+        .background(VisibilityReader { visible = $0 })
+    }
+
+    @ViewBuilder
+    private func countdown(_ session: StayAwakeModule.Session) -> some View {
+        if visible {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                countdownText(session.endsAt.timeIntervalSince(context.date))
+            }
+        } else {
+            countdownText(session.endsAt.timeIntervalSinceNow)
+        }
+    }
+
+    private func countdownText(_ remaining: TimeInterval) -> some View {
+        let parts = AwakeDuration.countdown(remaining)
+        return (Text(parts.main).foregroundStyle(Color.ink) + Text(parts.seconds).foregroundStyle(Color.ink4))
+            .font(.figure(14, weight: .semibold))
+            .lineLimit(1)
+            .contentTransition(.numericText(countsDown: true))
+            .accessibilityLabel("\(AwakeDuration.menuBar(remaining)) left")
+    }
+}
+
+private struct ClickerLine: View {
+    @Bindable var clicker: ClickerModule
+
+    var body: some View {
+        ControlLine(symbol: ModuleID.clicker.symbol, title: "Clicker", state: clicker.isOn ? "Clicking" : "Off", live: clicker.isOn,
+                    help: "Clicks for you; changes apply while it clicks") {
+            InkStepper(label: "CPS", value: Int(clicker.settings.clicksPerSecond.rounded()), range: 1...100, showsUnit: true) { value in
+                clicker.update { $0.clicksPerSecond = Double(value) }
+            }
+            .fixedSize()
+            .help("Clicks per second, up to 100. Click the number to type one.")
+            Button {
+                showInApp(.clicker)
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.ink3)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Button, where it clicks, when it stops")
+        } trailing: {
+            InkSwitch(isOn: Binding(get: { clicker.isOn }, set: { on in
+                if on { afterPanelCloses { clicker.begin(fromPanel: true) } } else { clicker.end("Stopped") }
+            }), label: "Auto clicker")
+            .help(clicker.isOn ? "Stop clicking" : "Start clicking 2 s after the panel closes")
+        }
+    }
+}
+
+private struct FanLine: View {
+    @Bindable var sensors: SensorsModule
+
+    private enum Choice: Hashable { case auto, custom, maximum }
+
+    private var fan: FanReading? { sensors.fans.first }
+
+    private var choice: Choice {
+        switch fan.flatMap({ sensors.commands[$0.index] }) {
+        case .none, .auto?: .auto
+        case .rpm?: .custom
+        case .maximum?: .maximum
+        }
+    }
+
+    var body: some View {
+        ControlLine(symbol: "fan", title: "Fan", state: fan.map { $0.isStopped ? "Stopped" : "\(Format.number(Int($0.currentRPM))) rpm" } ?? "",
+                    live: choice != .auto, help: "Auto: macOS controls the fan · Max: full speed · Custom: hold a speed you type") {
+            if choice == .custom, let fan {
+                RPMField(fan: fan) { apply(.rpm($0)) }
+            }
+        } trailing: {
+            InkSegmented(selection: Binding(get: { choice }, set: { select($0) }),
+                         options: [(Choice.auto, "Auto"), (.maximum, "Max"), (.custom, "Custom")])
+                .fixedSize()
+        }
+        .animation(Motion.snappy, value: choice)
+        .background(VisibilityReader { visible in visible ? sensors.begin() : sensors.end() })
+    }
+
+    private func select(_ choice: Choice) {
+        guard let fan else { return }
+        switch choice {
+        case .auto: apply(.auto)
+        case .maximum: apply(.maximum)
+        case .custom:
+            if case .rpm(let rpm)? = sensors.commands[fan.index] { apply(.rpm(rpm)) }
+            else { apply(.rpm(((fan.minRPM + fan.maxRPM) / 2 / 100).rounded() * 100)) }
+        }
+    }
+
+    private func apply(_ command: FanCommand) {
+        for fan in sensors.fans { sensors.set(command, for: fan) }
+    }
+}
+
+/// The custom fan speed, typed: Enter holds it (clamped to the fan's range).
+private struct RPMField: View {
+    var fan: FanReading
+    var commit: (Double) -> Void
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 3) {
+            TextField("rpm", text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                .foregroundStyle(Color.ink)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 40)
+                .focused($focused)
+                .onSubmit(apply)
+                .onChange(of: focused) { _, now in if !now { apply() } }
+            Text("rpm")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(Color.ink3)
+        }
+        .padding(.horizontal, 7)
+        .frame(height: 24)
+        .background(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink.opacity(focused ? 0.09 : 0.06)))
+        .help("\(Format.number(Int(fan.minRPM)))–\(Format.number(Int(fan.maxRPM))) rpm; Enter holds it")
+        .onAppear { text = current }
+    }
+
+    private var current: String {
+        "\(Int(fan.targetRPM ?? fan.currentRPM))"
+    }
+
+    private func apply() {
+        guard let value = Double(text.filter(\.isNumber)) else { text = current; return }
+        let held = min(max(value, fan.minRPM), fan.maxRPM)
+        text = "\(Int(held))"
+        commit(held)
     }
 }
 
@@ -1056,11 +1459,17 @@ private struct RowLabel: View {
 struct ClickerRow: View {
     @Bindable var clicker: ClickerModule
     var model: AppModel
-    @State private var expanded = ClickerRow.startsExpanded
+    @State private var expanded: Bool
     @State private var hovering = false
     @State private var visible = false
     /// Snapshots render it open (`clicker-open`).
     nonisolated(unsafe) static var startsExpanded = false
+
+    init(clicker: ClickerModule, model: AppModel, open: Bool = ClickerRow.startsExpanded) {
+        _clicker = Bindable(clicker)
+        self.model = model
+        _expanded = State(initialValue: open)
+    }
 
     private var settings: ClickerSettings { clicker.settings }
 
@@ -1321,12 +1730,7 @@ private struct MenuValue: View {
 /// the countdown, when it ends, chips to add time, End, and one line on what the lid does.
 private struct AwakeRow: View {
     @Bindable var awake: StayAwakeModule
-    @State private var typed = ""
     @State private var visible = false
-    @State private var shake = 0
-    @FocusState private var focused: Bool
-
-    private var typedSeconds: TimeInterval? { AwakeDuration.seconds(from: typed) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1347,7 +1751,7 @@ private struct AwakeRow: View {
             RowLabel(symbol: ModuleID.awake.symbol, title: "Stay awake",
                      help: awake.lastEnded.map { "Last session: \($0)" } ?? "The lid can close and agents keep going")
             Spacer(minLength: 4)
-            field(placeholder: "Time…")
+            AwakeTimeField(awake: awake, placeholder: "Time…")
                 .frame(width: 66)
             ForEach(AwakeDuration.presets.prefix(3), id: \.self) { seconds in
                 TimeChip(title: AwakeDuration.label(seconds), help: "Stay awake for \(AwakeDuration.label(seconds))") {
@@ -1384,7 +1788,7 @@ private struct AwakeRow: View {
                         awake.start(for: seconds)
                     }
                 }
-                field(placeholder: "Add time")
+                AwakeTimeField(awake: awake, placeholder: "Add time")
                 Button("End") { awake.endNow() }
                     .buttonStyle(OutlineButtonStyle(compact: true))
                     .fixedSize()
@@ -1411,40 +1815,6 @@ private struct AwakeRow: View {
             .font(.figure(15, weight: .semibold))
             .contentTransition(.numericText(countsDown: true))
             .accessibilityLabel("\(AwakeDuration.menuBar(remaining)) left")
-    }
-
-    /// The typed time: Enter starts it (or adds it while running); a time it can't read shakes.
-    private func field(placeholder: String) -> some View {
-        TextField(placeholder, text: $typed)
-            .textFieldStyle(.plain)
-            .font(.system(size: 12, weight: .medium).monospacedDigit())
-            .foregroundStyle(Color.ink)
-            .focused($focused)
-            .padding(.horizontal, 8)
-            .frame(height: 24)
-            .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink.opacity(focused ? 0.09 : 0.06)))
-            .overlay(alignment: .trailing) {
-                if typedSeconds != nil {
-                    Text("↩")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.ink3)
-                        .padding(.trailing, 7)
-                        .transition(.opacity)
-                }
-            }
-            .modifier(Shake(count: shake))
-            .onSubmit {
-                guard let seconds = typedSeconds else {
-                    if !typed.isEmpty { withAnimation(.linear(duration: 0.3)) { shake += 1 } }
-                    return
-                }
-                awake.start(for: seconds)
-                typed = ""
-            }
-            .help("Minutes (90), or with units: 2h30, 1.5h, 1d 6h, 45m")
-            .accessibilityLabel(awake.isRunning ? "Add time" : "Stay awake for")
-            .animation(Motion.micro, value: typedSeconds != nil)
     }
 
     /// One quiet line: what closing the lid does, why it can't, or what happened.
@@ -1488,6 +1858,50 @@ private struct AwakeRow: View {
         }
         if parts.isEmpty { return awake.lidSafe ? "Close the lid any time: it stays on." : nil }
         return parts.joined(separator: " ")
+    }
+}
+
+/// The typed time: Enter starts it (or adds it while running); a time it can't read shakes.
+private struct AwakeTimeField: View {
+    var awake: StayAwakeModule
+    var placeholder: String
+    @State private var typed = ""
+    @State private var shake = 0
+    @FocusState private var focused: Bool
+
+    private var typedSeconds: TimeInterval? { AwakeDuration.seconds(from: typed) }
+
+    var body: some View {
+        TextField(placeholder, text: $typed)
+            .textFieldStyle(.plain)
+            .font(.system(size: 12, weight: .medium).monospacedDigit())
+            .foregroundStyle(Color.ink)
+            .focused($focused)
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink.opacity(focused ? 0.09 : 0.06)))
+            .overlay(alignment: .trailing) {
+                if typedSeconds != nil {
+                    Text("↩")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.ink3)
+                        .padding(.trailing, 7)
+                        .transition(.opacity)
+                }
+            }
+            .modifier(Shake(count: shake))
+            .onSubmit {
+                guard let seconds = typedSeconds else {
+                    if !typed.isEmpty { withAnimation(.linear(duration: 0.3)) { shake += 1 } }
+                    return
+                }
+                awake.start(for: seconds)
+                typed = ""
+            }
+            .help("Minutes (90), or with units: 2h30, 1.5h, 1d 6h, 45m")
+            .accessibilityLabel(awake.isRunning ? "Add time" : "Stay awake for")
+            .animation(Motion.micro, value: typedSeconds != nil)
     }
 }
 
@@ -1631,8 +2045,12 @@ private struct FanRow: View {
 struct SoundCard: View {
     @Bindable var sound: SoundModule
     @State private var order: [String] = []
-    /// The levels, opened from the title.
-    @State private var showLevels = SoundCard.startsShowingLevels
+    /// The levels, opened from the title, stay open the next time the panel opens.
+    @AppStorage("panel.soundLevels") private var keptLevels = false
+    private var showLevels: Bool {
+        get { SoundCard.startsShowingLevels || keptLevels }
+        nonmutating set { keptLevels = newValue }
+    }
     /// Snapshots render it open (`sound-levels`).
     nonisolated(unsafe) static var startsShowingLevels = false
 
@@ -1712,19 +2130,37 @@ struct SoundCard: View {
         .onChange(of: sound.apps.map(\.bundleID)) { fixOrder(reset: false) }
     }
 
-    /// The apps that matter now (muted, playing, or not at 100 %; five at most, else the first
-    /// three), each with its level; a click on an icon mutes it, as on the strip. The rest are on
-    /// the Sound page.
-    private var levelApps: [SoundApp] {
-        let relevant = ordered.filter {
-            sound.isMuted($0.bundleID) || sound.usingAudio.contains($0.bundleID) || sound.volume(of: $0.bundleID) != 100
-        }
-        return relevant.isEmpty ? Array(ordered.prefix(3)) : Array(relevant.prefix(5))
+    /// Every open app with its level, quiet ones included (they may play later): muted first, then
+    /// the ones playing, then the order they opened. A click on an icon mutes it, as on the strip.
+    /// Past eight, the list scrolls inside the card.
+    private static let levelRows = 8
+    private static let levelRowHeight: CGFloat = 26
+    /// What's left of the card for the slider: the icon, the name, the level and the gaps take the
+    /// rest (a fixed 126 pt made each line 22 pt wider than the card and pushed the panel aside).
+    @MainActor private static var sliderWidth: CGFloat {
+        PanelGrid.content - 2 * PanelGrid.inset - 20 - (18 + 66 + 40 + 3 * 8)
     }
 
+    @ViewBuilder
     private var levels: some View {
+        let apps = ordered
+        Group {
+            if apps.count > Self.levelRows {
+                ScrollView(.vertical) { levelList(apps) }
+                    .scrollIndicators(.automatic)
+                    .frame(height: CGFloat(Self.levelRows) * Self.levelRowHeight + 4)
+            } else {
+                levelList(apps)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous).fill(Color.ink.opacity(0.045)))
+    }
+
+    private func levelList(_ apps: [SoundApp]) -> some View {
         VStack(spacing: 2) {
-            ForEach(levelApps) { app in
+            ForEach(apps) { app in
                 let muted = sound.isMuted(app.bundleID)
                 let level = sound.volume(of: app.bundleID)
                 HStack(spacing: 8) {
@@ -1753,8 +2189,8 @@ struct SoundCard: View {
                         .font(.system(size: 12))
                         .foregroundStyle(Color.ink2)
                         .lineLimit(1)
-                        .frame(width: 70, alignment: .leading)
-                    VolumeSlider(value: level, width: 126) { sound.setVolume(app.bundleID, $0) }
+                        .frame(width: 66, alignment: .leading)
+                    VolumeSlider(value: level, width: Self.sliderWidth) { sound.setVolume(app.bundleID, $0) }
                         .disabled(muted)
                         .opacity(muted ? 0.4 : 1)
                     Text(muted ? "Muted" : VolumeCurve.label(level))
@@ -1764,17 +2200,7 @@ struct SoundCard: View {
                 }
                 .frame(height: 24)
             }
-            if ordered.count > levelApps.count {
-                HStack {
-                    Spacer()
-                    QuietLink(title: "All \(ordered.count) apps", size: 11) { showInApp(.sound) }
-                }
-                .frame(height: 16)
-            }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous).fill(Color.ink.opacity(0.045)))
     }
 
     private var ordered: [SoundApp] {
@@ -1904,6 +2330,35 @@ private struct DevicesCard: View {
             .onHover { hovering = $0 }
             .help("Bluetooth device batteries")
             .panelCard(vertical: 10)
+        } else if BluetoothBatteries.shared.access != .allowed {
+            // AirPods' levels need Bluetooth access, which macOS asks for once: until then, say so.
+            let blocked = BluetoothBatteries.shared.access == .blocked
+            HStack(spacing: 8) {
+                Image(systemName: "airpods")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Color.ink3)
+                    .frame(width: 16)
+                Text(blocked ? "Bluetooth is off for Tutto" : "Bluetooth batteries")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.ink2)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                Button(blocked ? "Settings" : "Show") {
+                    if blocked {
+                        afterPanelCloses {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                    } else {
+                        BluetoothBatteries.shared.requestAccess()
+                    }
+                }
+                .buttonStyle(OutlineButtonStyle(compact: true))
+                .fixedSize()
+                .help(blocked ? "Turn Tutto on under Privacy & Security → Bluetooth" : "macOS asks once to let Tutto read Bluetooth devices")
+            }
+            .panelCard(vertical: 8)
         } else if placeholder {
             HStack(spacing: 8) {
                 Image(systemName: "headphones")

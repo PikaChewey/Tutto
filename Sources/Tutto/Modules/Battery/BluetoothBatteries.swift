@@ -97,14 +97,26 @@ final class BluetoothBatteries {
         let audio = access == .allowed ? Self.readPairedDevices() : []
         let merged = BluetoothBatteryRules.merge([audio, HIDBatteryReader.read()])
         if merged != devices { devices = merged }
-        if timer != nil { listenForDisconnects() }
+        if timer != nil {
+            listenForChanges()
+            listenForDisconnects()
+        }
     }
 
-    /// Asks macOS for Bluetooth access (it shows its own prompt, once), then reads.
+    /// Asks macOS for Bluetooth access (it shows its own prompt, once), then reads, and reads again
+    /// over the next half minute so the levels appear once the prompt is answered.
     func requestAccess() {
         // Listing the paired devices is what makes macOS ask.
         _ = IOBluetoothDevice.pairedDevices()
         refresh()
+        for delay in [2.0, 5, 10, 20, 30] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.access != .allowed || self.devices.isEmpty else { return }
+                    self.refresh()
+                }
+            }
+        }
     }
 
     private static func readPairedDevices() -> [BluetoothBatteryDevice] {
