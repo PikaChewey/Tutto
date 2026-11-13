@@ -86,6 +86,13 @@ struct MenuPanel: View {
         // Liquid Glass: nothing over the glass (the system's in the menu bar, its own on the stage).
         .background { if !(drawsGlass && ThemeStore.liquid) { PanelBackdrop() } }
         .modifier(StageSheet(enabled: drawsGlass))
+        // Floating glass: the cards sit on one frosted frame (in the menu bar and on the stage).
+        .background {
+            if ThemeStore.liquid, GlassLook.current == .floating, glassRoot || !preview {
+                FrostedFrame()
+                    .overlay(GlassRim(shape: RoundedRectangle(cornerRadius: 26, style: .continuous), strength: 0.6))
+            }
+        }
         .watching(model.system, model.system?.panelFeeds ?? [])
         .background { if !preview { PanelWindowReader() } }
         .tint(Color.themeAccent)

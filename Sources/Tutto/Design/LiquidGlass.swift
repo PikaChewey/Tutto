@@ -19,6 +19,7 @@
 //  Before macOS 26 none of this runs: the theme falls back to the plain glass look.
 //
 
+import AppKit
 import SwiftUI
 
 extension View {
@@ -126,5 +127,40 @@ struct LiquidFill<S: InsettableShape>: View {
                 lineWidth: 0.75))
             .shadow(color: .black.opacity((dark ? 0.22 : 0.07) * raise), radius: 1.5 * raise, y: 0.5 * raise)
             .animation(.spring(duration: 0.2, bounce: 0.1), value: hovering)
+    }
+}
+
+/// Behind the floating glass cards: one frosted frame that blurs whatever is behind the panel
+/// without colouring it, as Notification Center does (Bryan 2026-11-13: the cards alone looked
+/// "bare naked" with everything around and between them perfectly seen). The cards stay glass.
+struct FrostedFrame: NSViewRepresentable {
+    var radius: CGFloat = 26
+    /// The blur's material (the most neutral one; `frost:<name>` tries others on the glass stage).
+    nonisolated(unsafe) static var material: NSVisualEffectView.Material = .fullScreenUI
+    /// What it blurs: the screen behind the window; the glass stage's wallpaper is inside its window.
+    nonisolated(unsafe) static var blending: NSVisualEffectView.BlendingMode = .behindWindow
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = Self.material
+        view.blendingMode = Self.blending
+        view.state = .active
+        view.maskImage = Self.mask(radius: radius)
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+
+    /// A stretchable rounded-rectangle mask, so the blur has the frame's corners.
+    private static func mask(radius: CGFloat) -> NSImage {
+        let edge = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
     }
 }

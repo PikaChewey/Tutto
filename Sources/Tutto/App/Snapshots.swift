@@ -99,7 +99,13 @@ enum Snapshots {
         if let look = only.first(where: { $0.hasPrefix("glass-look:") }).flatMap({ GlassLook(rawValue: String($0.dropFirst(11))) }) {
             GlassLook.current = look
         }
+        let materials: [String: NSVisualEffectView.Material] = ["fullscreen": .fullScreenUI, "hud": .hudWindow, "under": .underWindowBackground,
+                                                                "popover": .popover, "menu": .menu, "sheet": .sheet, "header": .headerView]
+        if let name = only.first(where: { $0.hasPrefix("frost:") }).map({ String($0.dropFirst(6)) }), let material = materials[name] {
+            FrostedFrame.material = material
+        }
         if only.contains("glass-stage") {
+            if only.contains(where: { $0.hasPrefix("wall-") }) { FrostedFrame.blending = .withinWindow }
             for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {
                 let prefix = "wall-\(name):"
                 let wallpaper = only.first { $0.hasPrefix(prefix) }.flatMap { NSImage(contentsOfFile: String($0.dropFirst(prefix.count))) }
