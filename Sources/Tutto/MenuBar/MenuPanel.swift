@@ -2040,14 +2040,16 @@ enum ShortcutRows {
     }
 }
 
-private struct ToolsCard: View {
+struct ToolsCard: View {
     var model: AppModel
     /// A tool is on its way (keys lighting, panel closing): the bar ignores further clicks, so a
     /// quick double click can't run it twice or bring the panel back.
     @State private var launching = false
     /// The tool under the pointer (or being pressed): its name and keys float above the bar.
-    @State private var hovered: String?
+    @State private var hovered: String? = ToolsCard.startsHovered
     @State private var lit = 0
+    /// Renders with this tool's label up (`tool-hover:<id>`).
+    nonisolated(unsafe) static var startsHovered: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let inset: CGFloat = 6
     private static let gap: CGFloat = 2
@@ -2077,18 +2079,15 @@ private struct ToolsCard: View {
             if let id = hovered, let index = rows.firstIndex(where: { $0.id == id }) {
                 let row = rows[index]
                 let column = CGFloat(index % Self.perRow), line = CGFloat(index / Self.perRow)
-                ToolLabel(row: row, shortcut: model.shortcuts.shortcut(for: row.action), lit: lit)
-                    .fixedSize()
-                    .alignmentGuide(.leading) { label in
-                        // Centered over its icon, kept inside the card.
-                        let center = Self.inset + column * (tile + Self.gap) + tile / 2
-                        let cardWidth = PanelGrid.width - 2 * PanelGrid.outer
-                        let x = min(max(center - label.width / 2, 2), cardWidth - label.width - 2)
-                        return -x
-                    }
-                    .offset(y: -30 + line * 32)
-                    .transition(.opacity.animation(reduceMotion ? nil : .easeOut(duration: 0.12)))
-                    .allowsHitTesting(false)
+                // Centered over its own icon (kept inside the card at the ends); moving to the next
+                // icon glides it there instead of fading out and in.
+                CenteredOver(center: Self.inset + column * (tile + Self.gap) + tile / 2) {
+                    ToolLabel(row: row, shortcut: model.shortcuts.shortcut(for: row.action), lit: lit)
+                }
+                .offset(y: -30 + line * 32)
+                .animation(reduceMotion ? nil : .spring(duration: 0.22, bounce: 0.12), value: id)
+                .transition(.opacity.animation(reduceMotion ? nil : .easeOut(duration: 0.12)))
+                .allowsHitTesting(false)
             }
         }
         .zIndex(1)
@@ -2137,6 +2136,30 @@ private struct ToolsCard: View {
                 hovered = nil
             }
         }
+    }
+}
+
+/// Places one view centered at `center` across the width it's given, kept 2 pt inside the edges.
+/// (An alignment guide did this before and was ignored: every label sat at the left end.)
+private struct CenteredOver: Layout {
+    var center: CGFloat
+    var margin: CGFloat = 2
+
+    var animatableData: CGFloat {
+        get { center }
+        set { center = newValue }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let size = subviews.first?.sizeThatFits(.unspecified) ?? .zero
+        return CGSize(width: proposal.width ?? size.width, height: size.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let label = subviews.first else { return }
+        let size = label.sizeThatFits(.unspecified)
+        let x = min(max(center - size.width / 2, margin), max(bounds.width - size.width - margin, margin))
+        label.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY), proposal: ProposedViewSize(size))
     }
 }
 

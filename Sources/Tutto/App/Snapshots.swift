@@ -64,6 +64,7 @@ enum Snapshots {
             while cleaner.state != .ready, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
         }
         if only.contains("clicker-open") { ClickerRow.startsExpanded = true }
+        ToolsCard.startsHovered = only.first(where: { $0.hasPrefix("tool-hover:") }).map { String($0.dropFirst(11)) }
         // `sound-levels`: the Sound card's levels open, with some apps turned down and up.
         if only.contains("sound-levels"), let sound = model.sound {
             SoundCard.startsShowingLevels = true
