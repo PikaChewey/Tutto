@@ -110,7 +110,7 @@ final class ArrangementTests: XCTestCase {
         let old = #"{"sections":{"order":["sound","battery","readings","controls","tools"],"hidden":["controls"]},"readings":{"order":["memory","cpu"],"hidden":["gpu"]},"controls":{"order":[],"hidden":[]},"tools":{"order":["x"],"hidden":[]}}"#
         let layout = try JSONDecoder().decode(PanelLayout.self, from: Data(old.utf8))
         XCTAssertEqual(layout.widgets.all(PanelLayout.widgetIDs),
-                       ["sound", "battery", "devices", "memory", "gpu", "disk", "network", "temperature", "cpu", "awake", "clicker", "fan", "tools"],
+                       ["sound", "battery", "devices", "memory", "gpu", "disk", "network", "temperature", "compress", "cpu", "awake", "clicker", "fan", "tools"],
                        "as the old panel showed them: GPU and the rest follow Memory, where they followed it before")
         XCTAssertEqual(layout.widgets.hidden, ["awake", "clicker", "fan", "gpu"])
         XCTAssertEqual(layout.tools.order, ["x"])

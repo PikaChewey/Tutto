@@ -139,6 +139,16 @@ public enum ConvertPlanner {
         [.image, .video, .audio, .pdf].contains(kind)
     }
 
+    /// Kinds that Resize makes smaller in pixels.
+    public static func canResize(_ kind: FileKind) -> Bool {
+        [.image, .video].contains(kind)
+    }
+
+    /// Kinds that Crop cuts to a shape (a PDF's pages, by their crop box).
+    public static func canCrop(_ kind: FileKind) -> Bool {
+        [.image, .video, .pdf].contains(kind)
+    }
+
     /// Several files that become one file: images (or PDFs, or both) into one PDF.
     public static func combines(_ kinds: [FileKind], into format: OutputFormat) -> Bool {
         format == .pdf && kinds.count > 1 && kinds.allSatisfy { $0 == .image || $0 == .pdf }
@@ -170,6 +180,12 @@ public enum OutputNames {
     public static func compressed(_ source: URL, ext: String? = nil, in folder: URL? = nil, exists: (URL) -> Bool) -> URL {
         let base = source.deletingPathExtension().lastPathComponent
         return unique("\(base) (compressed)", ext: ext ?? source.pathExtension, in: folder ?? source.deletingLastPathComponent(), exists: exists)
+    }
+
+    /// "photo.jpg" → "photo (resized).jpg" or "photo (cropped).jpg".
+    public static func edited(_ source: URL, mark: String, ext: String? = nil, in folder: URL? = nil, exists: (URL) -> Bool) -> URL {
+        let base = source.deletingPathExtension().lastPathComponent
+        return unique("\(base) (\(mark))", ext: ext ?? source.pathExtension, in: folder ?? source.deletingLastPathComponent(), exists: exists)
     }
 
     /// Several files made into one: "beach.pdf" for one, "beach and 4 more.pdf" for five.

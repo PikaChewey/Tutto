@@ -98,10 +98,10 @@ struct MenuPanel: View {
         .tint(Color.themeAccent)
     }
 
-    /// Only the glass stage draws its own sheet. In the menu bar, macOS gives the panel's window its
-    /// own glass (drawn by the window server, under every view): a second sheet over it doubled the
-    /// glass and darkened it (measured over a bright wallpaper), so there the cards sit on the system's.
-    private var drawsGlass: Bool { glassRoot }
+    /// The glass stage draws its sheet, and so does the menu bar panel in the clear look (option B):
+    /// its window is Tutto's own and clear, so the sheet is the only glass under the cards. (In
+    /// macOS's menu bar window a second sheet doubled the system's glass and darkened it.)
+    private var drawsGlass: Bool { glassRoot || (!preview && GlassLook.current == .clear) }
 
     private var cards: some View {
         VStack(alignment: .leading, spacing: PanelGrid.gap) {
@@ -135,8 +135,10 @@ private struct StageSheet: ViewModifier {
             case .floating:
                 content
             case .clear:
+                // Clear glass needs a dimming layer over bright content (Apple's guidance: about 35 %); in
+                // the light look a pale veil does the same for dark text over a dark page.
                 content
-                    .background(shape.fill(Color.black.opacity(scheme == .dark ? 0.28 : 0.04)))
+                    .background(shape.fill(scheme == .dark ? Color.black.opacity(0.38) : Color.white.opacity(0.22)))
                     .prototypeGlass(shape, clear: true)
                     .overlay(GlassRim(shape: shape))
             }
@@ -275,6 +277,8 @@ private struct WidgetGrid: View {
             }
         case .card(.devices):
             DevicesCard(placeholder: editing != nil)
+        case .card(.compress):
+            if let converter = model.converter { CompressCard(converter: converter, placeholder: editing != nil) }
         case .card(.sound):
             if let sound = model.sound, SoundModule.isSupported { SoundCard(sound: sound) }
         case .card(.tools):
@@ -1787,6 +1791,309 @@ struct SoundCard: View {
     }
 }
 
+// MARK: - Compress
+
+/// Compress, convert, resize or crop, on the panel itself (Bryan, 2026-11-13: "make this like feature
+/// a bigger part of the tutto menu bar gui ... not something hidden in like the horizontal taskbar").
+/// Pick what a drop does, drop files on it (the panel stays open while you drag from Finder), and
+/// the last result is right under it, to undo. Its Auto switch compresses new screenshots, screen
+/// recordings and PDFs on the Desktop, and pictures copied to the clipboard, by themselves.
+private struct CompressCard: View {
+    @Bindable var converter: ConverterModule
+    /// On the Customize page: shown, not used.
+    var placeholder = false
+    @State private var targeted = false
+    @State private var hoveringZone = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 6) {
+                RowLabel(symbol: ModuleID.converter.symbol, title: "Compress", live: converter.working != nil,
+                         help: "Compress, convert, resize or crop files")
+                Spacer(minLength: 6)
+                Text("Auto")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color.ink3)
+                InkSwitch(isOn: $converter.auto.isOn, label: "Compress by itself")
+                    .help(converter.auto.isOn ? "New screenshots, recordings and PDFs there, and copied pictures, are compressed by themselves; each card has Undo" : "Compress new screenshots, recordings and copied pictures by themselves")
+            }
+            .frame(height: 26)
+            InkSegmented(selection: $converter.panelMode,
+                         options: ConverterModule.PanelDropMode.allCases.map { ($0, $0.title) },
+                         help: { mode in
+                             switch mode {
+                             case .compress: "Smaller copies, beside the originals"
+                             case .convert: "Copies in another format"
+                             case .resize: "Copies with fewer pixels"
+                             case .crop: "Copies cut to a shape, around what's in them"
+                             }
+                         })
+                .frame(maxWidth: .infinity)
+            dropZone
+            if let latest = converter.made.first, Date().timeIntervalSince(latest.date) < 12 * 3_600 {
+                LatestResult(made: latest, converter: converter)
+            }
+            status
+        }
+        .panelCard(vertical: 10)
+        .allowsHitTesting(!placeholder)
+    }
+
+    // MARK: The drop zone
+
+    private var dropZone: some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous)
+        // A tap target, not a button: the format chip inside it is a button of its own.
+        return VStack(spacing: 3) {
+            if let working = converter.working {
+                ProgressView(value: min(max(converter.progress, 0), 1))
+                    .progressViewStyle(.linear)
+                    .controlSize(.small)
+                    .tint(Color.themeAccent)
+                    .padding(.horizontal, 24)
+                Text(working)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color.ink2)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.horizontal, 12)
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: targeted ? "arrow.down.circle.fill" : "arrow.down.doc")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(targeted ? Color.themeAccent : Color.ink2)
+                        .contentTransition(.symbolEffect(.replace))
+                    Text(targeted ? "Release to \(converter.panelMode.rawValue)" : headline)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(Color.ink)
+                    if !targeted { choice }
+                }
+                Text(detail)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Color.ink3)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 58)
+        .background(shape.fill(Color.ink.opacity(targeted ? 0.1 : (hoveringZone ? 0.06 : 0.035))))
+        .overlay(shape.strokeBorder(targeted ? Color.themeAccent : Color.ink.opacity(0.2),
+                                    style: StrokeStyle(lineWidth: targeted ? 1.5 : 1, dash: [5, 4])))
+        .scaleEffect(targeted && !reduceMotion ? 1.02 : 1)
+        .animation(reduceMotion ? nil : .spring(duration: 0.25, bounce: 0.2), value: targeted)
+        .contentShape(shape)
+        .onTapGesture(perform: choose)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Choose Files", choose)
+        .onHover { hoveringZone = $0 }
+        .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
+            Self.urls(providers) { files in dropped(files) }
+            return true
+        }
+        .help("Drop files here, or click to choose them · ⌥ when you drop: the Convert window, with every option")
+        .accessibilityLabel("Drop files to \(converter.panelMode.rawValue)")
+    }
+
+    private var headline: String {
+        switch converter.panelMode {
+        case .compress: "Drop to compress"
+        case .convert: "Drop to convert to"
+        case .resize: "Drop to resize to"
+        case .crop: "Drop to crop to"
+        }
+    }
+
+    private var detail: String {
+        switch converter.panelMode {
+        case .compress: "Smaller copies, beside the originals"
+        case .convert: "Copies in the new format, beside them"
+        case .resize: converter.panelResize.detail + " · pictures, video"
+        case .crop: "Around the subject · pictures, video, PDFs"
+        }
+    }
+
+    /// The format, size or shape a drop uses: a chip that pops up the choices.
+    @ViewBuilder
+    private var choice: some View {
+        switch converter.panelMode {
+        case .compress:
+            EmptyView()
+        case .convert:
+            choiceButton(converter.panelFormat.title) {
+                let groups: [(String, [OutputFormat])] = [("Pictures", [.jpeg, .png, .heic, .avif, .pdf, .tiff, .gif]),
+                                                          ("Video", [.mp4, .mp4HEVC, .mov, .gif, .m4a]),
+                                                          ("Sound", [.m4a, .wav, .flac, .aiff]), ("Documents", [.pdf, .docx, .txt])]
+                return groups.flatMap { section, formats in
+                    formats.enumerated().map { index, format in
+                        ChoiceMenu.Item(title: format.title, section: index == 0 ? section : nil, checked: format == converter.panelFormat) {
+                            converter.panelFormat = format
+                        }
+                    }
+                }
+            }
+        case .resize:
+            choiceButton(converter.panelResize.title) {
+                ResizeSpec.picturePresets.map { spec in
+                    ChoiceMenu.Item(title: spec.title, detail: spec.detail, checked: spec == converter.panelResize) { converter.panelResize = spec }
+                }
+            }
+        case .crop:
+            choiceButton(converter.panelCrop.title) {
+                ChoiceMenu.crops(pdf: false, current: converter.panelCrop) { converter.panelCrop = $0 }
+            }
+        }
+    }
+
+    private func choiceButton(_ title: String, items: @escaping () -> [ChoiceMenu.Item]) -> some View {
+        Button { ChoiceMenu.show(items()) } label: { choiceLabel(title) }
+            .buttonStyle(.plain)
+            .help("Change it")
+    }
+
+    private func choiceLabel(_ title: String) -> some View {
+        HStack(spacing: 3) {
+            Text(title).font(.system(size: 12.5, weight: .semibold))
+            Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+        }
+        .foregroundStyle(Color.themeAccent)
+        .padding(.horizontal, 7)
+        .frame(height: 22)
+        .background(Capsule().fill(Color.themeAccent.opacity(0.12)))
+    }
+
+    // MARK: Status
+
+    private var status: some View {
+        Button {
+            showInApp(.converter)
+        } label: {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(converter.auto.isOn ? Color.themeAccent : Color.ink4)
+                    .frame(width: 5, height: 5)
+                Text(statusText)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Color.ink3)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if converter.savedBytes > 0 {
+                    Text("\(SavedBytes.text(converter.savedBytes)) saved")
+                        .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(Color.ink2)
+                        .contentTransition(.numericText())
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Compress settings")
+    }
+
+    private var statusText: String {
+        guard converter.auto.isOn else { return "Auto is off" }
+        var parts: [String] = []
+        if converter.auto.images || converter.auto.videos || converter.auto.pdfs {
+            parts.append(WatchedFolders.names(converter.watching.isEmpty ? WatchedFolders.resolve(converter.auto) : converter.watching))
+        }
+        if converter.auto.clipboard { parts.append("clipboard") }
+        return parts.isEmpty ? "Auto is on" : "Watching " + parts.joined(separator: " · ")
+    }
+
+    // MARK: Doing it
+
+    private func dropped(_ files: [URL]) {
+        guard !files.isEmpty else { return }
+        // ⌥ on the drop, or files the choice doesn't fit: the window, with every option.
+        if NSEvent.modifierFlags.contains(.option) || converter.panelAction(for: files) == nil {
+            afterPanelCloses { ConvertWindowController.shared.show(module: converter, files: files) }
+            return
+        }
+        if let action = converter.panelAction(for: files) { converter.run(action, on: files) }
+    }
+
+    private func choose() {
+        afterPanelCloses {
+            let panel = NSOpenPanel()
+            panel.allowsMultipleSelection = true
+            panel.canChooseDirectories = false
+            panel.message = "Choose files to \(converter.panelMode.rawValue)"
+            panel.prompt = converter.panelMode.title
+            NSApp.activate()
+            guard panel.runModal() == .OK else { return }
+            dropped(panel.urls)
+        }
+    }
+
+    /// The file URLs in a drop, all at once.
+    static func urls(_ providers: [NSItemProvider], done: @escaping @MainActor ([URL]) -> Void) {
+        let group = DispatchGroup()
+        let lock = NSLock()
+        nonisolated(unsafe) var urls: [URL] = []
+        for provider in providers {
+            group.enter()
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url, url.isFileURL {
+                    lock.lock()
+                    urls.append(url)
+                    lock.unlock()
+                }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            MainActor.assumeIsolated { done(urls) }
+        }
+    }
+}
+
+/// The last thing made: what, how much smaller, and Undo.
+private struct LatestResult: View {
+    var made: ConverterModule.Made
+    var converter: ConverterModule
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: made.url.path))
+                .resizable()
+                .frame(width: 16, height: 16)
+            Text(made.url.lastPathComponent)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(Color.ink)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 4)
+            if made.before > 0, made.after < made.before {
+                Text(SavedBytes.percent(before: made.before, after: made.after))
+                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Color.themeAccent)
+            }
+            Text(ConverterModule.bytes(made.after))
+                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                .foregroundStyle(Color.ink3)
+            Button {
+                converter.undo(made)
+            } label: {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(hovering ? Color.ink : Color.ink3)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help(made.changedInPlace ? "Undo: put the original back" : "Undo: move this copy to the Trash")
+        }
+        .frame(height: 20)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { NSWorkspace.shared.activateFileViewerSelecting([made.url]) }
+        .onDrag { NSItemProvider(contentsOf: made.url) ?? NSItemProvider() }
+        .help("Drag it anywhere · double-click to show it in Finder")
+    }
+}
+
 // MARK: - Battery, small or wide
 
 /// The battery: the full card when wide, a tile with the charge and the watts when small. A Mac
@@ -2075,7 +2382,8 @@ enum ShortcutRows {
         if model.wordCounter != nil {
             rows.append(Row(action: .wordCounter, title: "Count Words", short: "Words", symbol: ModuleID.wordCounter.symbol))
         }
-        if model.converter != nil {
+        // The Compress card has it, bigger; the tool stays for a panel without the card.
+        if model.converter != nil, !model.layout.layout.widgets.isShown(PanelLayoutStore.Card.compress.id) {
             rows.append(Row(action: .convertFiles, title: "Convert Files", short: "Convert", symbol: ModuleID.converter.symbol))
         }
         if model.cleaner != nil {

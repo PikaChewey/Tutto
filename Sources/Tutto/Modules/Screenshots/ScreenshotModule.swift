@@ -194,7 +194,10 @@ final class ScreenshotModule: ModuleController {
         let url = ScreenshotNames.unique(ScreenshotNames.base(at: Date()), ext: format.fileExtension, in: folder) {
             FileManager.default.fileExists(atPath: $0.path)
         }
-        return write(image, to: url, as: format) ? url : nil
+        guard write(image, to: url, as: format) else { return nil }
+        // Compressed by itself, like a screenshot on the Desktop (when that's on).
+        model?.converter?.compressOwnCapture(url)
+        return url
     }
 
     /// Writes the image to exactly this file (the save window already asked about replacing one).

@@ -65,6 +65,8 @@ final class AppModel {
         #if DEBUG
         // Live tests of the strip with test windows only: nothing else of Tutto runs.
         if CommandLine.arguments.contains("--strip-only") { enabled = [.strip, .switcher] }
+        // Live tests of compressing (with `--watch <folder>`): only the converter runs.
+        if CommandLine.arguments.contains("--convert-only") { enabled = [.converter] }
         #endif
         hasCompletedOnboarding = defaults.bool(forKey: Keys.onboarded)
     }
@@ -194,6 +196,7 @@ final class AppModel {
         case .clipboard:
             if clipboard == nil { clipboard = ClipboardModule(model: self) }
             clipboard?.start()
+            converter?.clipboardHistoryChanged()
         case .windows:
             if windows == nil { windows = WindowModule(model: self) }
             windows?.start()
@@ -252,6 +255,7 @@ final class AppModel {
         case .clipboard:
             clipboard?.stop()
             clipboard = nil
+            converter?.clipboardHistoryChanged()
         case .windows:
             windows?.stop()
             windows = nil

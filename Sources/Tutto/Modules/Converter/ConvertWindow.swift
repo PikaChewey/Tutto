@@ -2,10 +2,11 @@
 //  ConvertWindow.swift
 //  Tutto
 //
-//  The Convert window (the panel's Convert tile, ⌃⇧K, Finder's Convert › More…): drop files or
-//  choose them; the formats they can all become are one click each; Compress shows the settings
-//  for the kinds present (quality and size for pictures, quality, size and codec for video, how
-//  hard for PDFs, the bit rate for sound). What was just made is listed to drag out or show.
+//  The Convert window (⌃⇧K, ⌥-drop on the panel's Compress card, Finder's Convert › More…): drop
+//  files or choose them; the formats they can all become are one click each; Compress shows the
+//  settings for the kinds present (quality and size for pictures, quality, size and codec for
+//  video, how hard for PDFs, the bit rate for sound); Resize and Crop are a click each too. What
+//  was just made is listed to drag out or show.
 //
 
 import AppKit
@@ -88,6 +89,8 @@ struct ConvertView: View {
                     }
                     if !targets.isEmpty { convertSection }
                     if compressible { compressSection }
+                    if selection.kinds.allSatisfy(ConvertPlanner.canResize) { resizeSection }
+                    if selection.kinds.allSatisfy(ConvertPlanner.canCrop) { cropSection }
                 }
                 if !module.made.isEmpty { madeSection }
             }
@@ -209,6 +212,51 @@ struct ConvertView: View {
         if selection.kinds.allSatisfy({ $0 == .video }), format == .gif { return "The first 30 seconds as an animated GIF" }
         if selection.kinds.allSatisfy({ $0 == .video }), format == .m4a { return "Just the sound" }
         return "A \(format.title) copy beside each original"
+    }
+
+    // MARK: Resize and crop
+
+    private var resizeSection: some View {
+        let video = selection.kinds.contains(.video)
+        return VStack(alignment: .leading, spacing: 8) {
+            SectionLabel("Resize to")
+            FlowLayout(spacing: 6) {
+                ForEach(video ? ResizeSpec.videoPresets : ResizeSpec.picturePresets, id: \.self) { spec in
+                    chip(spec.title, help: "\(spec.detail): a copy beside each original (never made bigger)") {
+                        module.run(.resize(spec), on: selection.files)
+                    }
+                }
+            }
+        }
+    }
+
+    private var cropSection: some View {
+        let pdfs = selection.kinds.contains(.pdf)
+        return VStack(alignment: .leading, spacing: 8) {
+            SectionLabel("Crop to")
+            FlowLayout(spacing: 6) {
+                ForEach(pdfs ? CropSpec.aspects : CropSpec.aspects + CropSpec.sizes, id: \.self) { spec in
+                    chip(spec.title, help: [spec.detail, pdfs ? "every page, centred (nothing is lost: a PDF app can bring the rest back)"
+                                                            : "around what's in it (faces, people, the subject)"]
+                            .filter { !$0.isEmpty }.joined(separator: ": ")) {
+                        module.run(.crop(spec), on: selection.files)
+                    }
+                }
+            }
+        }
+    }
+
+    private func chip(_ title: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.ink)
+                .padding(.horizontal, 11)
+                .frame(height: 28)
+                .background(RoundedRectangle(cornerRadius: Radius.of(8), style: .continuous).fill(Color.ink.opacity(0.07)))
+        }
+        .buttonStyle(PressStyle())
+        .help(help)
     }
 
     // MARK: Compress

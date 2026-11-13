@@ -16,16 +16,44 @@ import ImageIO
 import PDFKit
 import TuttoKit
 import UniformTypeIdentifiers
+import Vision
 import VideoToolbox
 
-enum ConvertAction: Equatable, Sendable {
+enum ConvertAction: Equatable, Hashable, Sendable {
     case convert(OutputFormat)
     case compress
+    /// Fewer pixels (pictures, video).
+    case resize(ResizeSpec)
+    /// Cut to a shape (pictures, video, PDF pages), keeping what draws the eye.
+    case crop(CropSpec)
 
     var title: String {
         switch self {
         case .convert(let format): "Convert to \(format.title)"
         case .compress: "Compress"
+        case .resize(let spec): "Resize to \(spec.title)"
+        case .crop(let spec): "Crop to \(spec.title)"
+        }
+    }
+
+    /// "Compressing", "Converting to PNG", "Resizing", "Cropping".
+    var working: String {
+        switch self {
+        case .convert(let format): "Converting to \(format.title)"
+        case .compress: "Compressing"
+        case .resize: "Resizing"
+        case .crop: "Cropping"
+        }
+    }
+
+    /// Whether every one of these kinds can take it.
+    func applies(to kinds: [FileKind]) -> Bool {
+        guard !kinds.isEmpty else { return false }
+        switch self {
+        case .convert(let format): return ConvertPlanner.targets(for: kinds).contains(format)
+        case .compress: return kinds.allSatisfy(ConvertPlanner.canCompress)
+        case .resize: return kinds.allSatisfy(ConvertPlanner.canResize)
+        case .crop: return kinds.allSatisfy(ConvertPlanner.canCrop)
         }
     }
 }
@@ -39,8 +67,10 @@ struct ConvertError: LocalizedError {
 enum ConvertEngine {
     /// Runs one action on a selection; returns the files written. Several images (or PDFs)
     /// made into a PDF become one file; everything else is one result per file.
-    static func run(_ action: ConvertAction, on sources: [URL], settings: CompressionSettings,
-                    progress: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
+    /// `folder` puts the results there instead of beside the originals (the automatic compressor
+    /// writes into a folder of its own, then swaps the result in).
+    static func run(_ action: ConvertAction, on sources: [URL], settings: CompressionSettings, into folder: URL? = nil,
+                    halve: Bool = false, progress: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
         let kinds = sources.map(FileKind.of)
         if case .convert(let format) = action, ConvertPlanner.combines(kinds, into: format) {
             return [try await MainActor.run { try combinePDF(sources) }]
@@ -50,25 +80,34 @@ enum ConvertEngine {
             let share = 1 / Double(sources.count)
             let base = Double(index) * share
             let report: @Sendable (Double) -> Void = { progress(base + $0 * share) }
-            outputs += try await one(action, source: source, kind: kinds[index], settings: settings, progress: report)
+            outputs += try await one(action, source: source, kind: kinds[index], settings: settings, folder: folder, halve: halve,
+                                     progress: report)
             progress(base + share)
         }
         return outputs
     }
 
-    private static func one(_ action: ConvertAction, source: URL, kind: FileKind, settings: CompressionSettings,
-                            progress: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
+    private static func one(_ action: ConvertAction, source: URL, kind: FileKind, settings: CompressionSettings, folder: URL?,
+                            halve: Bool, progress: @escaping @Sendable (Double) -> Void) async throws -> [URL] {
         switch (kind, action) {
         case (.image, .convert(let format)):
-            return [try await Task.detached { try image(source, to: format, compress: false, settings: settings) }.value]
+            return [try await Task.detached { try image(source, to: format, compress: false, settings: settings, folder: folder) }.value]
         case (.image, .compress):
-            return [try await Task.detached { try image(source, to: nil, compress: true, settings: settings) }.value]
+            return [try await Task.detached {
+                try image(source, to: nil, compress: true, settings: settings, folder: folder, halve: halve)
+            }.value]
+        case (.image, .resize), (.image, .crop):
+            return [try await Task.detached { try image(source, to: nil, compress: false, edit: action, settings: settings, folder: folder) }.value]
+        case (.pdf, .crop(let spec)):
+            return [try await Task.detached { try cropPDF(source, spec: spec, folder: folder) }.value]
+        case (.video, .resize), (.video, .crop):
+            return [try await transcode(source, to: nil, compress: false, edit: action, settings: settings, folder: folder, progress: progress)]
         case (.pdf, .convert(.txt)):
             return [try pdfText(source)]
         case (.pdf, .convert(let format)):
             return try await Task.detached { try pdfPages(source, to: format) }.value
         case (.pdf, .compress):
-            return [try await Task.detached { try compressPDF(source, level: settings.pdfLevel) }.value]
+            return [try await Task.detached { try compressPDF(source, level: settings.pdfLevel, folder: folder) }.value]
         case (.video, .convert(.gif)):
             return [try await gif(from: source, settings: settings, progress: progress)]
         case (.video, .convert(.m4a)):
@@ -76,7 +115,7 @@ enum ConvertEngine {
         case (.video, .convert(let format)):
             return [try await transcode(source, to: format, compress: false, settings: settings, progress: progress)]
         case (.video, .compress):
-            return [try await transcode(source, to: nil, compress: true, settings: settings, progress: progress)]
+            return [try await transcode(source, to: nil, compress: true, settings: settings, folder: folder, progress: progress)]
         case (.audio, .convert(let format)):
             return [try await Task.detached { try audio(source, to: format, kbps: nil, progress: progress) }.value]
         case (.audio, .compress):
@@ -86,7 +125,13 @@ enum ConvertEngine {
         case (.subtitles, .convert(let format)):
             return [try subtitles(source, to: format)]
         default:
-            throw ConvertError("\(source.lastPathComponent) can't be \(action == .compress ? "compressed" : "converted that way")")
+            let verb = switch action {
+            case .compress: "compressed"
+            case .resize: "resized"
+            case .crop: "cropped"
+            case .convert: "converted that way"
+            }
+            throw ConvertError("\(source.lastPathComponent) can't be \(verb)")
         }
     }
 
@@ -122,7 +167,10 @@ enum ConvertEngine {
         }
     }
 
-    private static func image(_ source: URL, to wanted: OutputFormat?, compress: Bool, settings: CompressionSettings) throws -> URL {
+    /// Converts, compresses, resizes (`edit` .resize) or crops (`edit` .crop) a picture. `halve`
+    /// brings a Retina screenshot to half its pixels while compressing it.
+    private static func image(_ source: URL, to wanted: OutputFormat?, compress: Bool, edit: ConvertAction? = nil,
+                              settings: CompressionSettings, folder: URL? = nil, halve: Bool = false) throws -> URL {
         guard let input = CGImageSourceCreateWithURL(source as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
               CGImageSourceGetCount(input) > 0 else { throw ConvertError("\(source.lastPathComponent) isn't a picture macOS can read") }
         let properties = CGImageSourceCopyPropertiesAtIndex(input, 0, nil) as? [CFString: Any] ?? [:]
@@ -132,6 +180,12 @@ enum ConvertEngine {
         let format = wanted ?? compressedFormat(of: source)
         let removeDetails = compress && settings.removeImageDetails
         var side = compress ? min(settings.imageMaxSide ?? longest, longest) : longest
+        if compress, halve { side = min(side, max(longest / 2, 64)) }
+        if case .resize(let spec)? = edit {
+            let after = spec.size(width: width, height: height)
+            side = max(after.width, after.height)
+            guard side < longest else { throw ConvertError("\(source.lastPathComponent) is already \(width) × \(height)") }
+        }
 
         func decode(_ maxSide: Int) throws -> CGImage {
             let options: [CFString: Any] = [
@@ -159,9 +213,13 @@ enum ConvertEngine {
         }
         metadata[kCGImagePropertyOrientation] = 1
 
-        let output = compress
-            ? OutputNames.compressed(source, ext: format.fileExtension, exists: exists)
-            : OutputNames.converted(source, ext: format.fileExtension, exists: exists)
+        let output: URL = switch edit {
+        case .resize?: OutputNames.edited(source, mark: "resized", ext: format.fileExtension, in: folder, exists: exists)
+        case .crop?: OutputNames.edited(source, mark: "cropped", ext: format.fileExtension, in: folder, exists: exists)
+        default: compress
+            ? OutputNames.compressed(source, ext: format.fileExtension, in: folder, exists: exists)
+            : OutputNames.converted(source, ext: format.fileExtension, in: folder, exists: exists)
+        }
 
         if format == .pdf {
             let picture = try decode(side)
@@ -170,7 +228,7 @@ enum ConvertEngine {
         }
         guard let type = imageType(format) else { throw ConvertError("Can't write \(format.title)") }
         let lossy = [.jpeg, .heic, .avif].contains(format)
-        var quality = compress ? settings.imageQuality : 0.92
+        var quality = compress ? settings.imageQuality : (edit == nil ? 0.92 : 0.9)
 
         func encode(_ picture: CGImage, _ quality: Double) -> Data? {
             let data = NSMutableData()
@@ -192,6 +250,7 @@ enum ConvertEngine {
         }
 
         var picture = try decode(side)
+        if case .crop(let spec)? = edit { picture = try cropped(picture, to: spec) }
         var data = encode(picture, quality)
         // A size to aim for: the best quality (down to a decent floor) that fits; if none does,
         // smaller dimensions, then the search again at the new size.
@@ -217,6 +276,66 @@ enum ConvertEngine {
         return output
     }
 
+    /// The largest part of `spec`'s shape, placed over what draws the eye (Vision's attention
+    /// map: faces, people, the subject), then brought down to `spec`'s size if it has one.
+    private static func cropped(_ picture: CGImage, to spec: CropSpec) throws -> CGImage {
+        let rect = CropMath.rect(width: picture.width, height: picture.height, ratio: spec.ratio, focus: focus(of: picture))
+        guard rect.width < CGFloat(picture.width) || rect.height < CGFloat(picture.height) || { if case .size = spec { true } else { false } }() else {
+            throw ConvertError("It's already \(spec.title)")
+        }
+        guard var result = picture.cropping(to: rect) else { throw ConvertError("Couldn't crop the picture") }
+        let size = spec.outputSize(width: picture.width, height: picture.height)
+        if size.width < result.width || size.height < result.height {
+            guard let context = CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                          space: result.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return result }
+            context.interpolationQuality = .high
+            context.draw(result, in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
+            if let scaled = context.makeImage() { result = scaled }
+        }
+        return result
+    }
+
+    /// Where a picture's subject is (0–1 from the top left), from Vision's attention map; the
+    /// middle when Vision finds nothing.
+    static func focus(of picture: CGImage) -> CGPoint {
+        let request = VNGenerateAttentionBasedSaliencyImageRequest()
+        let handler = VNImageRequestHandler(cgImage: picture, options: [:])
+        guard (try? handler.perform([request])) != nil,
+              let observation = request.results?.first as? VNSaliencyImageObservation else { return CGPoint(x: 0.5, y: 0.5) }
+        let regions = (observation.salientObjects ?? []).map { box in
+            // Vision measures from the bottom left.
+            (rect: CGRect(x: box.boundingBox.minX, y: 1 - box.boundingBox.maxY, width: box.boundingBox.width, height: box.boundingBox.height),
+             confidence: Double(box.confidence))
+        }
+        return CropMath.focus(of: regions)
+    }
+
+    /// A copied picture as a smaller PNG: a palette PNG when that looks the same (most screenshots),
+    /// at half its pixels with `halve` when it's from a Retina screen. Its resolution is kept (or
+    /// halved with it), so it pastes at the same size on the page. Nil when it can't be read.
+    nonisolated static func smallerPNG(_ data: Data, halve: Bool) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              CGImageSourceGetCount(source) > 0 else { return nil }
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] ?? [:]
+        let width = properties[kCGImagePropertyPixelWidth] as? Int ?? 0
+        let height = properties[kCGImagePropertyPixelHeight] as? Int ?? 0
+        var resolution = dpi(properties)
+        var side = max(width, height, 1)
+        if halve, resolution >= 140 {
+            side = max(side / 2, 16)
+            resolution /= 2
+        }
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: side,
+                                        kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceShouldCacheImmediately: true]
+        guard let picture = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, UTType.png.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, paletteImage(picture) ?? picture,
+                                   [kCGImagePropertyDPIWidth: resolution, kCGImagePropertyDPIHeight: resolution] as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? output as Data : nil
+    }
+
     /// Camera pictures (kept as JPEG inside a PDF) as opposed to screenshots and graphics (kept lossless).
     private static func isPhoto(_ source: URL) -> Bool {
         !["png", "gif", "bmp", "tif", "tiff", "ico", "icns"].contains(source.pathExtension.lowercased())
@@ -232,13 +351,13 @@ enum ConvertEngine {
         return jpeg
     }
 
-    private static func dpi(_ properties: [CFString: Any]) -> Double {
+    static func dpi(_ properties: [CFString: Any]) -> Double {
         (properties[kCGImagePropertyDPIWidth] as? Double).flatMap { $0 > 30 ? $0 : nil } ?? 144
     }
 
     /// A palette version of an opaque picture when it looks the same (most screenshots and
     /// graphics); nil for photos and pictures with transparency.
-    private static func paletteImage(_ picture: CGImage) -> CGImage? {
+    static func paletteImage(_ picture: CGImage) -> CGImage? {
         let width = picture.width, height = picture.height
         guard width * height <= 40_000_000,
               let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
@@ -347,9 +466,9 @@ enum ConvertEngine {
 
     /// Light: pictures inside stored as JPEG at their full resolution (prints as before).
     /// Strong: also brought down to screen resolution (for email and sharing).
-    private static func compressPDF(_ source: URL, level: CompressionSettings.PDFLevel) throws -> URL {
+    private static func compressPDF(_ source: URL, level: CompressionSettings.PDFLevel, folder: URL? = nil) throws -> URL {
         guard let document = PDFDocument(url: source) else { throw ConvertError("\(source.lastPathComponent) isn't a PDF macOS can read") }
-        let output = OutputNames.compressed(source, exists: exists)
+        let output = OutputNames.compressed(source, in: folder, exists: exists)
         var options: [PDFDocumentWriteOption: Any] = [.saveImagesAsJPEGOption: true]
         if level == .strong { options[.optimizeImagesForScreenOption] = true }
         guard document.write(to: output, withOptions: options) else { throw ConvertError("Couldn't write \(output.lastPathComponent)") }
@@ -361,11 +480,34 @@ enum ConvertEngine {
         return output
     }
 
+    /// Every page cut to `spec`'s shape (its crop box: nothing is lost, a PDF app can bring it back),
+    /// centred, the way a page is read on a phone or a tablet.
+    private static func cropPDF(_ source: URL, spec: CropSpec, folder: URL?) throws -> URL {
+        guard let document = PDFDocument(url: source), document.pageCount > 0 else {
+            throw ConvertError("\(source.lastPathComponent) isn't a PDF macOS can read")
+        }
+        for index in 0..<document.pageCount {
+            guard let page = document.page(at: index) else { continue }
+            let box = page.bounds(for: .cropBox)
+            // A page turned on its side shows its box the other way round.
+            let ratio = page.rotation % 180 == 0 ? spec.ratio : 1 / spec.ratio
+            let rect = CropMath.rect(width: Int(box.width.rounded()), height: Int(box.height.rounded()), ratio: ratio)
+            page.setBounds(CGRect(x: box.minX + rect.minX, y: box.maxY - rect.minY - rect.height, width: rect.width, height: rect.height),
+                           for: .cropBox)
+        }
+        let output = OutputNames.edited(source, mark: "cropped", in: folder, exists: exists)
+        guard document.write(to: output) else { throw ConvertError("Couldn't write \(output.lastPathComponent)") }
+        return output
+    }
+
     // MARK: Video
 
     /// Re-encodes with AVAssetReader and AVAssetWriter: H.264 or HEVC at a bit rate chosen from
     /// the picture size and quality, scaled down when asked, sound as AAC.
-    private static func transcode(_ source: URL, to wanted: OutputFormat?, compress: Bool, settings: CompressionSettings,
+    /// `edit` .resize brings it to fewer pixels; .crop cuts every frame to a shape (through a Core
+    /// Image composition, upright, centred on the subject of the middle frame).
+    private static func transcode(_ source: URL, to wanted: OutputFormat?, compress: Bool, edit: ConvertAction? = nil,
+                                  settings: CompressionSettings, folder: URL? = nil,
                                   progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         let asset = AVURLAsset(url: source)
         guard let video = try await asset.loadTracks(withMediaType: .video).first else {
@@ -380,25 +522,64 @@ enum ConvertEngine {
 
         let format = wanted ?? (source.pathExtension.lowercased() == "mov" ? .mov : .mp4)
         let codec: CompressionSettings.VideoCodec = compress ? settings.videoCodec : (format == .mp4HEVC ? .hevc : .h264)
-        let size = CompressionSettings.fitted(width: Int(abs(natural.width)), height: Int(abs(natural.height)),
+        var size = CompressionSettings.fitted(width: Int(abs(natural.width)), height: Int(abs(natural.height)),
                                               maxHeight: compress ? settings.videoMaxHeight : nil)
+        // The frame as it's seen (a phone video is stored on its side and turned by its transform).
+        let upright = CGRect(origin: .zero, size: natural).applying(transform).standardized
+        let uprightWidth = Int(upright.width.rounded()), uprightHeight = Int(upright.height.rounded())
+        var cropRect: CGRect?
+        switch edit {
+        case .resize(let spec)?:
+            guard spec.shrinks(width: Int(abs(natural.width)), height: Int(abs(natural.height))) else {
+                throw ConvertError("\(source.lastPathComponent) is already \(uprightWidth) × \(uprightHeight)")
+            }
+            let after = spec.size(width: Int(abs(natural.width)), height: Int(abs(natural.height)), even: true)
+            size = (after.width, after.height)
+        case .crop(let spec)?:
+            let focus = await videoFocus(asset, duration: duration)
+            cropRect = CropMath.rect(width: uprightWidth, height: uprightHeight, ratio: spec.ratio, focus: focus, even: true)
+            let after = spec.outputSize(width: uprightWidth, height: uprightHeight, even: true)
+            size = (after.width, after.height)
+        default:
+            break
+        }
         var bitrate = CompressionSettings.videoBitrate(width: size.width, height: size.height, fps: fps,
                                                        quality: compress ? settings.videoQuality : .high, codec: codec)
         // Converting (not compressing) keeps about the quality it had; it never adds bits it never had.
-        if !compress, sourceRate > 0 { bitrate = Int(min(max(sourceRate, Double(bitrate) * 0.5), Double(bitrate) * 1.5)) }
-        if compress, sourceRate > 0 { bitrate = min(bitrate, Int(sourceRate * 0.9)) }
+        if !compress, edit == nil, sourceRate > 0 { bitrate = Int(min(max(sourceRate, Double(bitrate) * 0.5), Double(bitrate) * 1.5)) }
+        if compress || edit != nil, sourceRate > 0 { bitrate = min(bitrate, Int(sourceRate * (compress ? 0.9 : 1))) }
 
-        let output = compress
-            ? OutputNames.compressed(source, ext: format.fileExtension, exists: exists)
-            : OutputNames.converted(source, ext: format.fileExtension, exists: exists)
+        let output: URL = switch edit {
+        case .resize?: OutputNames.edited(source, mark: "resized", ext: format.fileExtension, in: folder, exists: exists)
+        case .crop?: OutputNames.edited(source, mark: "cropped", ext: format.fileExtension, in: folder, exists: exists)
+        default: compress
+            ? OutputNames.compressed(source, ext: format.fileExtension, in: folder, exists: exists)
+            : OutputNames.converted(source, ext: format.fileExtension, in: folder, exists: exists)
+        }
         let reader = try AVAssetReader(asset: asset)
         let writer = try AVAssetWriter(outputURL: output, fileType: format == .mov ? .mov : .mp4)
         writer.shouldOptimizeForNetworkUse = true
 
-        let videoOut = AVAssetReaderTrackOutput(track: video, outputSettings: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-        ])
-        videoOut.alwaysCopiesSampleData = false
+        let pixels: [String: Any] = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
+        let videoOut: AVAssetReaderOutput
+        if let cropRect {
+            // Core Image hands each frame upright (the track's transform applied), origin at the bottom left.
+            let ciRect = CGRect(x: cropRect.minX, y: CGFloat(uprightHeight) - cropRect.maxY, width: cropRect.width, height: cropRect.height)
+            let composition = try await AVMutableVideoComposition.videoComposition(with: asset) { request in
+                let frame = request.sourceImage.cropped(to: ciRect)
+                    .transformed(by: CGAffineTransform(translationX: -ciRect.minX, y: -ciRect.minY))
+                request.finish(with: frame, context: nil)
+            }
+            composition.renderSize = cropRect.size
+            let out = AVAssetReaderVideoCompositionOutput(videoTracks: [video], videoSettings: pixels)
+            out.videoComposition = composition
+            out.alwaysCopiesSampleData = false
+            videoOut = out
+        } else {
+            let out = AVAssetReaderTrackOutput(track: video, outputSettings: pixels)
+            out.alwaysCopiesSampleData = false
+            videoOut = out
+        }
         reader.add(videoOut)
         var compression: [String: Any] = [AVVideoAverageBitRateKey: bitrate, AVVideoMaxKeyFrameIntervalDurationKey: 2]
         if fps > 0 { compression[AVVideoExpectedSourceFrameRateKey] = fps }
@@ -407,14 +588,15 @@ enum ConvertEngine {
             AVVideoCodecKey: codec == .hevc ? AVVideoCodecType.hevc : AVVideoCodecType.h264,
             AVVideoWidthKey: size.width,
             AVVideoHeightKey: size.height,
-            AVVideoScalingModeKey: AVVideoScalingModeResizeAspect,
+            AVVideoScalingModeKey: cropRect == nil ? AVVideoScalingModeResizeAspect : AVVideoScalingModeResizeAspectFill,
             AVVideoCompressionPropertiesKey: compression,
         ])
-        videoIn.transform = transform
+        // Cropped frames come out upright already.
+        videoIn.transform = cropRect == nil ? transform : .identity
         videoIn.expectsMediaDataInRealTime = false
         writer.add(videoIn)
 
-        var audioPair: (AVAssetReaderTrackOutput, AVAssetWriterInput)?
+        var audioPair: (AVAssetReaderOutput, AVAssetWriterInput)?
         if let audioTrack {
             let audioOut = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: [AVFormatIDKey: kAudioFormatLinearPCM])
             reader.add(audioOut)
@@ -455,8 +637,19 @@ enum ConvertEngine {
         return output
     }
 
+    /// Where the subject is, from the frame halfway through (the middle of the picture if there's none).
+    private static func videoFocus(_ asset: AVAsset, duration: Double) async -> CGPoint {
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 640, height: 640)
+        guard let frame = try? await generator.image(at: CMTime(seconds: max(duration / 2, 0), preferredTimescale: 600)).image else {
+            return CGPoint(x: 0.5, y: 0.5)
+        }
+        return focus(of: frame)
+    }
+
     /// Feeds one track from the reader into the writer until it runs out.
-    private static func pump(_ output: AVAssetReaderTrackOutput, into input: AVAssetWriterInput, queue label: String,
+    private static func pump(_ output: AVAssetReaderOutput, into input: AVAssetWriterInput, queue label: String,
                              progress: @escaping @Sendable (Double) -> Void) async {
         nonisolated(unsafe) let output = output
         nonisolated(unsafe) let input = input

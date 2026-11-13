@@ -41,17 +41,21 @@ extension ThemeStore {
 }
 
 /// How the Liquid Glass panel is built (Bryan 2026-11-13: "i dont think it looks glassy enough";
-/// shown three, picked floating). The glass stage renders the others with `glass-look:<name>`.
+/// shown three, picked floating; then, of the Notification Center frost behind the floating cards:
+/// "doesnt look the best, take more from the outer frame from the original option B"). The glass
+/// stage renders the others with `glass-look:<name>`.
 enum GlassLook: String {
     /// One sheet, cards as platters on it (the first version).
     case sheet
-    /// What ships: no sheet; every card is its own piece of glass floating over the desktop, the
-    /// header and the footer glass capsules, gaps between them, a rim of light around each.
+    /// Every card its own piece of glass floating over the desktop on a colourless frosted frame,
+    /// the header and the footer glass capsules (shipped 2026-11-13, replaced the same day).
     case floating
-    /// One sheet of the most transparent glass, lightly dimmed for the text, cards barely there.
+    /// What ships (option B): one sheet of Apple's most see-through glass, lightly dimmed so the
+    /// text reads over any wallpaper, a rim of light around it; the cards on it barely-there
+    /// platters with their own rims. The desktop's colour comes through, not a grey frost.
     case clear
 
-    nonisolated(unsafe) static var current: GlassLook = .floating
+    nonisolated(unsafe) static var current: GlassLook = .clear
 }
 
 extension View {

@@ -9,8 +9,11 @@
 //  2026-11-13). The Classic look draws the system's popover material itself.
 //
 //  It behaves as the menu bar window did: a click on the icon opens and closes it; a click
-//  anywhere else, Esc, or switching apps closes it. The panel is built fresh each time it opens
-//  and dropped when it closes, so its readings run only while it's on screen.
+//  anywhere else, Esc, or switching apps closes it. A click that turns into dragging files stays
+//  open, so files can be dragged from Finder onto the Compress card; dragging files onto the icon
+//  opens it, and dropping them on the icon compresses (or converts, resizes, crops) them. The
+//  panel is built fresh each time it opens and dropped when it closes, so its readings run only
+//  while it's on screen.
 //
 
 import AppKit
@@ -25,6 +28,12 @@ final class PanelController: NSObject {
     private var panel: TuttoPanelWindow?
     private var monitors: [Any] = []
     private var observers: [NSObjectProtocol] = []
+    /// A press outside the panel: it closes on release, unless the press turns into dragging files.
+    private var closeOnRelease = false
+    private var dragCountAtPress = 0
+    /// Files are being dragged while it's open: it stays until they're dropped.
+    private var draggingFiles = false
+    private let iconDrop = StatusIconDrop()
 
     var isOpen: Bool { panel?.isVisible == true }
     /// The icon's button (the panel opens under it; the notch check looks at its window).
@@ -55,8 +64,18 @@ final class PanelController: NSObject {
                 label.centerYAnchor.constraint(equalTo: button.centerYAnchor),
             ])
             label.onResize?()
+            // Files dragged onto the icon: the window's delegate hears it (the icon's views don't take drags).
+            button.window?.registerForDraggedTypes([.fileURL])
+            button.window?.delegate = iconDrop
         }
         self.item = item
+    }
+
+    /// Files dragged onto the icon open the panel (on the Compress card's drop zone they can be dropped).
+    func openForDrag() {
+        guard !isOpen else { return }
+        open()
+        draggingFiles = true
     }
 
     @objc private func clicked(_ sender: Any?) {
@@ -123,6 +142,8 @@ final class PanelController: NSObject {
     func close() {
         guard let panel else { return }
         self.panel = nil
+        closeOnRelease = false
+        draggingFiles = false
         stopWatching()
         item?.button?.highlight(false)
         NSAnimationContext.runAnimationGroup({ context in
@@ -140,9 +161,12 @@ final class PanelController: NSObject {
     // MARK: Closing it
 
     private func watchForDismissal(button: NSStatusBarButton) {
-        // A click in another app.
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown], handler: { [weak self] _ in
-            MainActor.assumeIsolated { self?.close() }
+        // A click in another app: right and middle presses close it at once; a left press closes it on
+        // release, unless it became a drag of files (from Finder to the Compress card).
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged, .leftMouseUp],
+                                                          handler: { [weak self] event in
+            let type = event.type
+            MainActor.assumeIsolated { self?.outside(type) }
         }) { monitors.append(global) }
         // A click in another of Tutto's windows (not the panel, its menus, or the icon, which
         // toggles by itself); Esc.
@@ -170,11 +194,42 @@ final class PanelController: NSObject {
         observers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             guard app?.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
-            MainActor.assumeIsolated { self?.close() }
+            MainActor.assumeIsolated {
+                // A press that activated the app it's in: the press decides (a drag keeps it open).
+                guard let self, !self.draggingFiles, NSEvent.pressedMouseButtons & 1 == 0 else { return }
+                self.close()
+            }
         })
         observers.append(center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.close() }
         })
+    }
+
+    private func outside(_ type: NSEvent.EventType) {
+        guard let panel else { return }
+        switch type {
+        case .leftMouseDown:
+            if draggingFiles { return }
+            closeOnRelease = true
+            dragCountAtPress = NSPasteboard(name: .drag).changeCount
+        case .leftMouseDragged:
+            let pasteboard = NSPasteboard(name: .drag)
+            if closeOnRelease, pasteboard.changeCount != dragCountAtPress,
+               pasteboard.types?.contains(.fileURL) == true {
+                closeOnRelease = false
+                draggingFiles = true
+            }
+        case .leftMouseUp:
+            if closeOnRelease {
+                close()
+            } else if draggingFiles {
+                draggingFiles = false
+                // Dropped somewhere else: done with the panel. On the panel: it stays, to show the work.
+                if !panel.frame.contains(NSEvent.mouseLocation) { close() }
+            }
+        default:
+            close()
+        }
     }
 
     private func stopWatching() {
@@ -290,5 +345,39 @@ struct StatusLabel: View {
         .foregroundStyle(.primary)
         .fixedSize()
         .accessibilityHidden(true)
+    }
+}
+
+/// Files dragged onto the menu bar icon: the panel opens (to drop on its Compress card); dropped on
+/// the icon itself, they're compressed (or converted, resized, cropped, as the card is set).
+@MainActor
+private final class StatusIconDrop: NSObject, NSWindowDelegate, NSDraggingDestination {
+    private var converter: ConverterModule? { AppModel.shared.converter }
+
+    func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard converter != nil, !files(sender).isEmpty else { return [] }
+        PanelController.shared.openForDrag()
+        return .copy
+    }
+
+    func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        converter != nil ? .copy : []
+    }
+
+    func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let converter else { return false }
+        let files = files(sender)
+        guard !files.isEmpty else { return false }
+        if let action = converter.panelAction(for: files), !NSEvent.modifierFlags.contains(.option) {
+            converter.run(action, on: files)
+        } else {
+            PanelController.shared.close()
+            ConvertWindowController.shared.show(module: converter, files: files)
+        }
+        return true
+    }
+
+    private func files(_ sender: NSDraggingInfo) -> [URL] {
+        (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
     }
 }

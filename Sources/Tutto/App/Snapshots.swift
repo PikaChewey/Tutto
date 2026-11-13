@@ -64,6 +64,8 @@ enum Snapshots {
             while cleaner.state != .ready, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
         }
         if only.contains("clicker-open") { ClickerRow.startsExpanded = true }
+        // `compress-demo`: the Compress card with a result under it and a total saved.
+        if only.contains("compress-demo") { model.converter?.previewDemo() }
         ToolsCard.startsHovered = only.first(where: { $0.hasPrefix("tool-hover:") }).map { String($0.dropFirst(11)) }
         // `sound-levels`: the Sound card's levels open, with some apps turned down and up.
         if only.contains("sound-levels"), let sound = model.sound {
@@ -134,7 +136,9 @@ enum Snapshots {
     }
 
     static func stage(model: AppModel, appearance: NSAppearance.Name, wallpaper: NSImage?, marker: URL) {
-        let size = NSSize(width: 700, height: 800)
+        // As tall as the screen allows: the panel with every card is taller than it was.
+        let height = min(1_100, ((NSScreen.main?.visibleFrame.height) ?? 900) - 16)
+        let size = NSSize(width: 700, height: height)
         let view = GlassStage(wallpaper: wallpaper, size: size) { MenuPanel(model: model, preview: true, glassRoot: true) }
         let host = NSHostingView(rootView: view)
         host.appearance = NSAppearance(named: appearance)

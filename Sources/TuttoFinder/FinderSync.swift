@@ -75,6 +75,9 @@ final class FinderSync: FIFinderSync {
     ]
     /// Menu item tags index into this.
     private static let formatCodes = ["jpeg", "png", "heic", "pdf", "mp4", "gif", "m4a", "wav", "flac", "txt", "docx", "srt", "vtt"]
+    /// Resize and Crop from Finder (pictures and video; PDFs crop too), the codes TuttoKit's ResizeSpec and CropSpec read.
+    private static let resizes: [(title: String, code: String)] = [("Half", "50%"), ("Quarter", "25%"), ("1920 px", "1920"), ("1280 px", "1280")]
+    private static let crops: [(title: String, code: String)] = [("Square", "1:1"), ("4:5", "4:5"), ("16:9", "16:9"), ("9:16", "9:16")]
 
     private func convertMenu(for items: [URL]) -> NSMenuItem? {
         let groups = items.map { url in Self.convertKinds.firstIndex { $0.extensions.contains(url.pathExtension.lowercased()) } }
@@ -91,6 +94,8 @@ final class FinderSync: FIFinderSync {
         }
         let compress = distinct.allSatisfy { Self.convertKinds[$0].compress }
         guard !formats.isEmpty || compress else { return nil }
+        let resizable = distinct.isSubset(of: [0, 1])
+        let croppable = distinct.isSubset(of: [0, 1, 3])
 
         let submenu = NSMenu(title: "Convert")
         for format in formats {
@@ -103,6 +108,8 @@ final class FinderSync: FIFinderSync {
             if !formats.isEmpty { submenu.addItem(.separator()) }
             submenu.addItem(NSMenuItem(title: "Compress", action: #selector(compressFiles(_:)), keyEquivalent: ""))
         }
+        if resizable { submenu.addItem(choices("Resize", Self.resizes, #selector(resizeFiles(_:)))) }
+        if croppable { submenu.addItem(choices("Crop", Self.crops, #selector(cropFiles(_:)))) }
         submenu.addItem(NSMenuItem(title: "More…", action: #selector(moreConvert(_:)), keyEquivalent: ""))
         let entry = NSMenuItem(title: "Convert", action: nil, keyEquivalent: "")
         entry.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: nil)
@@ -116,6 +123,28 @@ final class FinderSync: FIFinderSync {
     }
 
     @objc func compressFiles(_ sender: AnyObject?) { sendConvert(["compress": "1"]) }
+
+    @objc func resizeFiles(_ sender: AnyObject?) {
+        guard let tag = (sender as? NSMenuItem)?.tag, Self.resizes.indices.contains(tag) else { return }
+        sendConvert(["resize": Self.resizes[tag].code])
+    }
+
+    @objc func cropFiles(_ sender: AnyObject?) {
+        guard let tag = (sender as? NSMenuItem)?.tag, Self.crops.indices.contains(tag) else { return }
+        sendConvert(["crop": Self.crops[tag].code])
+    }
+
+    private func choices(_ title: String, _ list: [(title: String, code: String)], _ action: Selector) -> NSMenuItem {
+        let submenu = NSMenu(title: title)
+        for (index, choice) in list.enumerated() {
+            let entry = NSMenuItem(title: choice.title, action: action, keyEquivalent: "")
+            entry.tag = index
+            submenu.addItem(entry)
+        }
+        let entry = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        entry.submenu = submenu
+        return entry
+    }
     @objc func moreConvert(_ sender: AnyObject?) { sendConvert(["open": "1"]) }
 
     private func sendConvert(_ parameters: [String: String]) {

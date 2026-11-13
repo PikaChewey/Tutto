@@ -19,7 +19,7 @@ import TuttoKit
 final class PanelLayoutStore {
     /// Tutto's own cards.
     enum Card: String, CaseIterable, Identifiable {
-        case battery, devices, cpu, memory, gpu, disk, network, temperature, awake, clicker, fan, sound, tools
+        case battery, devices, cpu, memory, gpu, disk, network, temperature, compress, awake, clicker, fan, sound, tools
 
         var id: String { rawValue }
 
@@ -33,6 +33,7 @@ final class PanelLayoutStore {
             case .disk: "Disk"
             case .network: "Network"
             case .temperature: "Temperature"
+            case .compress: "Compress"
             case .awake: "Stay awake"
             case .clicker: "Auto clicker"
             case .fan: "Fan"
@@ -52,6 +53,7 @@ final class PanelLayoutStore {
             case .disk: "Free space on the startup disk."
             case .network: "Down and up, and the last minute."
             case .temperature: "The processor's temperature."
+            case .compress: "Drop files to compress, convert, resize or crop them; compressing new screenshots by itself."
             case .awake: "A timer, and how long is left."
             case .clicker: "Its speed, its keys and a switch."
             case .fan: "Speed, and automatic or your own."
@@ -70,6 +72,7 @@ final class PanelLayoutStore {
             case .disk: "internaldrive"
             case .network: "arrow.up.arrow.down"
             case .temperature: "thermometer.medium"
+            case .compress: ModuleID.converter.symbol
             case .awake: ModuleID.awake.symbol
             case .clicker: ModuleID.clicker.symbol
             case .fan: "fan"
@@ -83,7 +86,7 @@ final class PanelLayoutStore {
             switch self {
             case .battery: [.wide, .small]
             case .cpu, .memory, .gpu, .disk, .network, .temperature: [.small, .wide]
-            case .devices, .awake, .clicker, .fan, .sound, .tools: [.wide]
+            case .devices, .compress, .awake, .clicker, .fan, .sound, .tools: [.wide]
             }
         }
 
@@ -157,6 +160,7 @@ final class PanelLayoutStore {
         }
         if model.sensors != nil { cards.append(.card(.temperature)) }
         cards += model.plugins.cardPlugins.map { .plugin($0.id) }
+        if model.converter != nil { cards.append(.card(.compress)) }
         if model.awake != nil { cards.append(.card(.awake)) }
         if model.clicker != nil { cards.append(.card(.clicker)) }
         if model.sensors?.hasFans == true { cards.append(.card(.fan)) }

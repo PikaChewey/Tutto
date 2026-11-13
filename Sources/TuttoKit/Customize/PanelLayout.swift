@@ -122,7 +122,7 @@ public struct PanelLayout: Codable, Equatable, Sendable {
 
     /// The panel's cards, top to bottom by default.
     public static let widgetIDs = ["battery", "devices", "cpu", "memory", "gpu", "disk", "network", "temperature",
-                                   "awake", "clicker", "fan", "sound", "tools"]
+                                   "compress", "awake", "clicker", "fan", "sound", "tools"]
     /// Before cards moved freely (a version 1 layout): the panel's parts, its readings and its controls.
     public static let sectionIDs = ["battery", "readings", "controls", "sound", "tools"]
     public static let readingIDs = ["cpu", "memory", "gpu", "disk", "network", "temperature"]
@@ -182,8 +182,8 @@ public struct PanelLayout: Codable, Equatable, Sendable {
         }
         hidden.formUnion(readings.hidden.intersection(readingIDs))
         hidden.formUnion(controls.hidden.intersection(controlIDs))
-        // The devices card didn't exist in version 1: it isn't part of an untouched old layout.
-        return Arrangement(order: order == widgetIDs.filter { $0 != "devices" } ? [] : order, hidden: hidden)
+        // The devices and compress cards didn't exist in version 1: they aren't part of an untouched old layout.
+        return Arrangement(order: order == widgetIDs.filter { $0 != "devices" && $0 != "compress" } ? [] : order, hidden: hidden)
     }
 
     /// What Restore Defaults gives: the default arrangement, with each of your plugins' tiles and

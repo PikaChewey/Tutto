@@ -112,6 +112,57 @@ enum ConvertProbe {
         await attempt("docx → RTF", .convert(.rtf), [word])
         await attempt("srt → VTT", .convert(.vtt), [srt])
         await attempt("srt → Text", .convert(.txt), [srt])
+
+        // Resize and crop (2026-11-13).
+        await attempt("photo resize Half", .resize(.scale(0.5)), [photo])
+        await attempt("photo resize 1280 px", .resize(.longSide(1280)), [photo])
+        await attempt("sideways resize Half (upright?)", .resize(.scale(0.5)), [rotated])
+        await attempt("photo resize 9000 px (refused)", .resize(.longSide(9000)), [photo])
+        await attempt("photo crop Square", .crop(.aspect(1, 1)), [photo])
+        await attempt("photo crop 9:16", .crop(.aspect(9, 16)), [photo])
+        await attempt("sideways crop 16:9 (upright?)", .crop(.aspect(16, 9)), [rotated])
+        await attempt("photo crop 1080×1080", .crop(.size(1080, 1080)), [photo])
+        await attempt("screenshot crop 16:9", .crop(.aspect(16, 9)), [screenshot])
+        await attempt("pdf crop 9:16", .crop(.aspect(9, 16)), [pdf])
+        await attempt("video resize Half", .resize(.scale(0.5)), [video])
+        await attempt("video crop Square", .crop(.aspect(1, 1)), [video])
+        await attempt("video crop 9:16", .crop(.aspect(9, 16)), [video])
+        // Into a folder of its own (how compressing by itself writes before the swap).
+        let work = dir.appendingPathComponent("work", isDirectory: true)
+        try? FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+        do {
+            let outputs = try await ConvertEngine.run(.compress, on: [screenshot], settings: CompressionSettings(), into: work) { _ in }
+            say("OK   compress into folder: \(outputs.map { $0.path.replacingOccurrences(of: dir.path, with: "DIR") })")
+        } catch {
+            say("FAIL compress into folder: \(error.localizedDescription)")
+        }
+        // The clipboard's shrink: a screenshot's PNG at 144 dpi, as is and at half.
+        if let data = try? Data(contentsOf: screenshot) {
+            for halve in [false, true] {
+                if let smaller = ConvertEngine.smallerPNG(data, halve: halve) {
+                    let probe = dir.appendingPathComponent("clipboard\(halve ? "-half" : "").png")
+                    try? smaller.write(to: probe)
+                    say("OK   clipboard shrink halve=\(halve): \(bytes(data.count)) → \(bytes(smaller.count)) \(await describe(probe))")
+                } else {
+                    say("FAIL clipboard shrink halve=\(halve)")
+                }
+            }
+        }
+        say("signed pdf? \(PDFSignatures.isSigned(pdf))")
+        // Which clipboards the shrinker takes, on a private pasteboard (never the real one).
+        let board = NSPasteboard(name: NSPasteboard.Name("ca.bryanyao.Tutto.probe"))
+        if let data = try? Data(contentsOf: screenshot) {
+            board.clearContents(); board.setData(data, forType: .png)
+            let alone = ClipboardShrinker.wants(board)
+            board.clearContents(); board.declareTypes([.png, .string], owner: nil); board.setData(data, forType: .png); board.setString("x", forType: .string)
+            let withText = ClipboardShrinker.wants(board)
+            board.clearContents(); board.declareTypes([.tiff, .URL], owner: nil); board.setData(data, forType: .tiff); board.setString("https://a.b", forType: .URL)
+            let withLink = ClipboardShrinker.wants(board)
+            board.clearContents(); board.declareTypes([.png, ClipboardShrinker.marker], owner: nil); board.setData(data, forType: .png); board.setData(Data(), forType: ClipboardShrinker.marker)
+            let marked = ClipboardShrinker.wants(board)
+            say("clipboard wants: png alone=\(alone) png+text=\(withText) tiff+link=\(withLink) marked=\(marked)")
+            board.releaseGlobally()
+        }
         say("done")
     }
 
@@ -163,7 +214,9 @@ enum ConvertProbe {
             let colorModel = p[kCGImagePropertyColorModel] as? String ?? "?"
             return "[\(p[kCGImagePropertyPixelWidth] ?? "?")×\(p[kCGImagePropertyPixelHeight] ?? "?") orient=\(p[kCGImagePropertyOrientation] ?? 1) gps=\(gps) frames=\(frames) model=\(colorModel)]"
         case .pdf:
-            return "[\(PDFDocument(url: url)?.pageCount ?? -1) pages]"
+            let document = PDFDocument(url: url)
+            let box = document?.page(at: 0)?.bounds(for: .cropBox) ?? .zero
+            return "[\(document?.pageCount ?? -1) pages, first page \(Int(box.width))×\(Int(box.height)) pt]"
         case .video, .audio:
             let asset = AVURLAsset(url: url)
             var parts: [String] = []

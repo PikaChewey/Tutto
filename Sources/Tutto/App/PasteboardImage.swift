@@ -14,10 +14,11 @@ enum PasteboardImage {
     @MainActor private static var current: LazyTIFFProvider?
 
     @MainActor
-    static func write(png: Data, to pasteboard: NSPasteboard = .general) {
+    static func write(png: Data, to pasteboard: NSPasteboard = .general, marker: NSPasteboard.PasteboardType? = nil) {
         let provider = LazyTIFFProvider(png: png)
         let item = NSPasteboardItem()
         item.setData(png, forType: .png)
+        if let marker { item.setData(Data(), forType: marker) }
         item.setDataProvider(provider, forTypes: [.tiff])
         pasteboard.clearContents()
         pasteboard.writeObjects([item])

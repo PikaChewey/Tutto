@@ -153,6 +153,18 @@ final class ClipboardModule: ModuleController {
         guard count != lastChangeCount else { return }
         lastChangeCount = count
         if count == ownChangeCount { return }
+        // A picture copied alone is made smaller first (Convert › Compress by itself); the history
+        // records it when that's done.
+        if let converter = model?.converter, converter.clipboardChanged() { return }
+        guard !isPaused, store != nil else { return }
+        capture(pasteboard)
+    }
+
+    /// Records what's on the clipboard now, even if it was seen already (after the converter made
+    /// a copied picture smaller, or left it as it was).
+    func recapture() {
+        let pasteboard = NSPasteboard.general
+        lastChangeCount = pasteboard.changeCount
         guard !isPaused, store != nil else { return }
         capture(pasteboard)
     }
