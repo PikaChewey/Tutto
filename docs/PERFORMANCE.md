@@ -17,7 +17,7 @@ Tools: `scripts/measure.sh` (CPU % = CPU-time delta from `ps` over wall time; fo
 | PERF-7 | Hotkey → overlay ≤ 200 ms; mouse-up → clipboard ≤ 150 ms | display capture **57–97 ms**; shortcut → overlay on screen **60–121 ms**; mouse-up → clipboard/editor **0–72 ms** (3 live runs, `os_log` timings) | ✅ |
 | PERF-8 | App bundle ≤ 15 MB | **8.0 MB** (release, arm64, build 137 with themes and plugins; 6.7 MB after the optimization pass, before them) | ✅ |
 | Idle, build 140 (2026-11-11 00:51, Bryan away, no input through the window, Tutto up 1 h, agents' session on) | 60 s, `idle_budget.py` | **0.06 %** CPU, **0.02** wake-ups/s, energy **0.06**, footprint **67 MB** | ✅ CPU, wake-ups, energy; ⚠️ footprint over 60 MB after an hour of use (PERF-3) |
-| Panel, build 140 (same run) | 10 open/close cycles (System Events) | 0–0.01 s of CPU per 3 s open; **0.07 %** in the 30 s after closing; footprint 67 → 75 MB | ✅ CPU; growth being checked with two more rounds |
+| Panel, build 140 (same run) | 10 open/close cycles (System Events) | 0–0.01 s of CPU per 3 s open; **0.07 %** in the 30 s after closing; footprint 67 → 75 MB | ✅ CPU; no leak: two more rounds of 10 cycles at 01:05 went 61 → 66 → 67 MB, levelling off (one-time caches after an hour closed) |
 
 ## Optimization pass (2026-11-10, builds 125 → 127)
 
