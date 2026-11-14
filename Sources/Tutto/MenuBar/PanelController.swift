@@ -57,6 +57,8 @@ final class PanelController: NSObject {
         didSet { if PanelDrag.shared.files != draggingFiles { PanelDrag.shared.files = draggingFiles } }
     }
     private let iconDrop = StatusIconDrop()
+    /// The panel's height as drawn; the window under it is taller and clear.
+    private var contentHeight: CGFloat = 0
 
     var isOpen: Bool { panel?.isVisible == true }
     /// The icon's button (the panel opens under it; the notch check looks at its window).
@@ -136,20 +138,37 @@ final class PanelController: NSObject {
         panel.alphaValue = 0
         // The window is on screen (clear) before the glass is laid out in it, as on the glass stage.
         panel.orderFrontRegardless()
-        let host = PanelHost(rootView: AnyView(MenuPanel(model: AppModel.shared).modifier(PanelChrome())))
-        host.sizingOptions = [.intrinsicContentSize]
-        host.onResize = { [weak panel, weak host] in
-            guard let panel, let host else { return }
-            let size = host.fittingSize
-            guard size.height > 0 else { return }
-            panel.setFrame(NSRect(x: panel.frame.minX, y: 0, width: width, height: size.height), display: true)
-        }
-        panel.contentView = host
+        // The window never changes size while it's open (Bryan, 2026-11-14: opening Levels made the
+        // whole frame shake). It followed the panel's height, and SwiftUI resized it on every frame
+        // of a card opening or closing, a frame behind what it drew, so the bottom edge and the
+        // footer shook and the window crept for half a second after; a resize in the middle of the
+        // animation still nudged the content. Now it's as tall as the panel can be, clear, with the
+        // panel pinned to its top; a click in the clear part counts as outside.
+        let height = max(top - visible.minY - 8, 200)
+        panel.setFrame(NSRect(x: x, y: 0, width: width, height: height), display: false)
+        contentHeight = 0
+        let root = MenuPanel(model: AppModel.shared)
+            .modifier(PanelChrome())
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { [weak self] height in
+                guard let self else { return }
+                self.contentHeight = height
+                // Classic: the window's shadow follows what's drawn.
+                if let panel = self.panel, panel.hasShadow { panel.invalidateShadow() }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        let host = NSHostingView(rootView: AnyView(root))
+        host.sizingOptions = []
+        // Inside a plain view: a hosting view that is the window's content view animates the
+        // window's size itself, frame by frame (NSHostingView.updateAnimatedWindowSize).
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        host.frame = container.bounds
+        host.autoresizingMask = [.width, .height]
+        container.addSubview(host)
+        panel.contentView = container
         self.panel = panel
         PanelWindow.current = panel
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                host.onResize?()
                 panel.makeKey()
                 // Opening is instant in feel (it's opened many times a day): a 0.1 s fade, nothing more.
                 NSAnimationContext.runAnimationGroup { context in
@@ -204,6 +223,11 @@ final class PanelController: NSObject {
                     return event
                 }
                 guard let window = event.window else { return event }
+                // The clear room under the panel while it grows counts as outside it.
+                if window === panel, event.type != .keyDown, !self.contentFrame(of: panel).contains(NSEvent.mouseLocation) {
+                    self.close()
+                    return nil
+                }
                 if window === panel || window === button.window || window.level.rawValue >= NSWindow.Level.popUpMenu.rawValue + 1
                     || window.className.contains("Menu") {
                     return event
@@ -248,11 +272,17 @@ final class PanelController: NSObject {
             } else if draggingFiles {
                 draggingFiles = false
                 // Dropped somewhere else: done with the panel. On the panel: it stays, to show the work.
-                if !panel.frame.contains(NSEvent.mouseLocation) { close() }
+                if !contentFrame(of: panel).contains(NSEvent.mouseLocation) { close() }
             }
         default:
             close()
         }
+    }
+
+    /// Where the panel is drawn on screen (the window can be taller for a moment).
+    private func contentFrame(of panel: NSWindow) -> NSRect {
+        let height = contentHeight > 0 ? min(contentHeight, panel.frame.height) : panel.frame.height
+        return NSRect(x: panel.frame.minX, y: panel.frame.maxY - height, width: panel.frame.width, height: height)
     }
 
     private func stopWatching() {
@@ -304,18 +334,6 @@ private struct PanelMaterial: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
-}
-
-/// The panel's SwiftUI, telling the window when its height changes.
-private final class PanelHost: NSHostingView<AnyView> {
-    var onResize: (() -> Void)?
-
-    override func invalidateIntrinsicContentSize() {
-        super.invalidateIntrinsicContentSize()
-        DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated { self?.onResize?() }
-        }
-    }
 }
 
 /// The label inside the icon's button: lets clicks through to the button and tells the item
@@ -399,3 +417,4 @@ private final class StatusIconDrop: NSObject, NSWindowDelegate, NSDraggingDestin
         (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
     }
 }
+

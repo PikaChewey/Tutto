@@ -1641,6 +1641,11 @@ struct SoundCard: View {
     private static let capacity = 8
     /// From one icon's start to the next.
     private static let iconPitch: CGFloat = 34.5
+    /// Strip and levels: the old one goes quickly, the new one comes in as the card makes room,
+    /// so the two never show on top of each other.
+    private static let swap: AnyTransition = .asymmetric(
+        insertion: .opacity.animation(.easeOut(duration: 0.18).delay(0.08)),
+        removal: .opacity.animation(.easeOut(duration: 0.07)))
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1679,7 +1684,7 @@ struct SoundCard: View {
                     .frame(height: 34)
             } else if showLevels {
                 // Levels take the strip's place (a mixer under the strip is what made the panel long).
-                levels.transition(.opacity.combined(with: .offset(y: -4)))
+                levels.transition(Self.swap)
             } else {
                 let apps = visible
                 HStack(spacing: 0) {
@@ -1720,6 +1725,7 @@ struct SoundCard: View {
                 // inside its square at this size: pull the row left so the artwork lines up with the text.
                 .padding(.leading, -5)
                 .zIndex(1)
+                .transition(Self.swap)
             }
             if let problem = sound.problem {
                 HStack(spacing: 8) {
@@ -1735,6 +1741,9 @@ struct SoundCard: View {
                 }
             }
         }
+        // While the card grows or shrinks, what's swapping in stays inside it (the levels were drawn
+        // over the tools bar for a few frames); the strip's label may still rise into the title row.
+        .mask(alignment: .top) { Rectangle().padding(.top, -40).padding(.horizontal, -12).padding(.bottom, -5) }
         .panelCard()
         .background(VisibilityReader { visible in
             if visible { sound.begin(); fixOrder(reset: true) } else { sound.end() }
