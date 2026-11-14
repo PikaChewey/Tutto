@@ -52,7 +52,7 @@ private struct SensorsContent: View {
                         .padding(.vertical, 8)
                 }
             }
-            SensorList(readings: sensors.temperatures)
+            SensorList(readings: sensors.temperatures, underHeatPressure: sensors.underHeatPressure)
             Text(TemperatureSensors.mappingDescription + " Sensors macOS reports with impossible values are hidden.")
                 .font(.system(size: 11))
                 .foregroundStyle(Color.ink3)
@@ -190,6 +190,8 @@ private struct FanGlyph: View {
 
 private struct SensorList: View {
     var readings: [TemperatureReading]
+    /// macOS is slowing the Mac to cool it: only then is a hot sensor worth marking.
+    var underHeatPressure = false
 
     var body: some View {
         let groups = Dictionary(grouping: readings, by: \.group)
@@ -208,7 +210,7 @@ private struct SensorList: View {
                                 Spacer()
                                 Text(String(format: "%.1f °C", reading.celsius))
                                     .font(.system(size: 12, weight: .medium).monospacedDigit())
-                                    .foregroundStyle(reading.celsius >= 95 ? Color.alert : Color.ink)
+                                    .foregroundStyle(underHeatPressure && reading.celsius >= 95 ? Color.alert : Color.ink)
                             }
                             .frame(height: 24)
                             .help(reading.name)

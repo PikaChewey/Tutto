@@ -29,13 +29,16 @@ public struct Glance: Equatable, Sendable {
         self.level = level
     }
 
-    /// `cpu` 0…1; `hottest` the hottest temperature sensor in °C; `diskUsed` 0…1.
+    /// `cpu` 0…1; `hottest` the hottest temperature sensor in °C; `heatPressure` macOS's own
+    /// verdict (thermal state serious or critical: it's slowing the Mac to cool it); `diskUsed` 0…1.
+    /// "Running hot" comes only from that verdict: Apple silicon runs its cores at 80–100 °C under
+    /// load by design, so a hot core alone said "running hot" nearly all the time.
     public static func make(battery: BatteryInfo?, cpu: Double, memoryPressure: MemoryPressure?, hottest: Double?,
-                            diskFree: Int64?, diskUsed: Double?) -> Glance {
+                            heatPressure: Bool, diskFree: Int64?, diskUsed: Double?) -> Glance {
         if let battery, !battery.isPluggedIn, battery.percent <= 10 {
             return Glance("Battery low", battery.minutesToEmpty.flatMap(duration).map { "\($0) left" } ?? "\(battery.percent)%", level: .alert)
         }
-        if let hottest, hottest >= 95 { return Glance("Running hot", "\(Int(hottest.rounded()))°", level: .alert) }
+        if heatPressure { return Glance("Running hot", hottest.map { "\(Int($0.rounded()))°" } ?? "Slowing to cool", level: .alert) }
         if memoryPressure == .critical { return Glance("Memory is full", "Pressure critical", level: .alert) }
         if let diskUsed, diskUsed >= 0.95 {
             return Glance("Disk almost full", diskFree.map { "\(ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)) free" }, level: .notice)

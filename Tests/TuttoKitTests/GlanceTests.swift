@@ -13,8 +13,9 @@ final class GlanceTests: XCTestCase {
     }
 
     private func glance(_ battery: BatteryInfo?, cpu: Double = 0.2, pressure: MemoryPressure? = .normal, hottest: Double? = 45,
-                        diskUsed: Double? = 0.6) -> Glance {
-        Glance.make(battery: battery, cpu: cpu, memoryPressure: pressure, hottest: hottest, diskFree: 96_000_000_000, diskUsed: diskUsed)
+                        heat: Bool = false, diskUsed: Double? = 0.6) -> Glance {
+        Glance.make(battery: battery, cpu: cpu, memoryPressure: pressure, hottest: hottest, heatPressure: heat,
+                    diskFree: 96_000_000_000, diskUsed: diskUsed)
     }
 
     func testACalmMacSaysItsBatteryState() {
@@ -28,11 +29,19 @@ final class GlanceTests: XCTestCase {
 
     func testProblemsComeFirstInOrder() {
         XCTAssertEqual(glance(battery(8, left: 18), hottest: 99), Glance("Battery low", "18 min left", level: .alert))
-        XCTAssertEqual(glance(battery(8, plugged: true), hottest: 99), Glance("Running hot", "99°", level: .alert))
+        XCTAssertEqual(glance(battery(8, plugged: true), hottest: 99, heat: true), Glance("Running hot", "99°", level: .alert))
         XCTAssertEqual(glance(battery(55), pressure: .critical), Glance("Memory is full", "Pressure critical", level: .alert))
         XCTAssertEqual(glance(battery(55), cpu: 0.95, diskUsed: 0.97).title, "Disk almost full")
         XCTAssertEqual(glance(battery(55, left: 120), pressure: .warning), Glance("On battery", "2 h 0 min left"))
         XCTAssertEqual(glance(battery(55), cpu: 0.91), Glance("Working hard", "CPU 91%", level: .notice))
+    }
+
+    /// Apple silicon runs its cores at 80–100 °C under load with no heat pressure: a hot core alone
+    /// isn't "running hot" (Bryan, 2026-11-13: it "always" said so). Only macOS's own verdict is.
+    func testAHotCoreAloneIsNotRunningHot() {
+        XCTAssertEqual(glance(battery(80, plugged: true), hottest: 99), Glance("On power", "Not charging"))
+        XCTAssertEqual(glance(battery(80, plugged: true), hottest: 72, heat: true), Glance("Running hot", "72°", level: .alert))
+        XCTAssertEqual(glance(battery(80, plugged: true), hottest: nil, heat: true), Glance("Running hot", "Slowing to cool", level: .alert))
     }
 
     func testNoEstimateMeansNoMadeUpTime() {

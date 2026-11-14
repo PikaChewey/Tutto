@@ -68,10 +68,11 @@ struct MenuPanel: View {
             }
             // The cards in the order and sizes set on the Customize page. They grow with their
             // content up to the screen's height, then scroll between the header and the footer.
-            if preview {
+            if preview && ThinScrollStage.limit == nil {
                 cards
             } else {
-                ScrollView(.vertical) { cards }
+                // Its scroll line runs in the margin, along the frame, never over a card.
+                ThinScrollArea(lane: PanelGrid.outer) { cards }
                     .scrollBounceBehavior(.basedOnSize)
                     .frame(maxHeight: Self.cardsHeightLimit)
                     .fixedSize(horizontal: false, vertical: true)
@@ -113,6 +114,7 @@ struct MenuPanel: View {
 
     /// The screen's usable height, less the header, the footer and a margin.
     @MainActor static var cardsHeightLimit: CGFloat {
+        if let limit = ThinScrollStage.limit { return limit }
         let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 900
         return max(visible - 24 - 104, 320)
     }
@@ -419,12 +421,9 @@ private extension View {
     }
 
     /// A hover background that reaches `x` and `y` past the content, so the content stays on the grid.
+    /// It's the tools bar's lens (raised glass on its spring), so every hover on the panel feels the same.
     func hoverBackground(_ on: Bool, x: CGFloat = 8, y: CGFloat = 0) -> some View {
-        padding(.horizontal, x)
-            .padding(.vertical, y)
-            .background(RoundedRectangle(cornerRadius: Radius.of(8), style: .continuous).fill(on ? Color.ink.opacity(0.08) : .clear))
-            .padding(.horizontal, -x)
-            .padding(.vertical, -y)
+        modifier(LensBackground(on: on, shape: RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous), x: x, y: y))
     }
 }
 
@@ -441,9 +440,9 @@ private struct QuietLink: View {
                 .font(.system(size: size, weight: .medium))
                 .foregroundStyle(hovering ? Color.ink : Color.ink3)
                 .contentShape(Rectangle())
+                .lensHover(x: 7, y: 3, stageKey: title, hovering: { hovering = $0 })
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .buttonStyle(PressStyle())
     }
 }
 
@@ -502,7 +501,9 @@ private struct PanelHeader: View {
                 .accessibilityHidden(true)
             if let system = model.system {
                 VerdictLine(glance: Glance.make(battery: system.battery, cpu: system.cpu.total, memoryPressure: system.memory?.pressure,
-                                                hottest: model.sensors?.summary?.hottest, diskFree: system.rootVolume?.available,
+                                                hottest: model.sensors?.summary?.hottest,
+                                                heatPressure: HeatPressure.now,
+                                                diskFree: system.rootVolume?.available,
                                                 diskUsed: system.rootVolume?.usedFraction))
             } else {
                 Text("Tutto")
@@ -760,7 +761,10 @@ private struct ReadingTile: View {
                 Sparkline(values: system.networkHistory, color: .themeAccent, stretch: true)
             }
         case .temperature:
-            let hot = (temperature ?? 0) >= 95
+            // Red only when macOS itself is slowing the Mac to cool it, never for a number: Apple
+            // silicon runs its cores at 80–100 °C under load with no heat pressure (Bryan,
+            // 2026-11-13: "why does the temperature always say it's running hot").
+            let hot = sensors?.underHeatPressure ?? false
             StatTile(caption: "Temp", value: temperature.map { "\(Int($0.rounded()))" } ?? "—", unit: temperature == nil ? "" : "°C",
                      detail: fanText, alert: hot, page: .sensors, help: temperatureHelp,
                      spokenName: "Temperature",
@@ -805,7 +809,10 @@ private struct ReadingTile: View {
 
     private var temperatureHelp: String {
         guard temperature != nil else { return "No temperature sensor could be read on this Mac" }
-        return ["Processor temperature", sensors?.summary?.gpuAverage.map { "graphics \(Int($0.rounded())) °C" } ?? ""]
+        let verdict = (sensors?.underHeatPressure ?? false)
+            ? "macOS is slowing the Mac to cool it"
+            : "macOS: no heat pressure (80–100 °C is normal for Apple silicon under load)"
+        return ["Processor, the average of its cores", sensors?.summary?.gpuAverage.map { "graphics \(Int($0.rounded())) °C" } ?? "", verdict]
             .filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
@@ -837,6 +844,7 @@ private struct StatTile<Graph: View>: View {
     @ViewBuilder var graph: Graph
     @State private var hovering = false
     @Environment(\.compactTile) private var compact
+    private var lifted: Bool { hovering || LensStage.on(caption) }
 
     var body: some View {
         if compact { compactBody } else { fullBody }
@@ -876,10 +884,11 @@ private struct StatTile<Graph: View>: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(CardSurface(radius: 10, hovering: hovering))
+            .background(CardSurface(radius: 10, hovering: lifted))
+            .modifier(CardLift(on: lifted, radius: 10))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle())
         .onHover { hovering = $0 }
         .help(detail.isEmpty ? help : "\(help) · \(detail)")
         .accessibilityLabel(spokenName)
@@ -934,10 +943,11 @@ private struct StatTile<Graph: View>: View {
             .padding(.horizontal, PanelGrid.inset)
             .padding(.vertical, 9)
             .frame(width: wide ? PanelGrid.tile * 2 + PanelGrid.gap : PanelGrid.tile, alignment: .leading)
-            .background(CardSurface(radius: 10, hovering: hovering))
+            .background(CardSurface(radius: 10, hovering: lifted))
+            .modifier(CardLift(on: lifted, radius: 10))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle())
         .onHover { hovering = $0 }
         .help(help)
         .accessibilityLabel(spokenName)
@@ -1057,11 +1067,8 @@ struct ClickerRow: View {
                         .rotationEffect(.degrees(expanded ? 180 : 0))
                 }
                 // The hover reaches past the text, so nothing moves.
-                .padding(.horizontal, 6)
                 .frame(height: 26)
-                .background(RoundedRectangle(cornerRadius: Radius.of(8), style: .continuous)
-                    .fill(Color.ink.opacity(hovering ? 0.08 : 0)))
-                .padding(.horizontal, -6)
+                .hoverBackground(hovering, x: 6)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -1268,10 +1275,17 @@ private struct MenuValue: View {
         .padding(.leading, 9)
         .padding(.trailing, 7)
         .frame(height: 24)
-        .background(RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink.opacity(hovering ? 0.12 : 0.07)))
+        .background {
+            if ThemeStore.liquid {
+                LiquidFill(shape: RoundedRectangle(cornerRadius: Radius.of(8), style: .continuous), raise: hovering ? 1.6 : 1, hovering: hovering)
+            } else {
+                RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink.opacity(hovering ? 0.12 : 0.07))
+            }
+        }
+        .scaleEffect(hovering ? Motion.textSwell : 1)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .animation(Motion.micro, value: hovering)
+        .animation(Motion.lens, value: hovering)
     }
 }
 
@@ -1462,6 +1476,7 @@ private struct TimeChip: View {
     var help: String
     var action: () -> Void
     @State private var hovering = false
+    private var lit: Bool { hovering || LensStage.on(title) }
 
     var body: some View {
         Button(action: action) {
@@ -1472,17 +1487,18 @@ private struct TimeChip: View {
                 .frame(height: 24)
                 .background {
                     if ThemeStore.liquid {
-                        LiquidFill(shape: Capsule(), hovering: hovering)
+                        LiquidFill(shape: Capsule(), raise: lit ? 1.6 : 1, hovering: lit)
                     } else {
-                        RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink.opacity(hovering ? 0.12 : 0.07))
+                        RoundedRectangle(cornerRadius: Radius.of(7), style: .continuous).fill(Color.ink.opacity(lit ? 0.12 : 0.07))
                     }
                 }
+                .scaleEffect(lit ? Motion.textSwell : 1)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .fixedSize()
         .onHover { hovering = $0 }
-        .animation(Motion.micro, value: hovering)
+        .animation(Motion.lens, value: hovering)
         .help(help)
     }
 }
@@ -1607,6 +1623,7 @@ struct SoundCard: View {
     /// This panel's state (a stored setting changes the view outside the animation, so the levels
     /// snapped open; this animates, and the setting follows it).
     @State private var levelsOpen: Bool?
+    @State private var levelsHover = false
     private var showLevels: Bool {
         get { SoundCard.startsShowingLevels || (levelsOpen ?? keptLevels) }
         nonmutating set { levelsOpen = newValue }
@@ -1638,10 +1655,11 @@ struct SoundCard: View {
                                     .font(.system(size: 8.5, weight: .bold))
                                     .rotationEffect(.degrees(showLevels ? 180 : 0))
                             }
-                            .foregroundStyle(Color.ink3)
+                            .foregroundStyle(levelsHover ? Color.ink : Color.ink3)
                             .contentShape(Rectangle())
+                            .lensHover(x: 7, y: 3, stageKey: "Levels", hovering: { levelsHover = $0 })
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(PressStyle())
                         .help(showLevels ? "Hide the levels" : "Each app's level, with boost past 100 %")
                     }
                 }
@@ -1658,7 +1676,7 @@ struct SoundCard: View {
                 HStack(spacing: 0) {
                     ForEach(visible) { app in
                         SoundAppButton(app: app, muted: sound.isMuted(app.bundleID), usingAudio: sound.usingAudio.contains(app.bundleID),
-                                       level: sound.volumes[app.bundleID], size: 30) {
+                                       level: sound.volumes[app.bundleID], size: 30, lens: true) {
                             withAnimation(Motion.micro) { sound.toggle(app) }
                         }
                         .frame(width: 34.5, alignment: .leading)
@@ -1669,6 +1687,8 @@ struct SoundCard: View {
                 // Each button is 2 pt wider than its icon, and an app icon's artwork sits about 3 pt
                 // inside its square at this size: pull the row left so the artwork lines up with the text.
                 .padding(.leading, -5)
+                // One lens slides along the icons, as on the tools bar.
+                .lensScope()
             }
             if let problem = sound.problem {
                 HStack(spacing: 8) {
@@ -1708,8 +1728,7 @@ struct SoundCard: View {
         let apps = ordered
         Group {
             if apps.count > Self.levelRows {
-                ScrollView(.vertical) { levelList(apps) }
-                    .scrollIndicators(.automatic)
+                ThinScrollArea(lane: 10, edgeInset: 2) { levelList(apps) }
                     .frame(height: CGFloat(Self.levelRows) * Self.levelRowHeight + 4)
             } else {
                 levelList(apps)
@@ -2317,8 +2336,9 @@ private struct PluginCard: View {
                 click(plugin, state.content)
             } label: {
                 card(plugin, state)
+                    .modifier(CardLift(on: hovering, radius: 10))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressStyle())
             .onHover { hovering = $0 }
             .help(state.failure.map { "\(plugin.name) failed: \($0)" } ?? help(plugin, state.content))
             .accessibilityLabel(state.content?.title ?? plugin.name)
@@ -2686,7 +2706,7 @@ private struct PanelFooter: View {
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(Color.ink)
                     .frame(height: 26)
-                    .hoverBackground(hovering)
+                    .hoverBackground(hovering || LensStage.on("Open Tutto"))
                     .contentShape(Rectangle())
             }
             .buttonStyle(PressStyle())
@@ -2724,6 +2744,7 @@ private struct PanelFooter: View {
                     .foregroundStyle(Color.ink2)
                     .frame(width: 26, height: 26)
                     .contentShape(Rectangle())
+                    .lensHover(cornerRadius: 9, x: 0, y: 0, swell: Motion.iconSwell, stageKey: "more")
             }
             .menuStyle(.button)
             .buttonStyle(.plain)

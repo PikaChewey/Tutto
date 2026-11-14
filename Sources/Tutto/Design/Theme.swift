@@ -150,19 +150,29 @@ struct InkSegmented<Value: Hashable>: View {
     /// Spoken names, when the visible titles are abbreviations.
     var spoken: (Value) -> String? = { _ in nil }
     @Namespace private var pill
+    @State private var hovered: Value?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(options, id: \.value) { option in
                 let selected = option.value == selection
                 Button {
-                    withAnimation(Motion.micro) { selection = option.value }
+                    // The thumb slides on the tools bar's spring.
+                    withAnimation(Motion.lens(reduceMotion: reduceMotion)) { selection = option.value }
                 } label: {
                     Text(option.title)
                         .font(.system(size: 11, weight: selected && ThemeStore.liquid ? .semibold : .medium))
-                        .foregroundStyle(selected ? (ThemeStore.liquid ? Color.ink : Color.paper) : Color.ink2)
+                        .foregroundStyle(selected ? (ThemeStore.liquid ? Color.ink : Color.paper) : (hovered == option.value ? Color.ink : Color.ink2))
                         .padding(.horizontal, 9)
                         .frame(height: 22)
+                        .background {
+                            // An option under the pointer: a faint lens, under the thumb's height.
+                            if !selected, hovered == option.value || LensStage.on(option.title) {
+                                LensPlatter(shape: Capsule(), raise: 0.7)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                            }
+                        }
                         .background {
                             if selected {
                                 if ThemeStore.liquid {
@@ -177,6 +187,10 @@ struct InkSegmented<Value: Hashable>: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .onHover { inside in
+                    if inside { hovered = option.value } else if hovered == option.value { hovered = nil }
+                }
+                .animation(Motion.lens(reduceMotion: reduceMotion), value: hovered)
                 .modifier(PerOptionHelp(text: help?(option.value)))
                 .accessibilityLabel(spoken(option.value) ?? option.title)
                 .accessibilityAddTraits(selected ? .isSelected : [])

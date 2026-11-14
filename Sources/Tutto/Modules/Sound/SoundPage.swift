@@ -21,6 +21,8 @@ struct SoundAppButton: View {
     /// The app's level when it isn't 100 % (a thin ring shows it).
     var level: Double? = nil
     var size: CGFloat = 20
+    /// On the panel's strip: the tools bar's lens behind it (one lens along the row).
+    var lens = false
     var action: () -> Void
     @State private var hovering = false
 
@@ -50,12 +52,13 @@ struct SoundAppButton: View {
                             .frame(width: size + 5, height: size + 5)
                     }
                 }
-                .scaleEffect(hovering ? 1.06 : 1)
+                .scaleEffect(hovering && !lens ? 1.06 : 1)
                 .frame(width: size + 4, height: size + 4)
                 .contentShape(Rectangle())
+                .modifier(SoundLens(on: lens, id: app.bundleID, hovering: $hovering))
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .buttonStyle(PressStyle())
+        .onHover { if !lens { hovering = $0 } }
         .animation(Motion.micro, value: hovering)
         .animation(Motion.micro, value: muted)
         .help(muted ? "Unmute \(app.name)" : "Mute \(app.name)" + (level.map { " · level \(VolumeCurve.label($0))" } ?? ""))
@@ -73,6 +76,21 @@ struct SoundAppButton: View {
             .overlay(Circle().strokeBorder(Color.paper.opacity(0.9), lineWidth: 1))
             .offset(x: 3, y: 3)
             .transition(.scale.combined(with: .opacity))
+    }
+}
+
+/// The strip's lens, only on the panel.
+private struct SoundLens: ViewModifier {
+    var on: Bool
+    var id: String
+    @Binding var hovering: Bool
+
+    func body(content: Content) -> some View {
+        if on {
+            content.lensHover(id: id, cornerRadius: 9, x: 1, y: 1, swell: Motion.iconSwell, stageKey: id, hovering: { hovering = $0 })
+        } else {
+            content
+        }
     }
 }
 

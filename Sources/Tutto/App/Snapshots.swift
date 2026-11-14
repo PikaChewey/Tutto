@@ -68,6 +68,13 @@ enum Snapshots {
         if only.contains("compress-demo") { model.converter?.previewDemo() }
         // `convert-open`: the Convert & Compress card open (it starts closed).
         if only.contains("convert-open") { ConvertCard.startsOpen = true }
+        if only.contains("scroll-line") { ThinScrollStage.shown = true }
+        if only.contains("scroll-wide") { ThinScrollStage.shown = true; ThinScrollStage.wide = true }
+        if only.contains("scroll-mid") { ThinScrollStage.middle = true }
+        if let hover = only.first(where: { $0.hasPrefix("hover:") }) {
+            LensStage.forced = Set(hover.dropFirst(6).split(separator: ",").map(String.init))
+        }
+        if let limit = only.first(where: { $0.hasPrefix("scroll-limit:") }).flatMap({ Double($0.dropFirst(13)) }) { ThinScrollStage.limit = limit }
         // `convert-drag`: as while files are dragged over the panel (the card opens, its actions dashed).
         if only.contains("convert-drag") { PanelDrag.shared.files = true }
         ToolsCard.startsHovered = only.first(where: { $0.hasPrefix("tool-hover:") }).map { String($0.dropFirst(11)) }

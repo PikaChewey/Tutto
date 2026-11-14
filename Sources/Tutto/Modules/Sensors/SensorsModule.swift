@@ -17,12 +17,26 @@ import TuttoKit
 
 private let fanLog = Logger(subsystem: "ca.bryanyao.Tutto", category: "fans")
 
+/// macOS's verdict on heat, read live (a property read, no work): serious or critical means it's
+/// slowing the Mac to cool it.
+enum HeatPressure {
+    static var now: Bool {
+        let state = ProcessInfo.processInfo.thermalState
+        return state == .serious || state == .critical
+    }
+}
+
 @MainActor
 @Observable
 final class SensorsModule {
     private(set) var temperatures: [TemperatureReading] = []
     private(set) var summary: TemperatureSummary?
     private(set) var fans: [FanReading] = []
+    /// macOS's own verdict on heat: only `.serious` and `.critical` mean the Mac is slowing itself
+    /// to cool down. Apple silicon's cores sit at 80–100 °C under load by design, so a number alone
+    /// never says "too hot".
+    private(set) var thermalState = ProcessInfo.processInfo.thermalState
+    var underHeatPressure: Bool { HeatPressure.now }
     /// What the user asked each fan to do (nil = automatic).
     private(set) var commands: [Int: FanCommand] = [:]
     private(set) var helperStatus: SMAppService.Status = .notRegistered
@@ -88,6 +102,7 @@ final class SensorsModule {
         temperatures = TemperatureSensors.read()
         summary = TemperatureSummary(temperatures)
         fans = Fans.read()
+        thermalState = ProcessInfo.processInfo.thermalState
     }
 
     // MARK: Helper
