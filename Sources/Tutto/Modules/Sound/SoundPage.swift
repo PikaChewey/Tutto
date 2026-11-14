@@ -14,6 +14,11 @@ import TuttoKit
 
 /// One app icon. Muted: dimmed and grey with an ink speaker-slash badge. Playing: a speaker
 /// badge in the accent colour. (Not a dot under it: that's the Dock's sign for a running app.)
+///
+/// Under the pointer it shows what a click will do, not a lens (Bryan, 2026-11-13: the tools bar's
+/// glass and swell on app icons "don't make sense"; an app icon is its own tile, and a click mutes
+/// it): an app that plays loses some colour and gets the mute badge, a muted one gets its colour
+/// back and the speaker badge. Right after a click it shows the new state until the pointer leaves.
 struct SoundAppButton: View {
     var app: SoundApp
     var muted: Bool
@@ -21,21 +26,34 @@ struct SoundAppButton: View {
     /// The app's level when it isn't 100 % (a thin ring shows it).
     var level: Double? = nil
     var size: CGFloat = 20
-    /// On the panel's strip: the tools bar's lens behind it (one lens along the row).
-    var lens = false
+    /// The pointer is on it (kept by the strip, which also floats the app's name above it).
+    var previewing: Bool? = nil
+    var hover: ((Bool) -> Void)? = nil
     var action: () -> Void
     @State private var hovering = false
+    @State private var toggled = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// A click's result, shown while the pointer is on it.
+    private var preview: Bool { (previewing ?? (hovering && !toggled)) }
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            toggled = true
+            action()
+        } label: {
             Image(nsImage: app.icon)
                 .resizable()
                 .interpolation(.high)
                 .frame(width: size, height: size)
-                .saturation(muted ? 0 : 1)
-                .opacity(muted ? 0.4 : 1)
+                .saturation(muted ? (preview ? 1 : 0) : (preview ? 0.35 : 1))
+                .opacity(muted ? (preview ? 0.85 : 0.4) : (preview ? 0.8 : 1))
                 .overlay(alignment: .bottomTrailing) {
-                    if muted {
+                    if preview {
+                        // What a click does: mute it, or let it play again.
+                        badge(muted ? "speaker.wave.2.fill" : "speaker.slash.fill", fill: .ink)
+                            .id(muted ? "unmute" : "mute")
+                    } else if muted {
                         badge("speaker.slash.fill", fill: .ink)
                     } else if usingAudio {
                         badge("speaker.wave.2.fill", fill: .themeAccent)
@@ -52,14 +70,16 @@ struct SoundAppButton: View {
                             .frame(width: size + 5, height: size + 5)
                     }
                 }
-                .scaleEffect(hovering && !lens ? 1.06 : 1)
                 .frame(width: size + 4, height: size + 4)
                 .contentShape(Rectangle())
-                .modifier(SoundLens(on: lens, id: app.bundleID, hovering: $hovering))
         }
         .buttonStyle(PressStyle())
-        .onHover { if !lens { hovering = $0 } }
-        .animation(Motion.micro, value: hovering)
+        .onHover { inside in
+            hovering = inside
+            if !inside { toggled = false }
+            hover?(inside)
+        }
+        .animation(reduceMotion ? .easeOut(duration: 0.1) : Motion.lens, value: preview)
         .animation(Motion.micro, value: muted)
         .help(muted ? "Unmute \(app.name)" : "Mute \(app.name)" + (level.map { " · level \(VolumeCurve.label($0))" } ?? ""))
         .accessibilityLabel(app.name)
@@ -75,22 +95,7 @@ struct SoundAppButton: View {
             .background(Circle().fill(fill))
             .overlay(Circle().strokeBorder(Color.paper.opacity(0.9), lineWidth: 1))
             .offset(x: 3, y: 3)
-            .transition(.scale.combined(with: .opacity))
-    }
-}
-
-/// The strip's lens, only on the panel.
-private struct SoundLens: ViewModifier {
-    var on: Bool
-    var id: String
-    @Binding var hovering: Bool
-
-    func body(content: Content) -> some View {
-        if on {
-            content.lensHover(id: id, cornerRadius: 9, x: 1, y: 1, swell: Motion.iconSwell, stageKey: id, hovering: { hovering = $0 })
-        } else {
-            content
-        }
+            .transition(.scale(scale: 0.5).combined(with: .opacity))
     }
 }
 

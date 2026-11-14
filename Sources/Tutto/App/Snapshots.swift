@@ -88,6 +88,9 @@ enum Snapshots {
             if ids.count > 1 { levels[ids[1]] = 45 }
             sound.previewVolumes(levels)
         }
+        if let ids = only.first(where: { $0.hasPrefix("sound-muted:") }), let sound = model.sound {
+            sound.previewMuted(Set(ids.dropFirst(12).split(separator: ",").map(String.init)))
+        }
         // `clicker-long`: the longest labels, a time limit, and a run 18 s into it.
         if only.contains("clicker-long") {
             model.clicker?.previewSettings {

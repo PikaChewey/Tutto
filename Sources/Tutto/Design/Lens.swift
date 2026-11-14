@@ -6,8 +6,9 @@
 //  hover over and smooth glass feel ... of the small mini bar icons ... but the rest of it doesn't
 //  have the same hover over effects"). Under the pointer a raised piece of glass, the lens, comes up
 //  behind a control on the tools bar's spring, and what's on it swells a little, as if magnified; a
-//  press pushes it in. In a row of icons (a `LensScope`) one lens slides from icon to icon instead.
-//  Cards that open a page lift: the rim brightens, a sheen comes over them, they grow 2 %.
+//  press pushes it in. Not on app icons: an app icon is its own tile, so the Sound strip's icons
+//  show what a click does instead (SoundAppButton). Cards that open a page lift: the rim brightens,
+//  a sheen comes over them, they grow 2 %.
 //  Classic look: the same motion on a faint ink wash. Nothing animates until the pointer moves.
 //
 
@@ -43,40 +44,11 @@ struct LensPlatter<S: InsettableShape>: View {
     }
 }
 
-// MARK: - A row that shares one lens
-
-struct LensScopeContext {
-    let namespace: Namespace.ID
-    let hovered: Binding<AnyHashable?>
-}
-
-private struct LensScopeKey: EnvironmentKey {
-    static let defaultValue: LensScopeContext? = nil
-}
-
-extension EnvironmentValues {
-    var lensScope: LensScopeContext? {
-        get { self[LensScopeKey.self] }
-        set { self[LensScopeKey.self] = newValue }
-    }
-}
-
-/// One lens for the controls inside: it slides between them, as on the tools bar.
-struct LensScope: ViewModifier {
-    @Namespace private var namespace
-    @State private var hovered: AnyHashable?
-
-    func body(content: Content) -> some View {
-        content.environment(\.lensScope, LensScopeContext(namespace: namespace, hovered: $hovered))
-    }
-}
-
 // MARK: - The hover
 
 /// The lens behind a control while the pointer is on it. `x` and `y` reach past the content, so the
 /// content stays on the grid.
 struct LensHover<S: InsettableShape>: ViewModifier {
-    var id: AnyHashable?
     var shape: S
     var x: CGFloat
     var y: CGFloat
@@ -85,15 +57,9 @@ struct LensHover<S: InsettableShape>: ViewModifier {
     var stageKey: String?
 
     @State private var local = false
-    @Namespace private var own
-    @Environment(\.lensScope) private var scope
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var on: Bool {
-        if LensStage.on(stageKey) { return true }
-        if let scope, let id { return scope.hovered.wrappedValue == id }
-        return local
-    }
+    private var on: Bool { local || LensStage.on(stageKey) }
 
     func body(content: Content) -> some View {
         content
@@ -103,7 +69,6 @@ struct LensHover<S: InsettableShape>: ViewModifier {
             .background {
                 if on {
                     LensPlatter(shape: shape)
-                        .matchedGeometryEffect(id: "lens", in: scope?.namespace ?? own)
                         .transition(.opacity.combined(with: .scale(scale: 0.92)))
                 }
             }
@@ -111,11 +76,7 @@ struct LensHover<S: InsettableShape>: ViewModifier {
             .padding(.vertical, -y)
             .animation(Motion.lens(reduceMotion: reduceMotion), value: on)
             .onHover { inside in
-                if let scope, let id {
-                    if inside { scope.hovered.wrappedValue = id } else if scope.hovered.wrappedValue == id { scope.hovered.wrappedValue = nil }
-                } else {
-                    local = inside
-                }
+                local = inside
                 hovering?(inside)
             }
     }
@@ -147,19 +108,11 @@ struct LensBackground<S: InsettableShape>: ViewModifier {
 
 extension View {
     /// The tools bar's hover: a lens behind, the content swelling a little.
-    func lensHover(id: AnyHashable? = nil, cornerRadius: CGFloat = 9, x: CGFloat = 6, y: CGFloat = 3,
-                   swell: CGFloat = Motion.textSwell, stageKey: String? = nil, hovering: ((Bool) -> Void)? = nil) -> some View {
-        modifier(LensHover(id: id, shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous), x: x, y: y,
+    func lensHover(cornerRadius: CGFloat = 9, x: CGFloat = 6, y: CGFloat = 3, swell: CGFloat = Motion.textSwell,
+                   stageKey: String? = nil, hovering: ((Bool) -> Void)? = nil) -> some View {
+        modifier(LensHover(shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous), x: x, y: y,
                            swell: swell, hovering: hovering, stageKey: stageKey))
     }
-
-    /// The same lens, on a capsule.
-    func lensHoverCapsule(id: AnyHashable? = nil, x: CGFloat = 6, y: CGFloat = 3, swell: CGFloat = Motion.textSwell,
-                          hovering: ((Bool) -> Void)? = nil) -> some View {
-        modifier(LensHover(id: id, shape: Capsule(), x: x, y: y, swell: swell, hovering: hovering, stageKey: nil))
-    }
-
-    func lensScope() -> some View { modifier(LensScope()) }
 }
 
 /// A card that opens something lifts under the pointer: brighter rim, a sheen, 2 % larger.

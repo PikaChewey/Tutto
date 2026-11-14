@@ -1625,6 +1625,11 @@ struct SoundCard: View {
     /// snapped open; this animates, and the setting follows it).
     @State private var levelsOpen: Bool?
     @State private var levelsHover = false
+    /// The app icon under the pointer, and the one just clicked (its label says what happened).
+    @State private var hoveredApp: String?
+    @State private var toggledApp: String?
+    @State private var overflowHover = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var showLevels: Bool {
         get { SoundCard.startsShowingLevels || (levelsOpen ?? keptLevels) }
         nonmutating set { levelsOpen = newValue }
@@ -1634,6 +1639,8 @@ struct SoundCard: View {
 
     /// Icons that fit across the card before the rest go into a menu.
     private static let capacity = 8
+    /// From one icon's start to the next.
+    private static let iconPitch: CGFloat = 34.5
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1674,22 +1681,45 @@ struct SoundCard: View {
                 // Levels take the strip's place (a mixer under the strip is what made the panel long).
                 levels.transition(.opacity.combined(with: .offset(y: -4)))
             } else {
+                let apps = visible
                 HStack(spacing: 0) {
-                    ForEach(visible) { app in
+                    ForEach(apps) { app in
                         SoundAppButton(app: app, muted: sound.isMuted(app.bundleID), usingAudio: sound.usingAudio.contains(app.bundleID),
-                                       level: sound.volumes[app.bundleID], size: 30, lens: true) {
+                                       level: sound.volumes[app.bundleID], size: 30,
+                                       previewing: LensStage.on(app.bundleID) ? true : nil,
+                                       hover: { inside in
+                                           if inside { hoveredApp = app.bundleID } else if hoveredApp == app.bundleID { hoveredApp = nil; toggledApp = nil }
+                                       }) {
+                            toggledApp = app.bundleID
                             withAnimation(Motion.micro) { sound.toggle(app) }
                         }
-                        .frame(width: 34.5, alignment: .leading)
+                        .frame(width: Self.iconPitch, alignment: .leading)
                     }
                     if !overflow.isEmpty { overflowMenu }
                     Spacer(minLength: 0)
                 }
+                // Over the icon under the pointer, as on the tools bar: what a click does to which app
+                // ("Mute Chrome"), and once clicked, what it did. It glides along the row.
+                .overlay(alignment: .topLeading) {
+                    let id = hoveredApp ?? apps.first { LensStage.on($0.bundleID) }?.bundleID
+                    if let id, let index = apps.firstIndex(where: { $0.bundleID == id }) {
+                        let app = apps[index]
+                        CenteredOver(center: CGFloat(index) * Self.iconPitch + 17) {
+                            SoundAppLabel(name: app.name, muted: sound.isMuted(id), done: toggledApp == id,
+                                          level: sound.volumes[id])
+                        }
+                        .offset(y: -29)
+                        .animation(reduceMotion ? nil : .spring(duration: 0.22, bounce: 0.12), value: id)
+                        .transition(ThemeStore.liquid && !reduceMotion
+                            ? .scale(scale: 0.55, anchor: .bottom).combined(with: .opacity).animation(.spring(duration: 0.28, bounce: 0.2))
+                            : .opacity.animation(reduceMotion ? nil : .easeOut(duration: 0.12)))
+                        .allowsHitTesting(false)
+                    }
+                }
                 // Each button is 2 pt wider than its icon, and an app icon's artwork sits about 3 pt
                 // inside its square at this size: pull the row left so the artwork lines up with the text.
                 .padding(.leading, -5)
-                // One lens slides along the icons, as on the tools bar.
-                .lensScope()
+                .zIndex(1)
             }
             if let problem = sound.problem {
                 HStack(spacing: 8) {
@@ -1746,27 +1776,9 @@ struct SoundCard: View {
                 let muted = sound.isMuted(app.bundleID)
                 let level = sound.volume(of: app.bundleID)
                 HStack(spacing: 8) {
-                    Button {
+                    LevelAppIcon(app: app, muted: muted) {
                         withAnimation(Motion.micro) { sound.toggle(app) }
-                    } label: {
-                        Image(nsImage: app.icon)
-                            .resizable()
-                            .interpolation(.high)
-                            .frame(width: 18, height: 18)
-                            .saturation(muted ? 0 : 1)
-                            .opacity(muted ? 0.45 : 1)
-                            .overlay(alignment: .bottomTrailing) {
-                                if muted {
-                                    Image(systemName: "speaker.slash.fill")
-                                        .font(.system(size: 7, weight: .bold))
-                                        .foregroundStyle(Color.ink)
-                                        .offset(x: 3, y: 2)
-                                }
-                            }
-                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .help(muted ? "Unmute \(app.name)" : "Mute \(app.name)")
                     Text(app.name)
                         .font(.system(size: 12))
                         .foregroundStyle(Color.ink2)
@@ -1823,9 +1835,9 @@ struct SoundCard: View {
         } label: {
             Text("+\(overflow.count)")
                 .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
-                .foregroundStyle(overflow.contains { sound.isMuted($0.bundleID) } ? Color.ink : Color.ink2)
+                .foregroundStyle(overflow.contains { sound.isMuted($0.bundleID) } || overflowHover ? Color.ink : Color.ink2)
                 .frame(width: 25, height: 25)   // the size of an icon's artwork, not its square
-                .background(Circle().fill(Color.ink.opacity(0.08)))
+                .background(Circle().fill(Color.ink.opacity(overflowHover ? 0.14 : 0.08)))
                 .frame(width: 34, height: 34)
                 .contentShape(Rectangle())
         }
@@ -1833,6 +1845,7 @@ struct SoundCard: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
+        .onHover { inside in withAnimation(Motion.micro) { overflowHover = inside } }
         .help("\(overflow.count) more apps")
         .accessibilityLabel("\(overflow.count) more apps")
     }
@@ -2800,6 +2813,83 @@ private struct ToolLabelSurface: ViewModifier {
                 .overlay(Capsule().strokeBorder(Color.hairline))
                 .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
         }
+    }
+}
+
+/// Over the Sound strip, as the tools bar's label: what a click does to the app under the pointer
+/// ("Mute Chrome"), and once clicked, what it did ("Chrome muted"), with its level when it isn't 100 %.
+private struct SoundAppLabel: View {
+    var name: String
+    var muted: Bool
+    var done: Bool
+    var level: Double?
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if done {
+                Text(name).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Color.ink)
+                Text(muted ? "muted" : "unmuted").font(.system(size: 11.5)).foregroundStyle(Color.ink2)
+            } else {
+                Text(muted ? "Unmute" : "Mute").font(.system(size: 11.5)).foregroundStyle(Color.ink2)
+                Text(name).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Color.ink)
+            }
+            if let level, !muted, Int(level.rounded()) != 100 {
+                Text(VolumeCurve.label(level))
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .foregroundStyle(level > 100 ? Color.themeAccent : Color.ink3)
+                    .padding(.leading, 2)
+            }
+        }
+        .lineLimit(1)
+        .padding(.horizontal, 9)
+        .frame(height: 24)
+        .modifier(ToolLabelSurface())
+    }
+}
+
+/// The app icon on a level line: a click mutes it, and under the pointer it shows that, as on the strip.
+private struct LevelAppIcon: View {
+    var app: SoundApp
+    var muted: Bool
+    var action: () -> Void
+    @State private var hovering = false
+    @State private var toggled = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var preview: Bool { hovering && !toggled }
+
+    var body: some View {
+        Button {
+            toggled = true
+            action()
+        } label: {
+            Image(nsImage: app.icon)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 18, height: 18)
+                .saturation(muted ? (preview ? 1 : 0) : (preview ? 0.35 : 1))
+                .opacity(muted ? (preview ? 0.85 : 0.45) : (preview ? 0.8 : 1))
+                .overlay(alignment: .bottomTrailing) {
+                    if preview || muted {
+                        Image(systemName: muted && preview ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(Color.ink)
+                            .offset(x: 3, y: 2)
+                            .id(muted && preview ? "unmute" : "mute")
+                            .transition(.scale(scale: 0.5).combined(with: .opacity))
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .onHover { inside in
+            hovering = inside
+            if !inside { toggled = false }
+        }
+        .animation(reduceMotion ? .easeOut(duration: 0.1) : Motion.lens, value: preview)
+        .help(muted ? "Unmute \(app.name)" : "Mute \(app.name)")
+        .accessibilityLabel(app.name)
+        .accessibilityValue(muted ? "Muted" : "Not muted")
     }
 }
 

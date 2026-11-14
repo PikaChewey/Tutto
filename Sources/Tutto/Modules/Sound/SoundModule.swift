@@ -449,6 +449,8 @@ final class SoundModule: ModuleController {
     #if DEBUG
     /// Offscreen renders only: levels shown without tapping anything.
     func previewVolumes(_ levels: [String: Double]) { volumes = levels }
+    /// Snapshots: apps drawn muted (`sound-muted:<id>,<id>`), nothing sent to the speakers or saved.
+    func previewMuted(_ ids: Set<String>) { muted = ids }
     #endif
 
     func resetVolumes() {
