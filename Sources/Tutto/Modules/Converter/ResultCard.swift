@@ -315,8 +315,8 @@ private struct ResultCardView: View {
     private var saving: String {
         switch state.content {
         case .file(let made, let count, let before, let after)?:
-            if count > 1 { return SavedBytes.percent(before: before, after: after) }
-            return made.before > 0 ? SavedBytes.percent(before: made.before, after: made.after) : ""
+            if count > 1 { return SavedBytes.smaller(before: before, after: after) }
+            return made.before > 0 ? SavedBytes.smaller(before: made.before, after: made.after) : ""
         case nil:
             return ""
         }
@@ -364,10 +364,16 @@ enum ChoiceMenu {
         /// A section title before this item.
         var section: String?
         var checked = false
-        var action: () -> Void
+        /// A submenu instead of an action.
+        var children: [Item] = []
+        var action: () -> Void = {}
     }
 
     static func show(_ items: [Item]) {
+        menu(items).popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    private static func menu(_ items: [Item]) -> NSMenu {
         let menu = NSMenu()
         for item in items {
             if let section = item.section {
@@ -385,9 +391,14 @@ enum ChoiceMenu {
                                                                                        .foregroundColor: NSColor.secondaryLabelColor]))
                 entry.attributedTitle = text
             }
+            if !item.children.isEmpty {
+                entry.action = nil
+                entry.target = nil
+                entry.submenu = Self.menu(item.children)
+            }
             menu.addItem(entry)
         }
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        return menu
     }
 
     /// The shapes and sizes a crop offers (shapes only for PDFs).

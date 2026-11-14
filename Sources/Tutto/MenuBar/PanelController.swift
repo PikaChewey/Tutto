@@ -20,12 +20,24 @@ import AppKit
 import SwiftUI
 import TuttoKit
 
-/// Whether files are being dragged while the panel is up: the Convert & Compress card opens its actions.
+/// Whether files are being dragged while the panel is up, and which: the Convert & Compress card
+/// turns into places to drop them, dimming the ones that don't suit them.
 @MainActor
 @Observable
 final class PanelDrag {
     static let shared = PanelDrag()
-    var files = false
+    var files = false {
+        didSet {
+            guard files != oldValue else { return }
+            urls = files ? Self.dragged() : []
+        }
+    }
+    private(set) var urls: [URL] = []
+
+    /// The files on the drag pasteboard now (read once, when a drag starts).
+    private static func dragged() -> [URL] {
+        (NSPasteboard(name: .drag).readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+    }
 }
 
 @MainActor
@@ -40,7 +52,7 @@ final class PanelController: NSObject {
     private var closeOnRelease = false
     private var dragCountAtPress = 0
     /// Files are being dragged while it's open: it stays until they're dropped (and the Convert &
-    /// Compress card opens to take them).
+    /// Compress card becomes places to drop them).
     private var draggingFiles = false {
         didSet { if PanelDrag.shared.files != draggingFiles { PanelDrag.shared.files = draggingFiles } }
     }
@@ -82,7 +94,7 @@ final class PanelController: NSObject {
         self.item = item
     }
 
-    /// Files dragged onto the icon open the panel (its Convert & Compress card opens to take them).
+    /// Files dragged onto the icon open the panel (its Convert & Compress card becomes places to drop them).
     func openForDrag() {
         guard !isOpen else { return }
         open()

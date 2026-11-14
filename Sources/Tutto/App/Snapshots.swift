@@ -68,6 +68,7 @@ enum Snapshots {
         if only.contains("compress-demo") { model.converter?.previewDemo() }
         // `convert-open`: the Convert & Compress card open (it starts closed).
         if only.contains("convert-open") { ConvertCard.startsOpen = true }
+        if only.contains("convert-closed") { ConvertCard.startsClosed = true }
         if only.contains("scroll-line") { ThinScrollStage.shown = true }
         if only.contains("scroll-wide") { ThinScrollStage.shown = true; ThinScrollStage.wide = true }
         if only.contains("scroll-mid") { ThinScrollStage.middle = true }

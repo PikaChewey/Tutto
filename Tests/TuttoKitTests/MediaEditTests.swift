@@ -73,6 +73,8 @@ final class MediaEditTests: XCTestCase {
         XCTAssertTrue(ConvertPlanner.canCrop(.pdf))
         XCTAssertFalse(ConvertPlanner.canResize(.pdf))
         XCTAssertEqual(SavedBytes.percent(before: 1000, after: 180), "−82 %")
+        XCTAssertEqual(SavedBytes.smaller(before: 1000, after: 180), "82 % smaller")
+        XCTAssertEqual(SavedBytes.smaller(before: 1000, after: 1200), "")
         XCTAssertEqual(SavedBytes.percent(before: 1000, after: 1000), "")
     }
 }

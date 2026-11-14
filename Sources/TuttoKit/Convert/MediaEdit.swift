@@ -234,6 +234,12 @@ public enum SavedBytes {
         ByteCountFormatter.string(fromByteCount: max(bytes, 0), countStyle: .file)
     }
 
+    /// "82 % smaller" (or "" when it didn't get smaller): said in words, since "−82 %" reads either way.
+    public static func smaller(before: Int, after: Int) -> String {
+        guard before > 0, after < before else { return "" }
+        return "\(Int(((1 - Double(after) / Double(before)) * 100).rounded())) % smaller"
+    }
+
     /// "−82 %" (or "" when it didn't get smaller).
     public static func percent(before: Int, after: Int) -> String {
         guard before > 0, after < before else { return "" }
