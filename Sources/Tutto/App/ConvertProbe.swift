@@ -127,7 +127,7 @@ enum ConvertProbe {
         await attempt("video resize Half", .resize(.scale(0.5)), [video])
         await attempt("video crop Square", .crop(.aspect(1, 1)), [video])
         await attempt("video crop 9:16", .crop(.aspect(9, 16)), [video])
-        // Into a folder of its own (how compressing by itself writes before the swap).
+        // Into a folder of its own (how a result changed again in place is written before the swap).
         let work = dir.appendingPathComponent("work", isDirectory: true)
         try? FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         do {
@@ -136,32 +136,17 @@ enum ConvertProbe {
         } catch {
             say("FAIL compress into folder: \(error.localizedDescription)")
         }
-        // The clipboard's shrink: a screenshot's PNG at 144 dpi, as is and at half.
+        // A screenshot's PNG at 144 dpi, smaller, as is and at half.
         if let data = try? Data(contentsOf: screenshot) {
             for halve in [false, true] {
                 if let smaller = ConvertEngine.smallerPNG(data, halve: halve) {
-                    let probe = dir.appendingPathComponent("clipboard\(halve ? "-half" : "").png")
+                    let probe = dir.appendingPathComponent("smaller\(halve ? "-half" : "").png")
                     try? smaller.write(to: probe)
-                    say("OK   clipboard shrink halve=\(halve): \(bytes(data.count)) → \(bytes(smaller.count)) \(await describe(probe))")
+                    say("OK   smaller png halve=\(halve): \(bytes(data.count)) → \(bytes(smaller.count)) \(await describe(probe))")
                 } else {
-                    say("FAIL clipboard shrink halve=\(halve)")
+                    say("FAIL smaller png halve=\(halve)")
                 }
             }
-        }
-        say("signed pdf? \(PDFSignatures.isSigned(pdf))")
-        // Which clipboards the shrinker takes, on a private pasteboard (never the real one).
-        let board = NSPasteboard(name: NSPasteboard.Name("ca.bryanyao.Tutto.probe"))
-        if let data = try? Data(contentsOf: screenshot) {
-            board.clearContents(); board.setData(data, forType: .png)
-            let alone = ClipboardShrinker.wants(board)
-            board.clearContents(); board.declareTypes([.png, .string], owner: nil); board.setData(data, forType: .png); board.setString("x", forType: .string)
-            let withText = ClipboardShrinker.wants(board)
-            board.clearContents(); board.declareTypes([.tiff, .URL], owner: nil); board.setData(data, forType: .tiff); board.setString("https://a.b", forType: .URL)
-            let withLink = ClipboardShrinker.wants(board)
-            board.clearContents(); board.declareTypes([.png, ClipboardShrinker.marker], owner: nil); board.setData(data, forType: .png); board.setData(Data(), forType: ClipboardShrinker.marker)
-            let marked = ClipboardShrinker.wants(board)
-            say("clipboard wants: png alone=\(alone) png+text=\(withText) tiff+link=\(withLink) marked=\(marked)")
-            board.releaseGlobally()
         }
         say("done")
     }

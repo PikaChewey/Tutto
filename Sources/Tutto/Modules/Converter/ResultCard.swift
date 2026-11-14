@@ -3,10 +3,10 @@
 //  Tutto
 //
 //  What a compress, convert, resize or crop made, in the bottom corner of the screen for a few
-//  seconds: a picture of it, how much smaller it got, and what to do next: Undo (the original
-//  back, or the copy to the Trash), Half (half the pixels), Crop (to a shape), Show in Finder.
+//  seconds: a picture of it, how much smaller it got, and what to do next: Undo (the copy to the
+//  Trash), Half (half the pixels), Crop (to a shape), Show in Finder.
 //  Drag the picture out to put the file anywhere. It stays while the pointer is over it and goes
-//  by itself after 12 seconds (6 for the clipboard, which changes more often).
+//  by itself after 12 seconds.
 //
 
 import AppKit
@@ -51,15 +51,6 @@ final class ResultCard {
                 }
             }
         }
-    }
-
-    /// A picture made smaller on the clipboard.
-    func show(clipboard done: ClipboardShrinker.Done, module: ConverterModule) {
-        state.content = .clipboard(done)
-        state.module = module
-        state.thumbnail = done.thumbnail
-        state.dimensions = nil
-        present(duration: 6)
     }
 
     func dismiss() {
@@ -146,7 +137,6 @@ final class ResultCard {
 final class ResultCardState {
     enum Content {
         case file(ConverterModule.Made, count: Int, totalBefore: Int, totalAfter: Int)
-        case clipboard(ClipboardShrinker.Done)
     }
 
     var content: Content?
@@ -228,8 +218,6 @@ private struct ResultCardView: View {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
             } else if case .file(let made, _, _, _)? = state.content {
                 Image(nsImage: NSWorkspace.shared.icon(forFile: made.url.path)).resizable().padding(4)
-            } else {
-                Image(systemName: "doc.on.clipboard").font(.system(size: 20)).foregroundStyle(Color.ink3)
             }
         }
         .frame(width: 46, height: 46)
@@ -249,7 +237,7 @@ private struct ResultCardView: View {
             switch state.content {
             case .file(let made, let count, _, _)?:
                 if count == 1 {
-                    chip("Undo", "arrow.uturn.backward", help: made.changedInPlace ? "Put the original back" : "Move this copy to the Trash") {
+                    chip("Undo", "arrow.uturn.backward", help: "Move this copy to the Trash") {
                         state.module?.undo(made)
                         card.dismiss()
                     }
@@ -270,12 +258,6 @@ private struct ResultCardView: View {
                     NSWorkspace.shared.activateFileViewerSelecting([made.url])
                     card.dismiss()
                 }
-            case .clipboard?:
-                chip("Undo", "arrow.uturn.backward", help: "Put the picture back on the clipboard as it was copied") {
-                    state.module?.undoClipboard()
-                    card.dismiss()
-                }
-                Spacer(minLength: 0)
             case nil:
                 EmptyView()
             }
@@ -311,7 +293,6 @@ private struct ResultCardView: View {
     private var title: String {
         switch state.content {
         case .file(let made, let count, _, _)?: count > 1 ? "\(count) files" : made.url.lastPathComponent
-        case .clipboard?: "Clipboard picture"
         case nil: ""
         }
     }
@@ -326,8 +307,6 @@ private struct ResultCardView: View {
             default:
                 return made.before > 0 ? "\(ConverterModule.bytes(made.before)) → \(ConverterModule.bytes(made.after))" : ConverterModule.bytes(made.after)
             }
-        case .clipboard(let done)?:
-            return "\(ConverterModule.bytes(done.before)) → \(ConverterModule.bytes(done.after))"
         case nil:
             return ""
         }
@@ -338,8 +317,6 @@ private struct ResultCardView: View {
         case .file(let made, let count, let before, let after)?:
             if count > 1 { return SavedBytes.percent(before: before, after: after) }
             return made.before > 0 ? SavedBytes.percent(before: made.before, after: made.after) : ""
-        case .clipboard(let done)?:
-            return SavedBytes.percent(before: done.before, after: done.after)
         case nil:
             return ""
         }
@@ -349,16 +326,11 @@ private struct ResultCardView: View {
         switch state.content {
         case .file(let made, let count, _, _)?:
             if count > 1 { return made.action.title }
-            let doing = made.auto && made.action == .compress ? "Compressed by itself" : made.action.done
-            return made.changedInPlace ? "\(doing) · original kept \(keepDays) days" : "\(doing) · beside the original"
-        case .clipboard?:
-            return "Copied picture, smaller · paste it anywhere"
+            return "\(made.action.done) · beside the original"
         case nil:
             return ""
         }
     }
-
-    private var keepDays: Int { state.module?.auto.keepOriginalsDays ?? 3 }
 
     private var dragHelp: String {
         if case .file? = state.content { return "Drag it into a message, a page or a folder" }

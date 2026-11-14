@@ -53,7 +53,7 @@ final class PanelLayoutStore {
             case .disk: "Free space on the startup disk."
             case .network: "Down and up, and the last minute."
             case .temperature: "The processor's temperature."
-            case .compress: "Drop files to compress, convert, resize, crop or zip them; compresses new screenshots by itself."
+            case .compress: "Drop files to compress, convert, resize, crop or zip them."
             case .awake: "A timer, and how long is left."
             case .clicker: "Its speed, its keys and a switch."
             case .fan: "Speed, and automatic or your own."

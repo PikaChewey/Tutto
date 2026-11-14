@@ -195,8 +195,6 @@ final class ScreenshotModule: ModuleController {
             FileManager.default.fileExists(atPath: $0.path)
         }
         guard write(image, to: url, as: format) else { return nil }
-        // Compressed by itself, like a screenshot on the Desktop (when that's on).
-        model?.converter?.compressOwnCapture(url)
         return url
     }
 

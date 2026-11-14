@@ -1822,8 +1822,9 @@ struct SoundCard: View {
 
 /// Convert & Compress, on the panel itself (Bryan, 2026-11-13: a "bigger part of the tutto menu bar
 /// gui", then "isn't just compress—it also has file conversion and stuff" and "don't make it
-/// automatically expanded ... it's currently just taking up too much space"). Closed, one line: its
-/// name, Auto (compressing new screenshots and copied pictures by itself) and an arrow. Open, or as
+/// automatically expanded ... it's currently just taking up too much space"; no Auto: compressing
+/// new screenshots by itself "doesn't make sense"). Closed, one line: its name, what compressing has
+/// saved and an arrow. Open, or as
 /// soon as files are dragged while the panel is up, four actions side by side, each a place to drop
 /// files or click to choose them: Compress (smaller copies, or one .zip), Convert (to a format),
 /// Resize and Crop, each with its choice under its name. Archives dropped on an action that doesn't
@@ -1858,14 +1859,12 @@ struct ConvertCard: View {
                     }
                 }
                 .transition(.opacity)
-                if converter.working == nil, let latest = converter.made.first, Date().timeIntervalSince(latest.date) < 12 * 3_600 {
-                    LatestResult(made: latest, converter: converter)
-                        .transition(.opacity)
-                }
-                status
-                    .transition(.opacity)
-            } else if converter.working != nil {
+            }
+            if converter.working != nil {
                 progress
+                    .transition(.opacity)
+            } else if isOpen, let latest = converter.made.first, Date().timeIntervalSince(latest.date) < 12 * 3_600 {
+                LatestResult(made: latest, converter: converter)
                     .transition(.opacity)
             }
         }
@@ -1888,11 +1887,16 @@ struct ConvertCard: View {
             RowLabel(symbol: ModuleID.converter.symbol, title: "Convert & Compress", live: converter.working != nil,
                      help: "Compress, convert, resize, crop or zip files")
             Spacer(minLength: 6)
-            Text("Auto")
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(Color.ink3)
-            InkSwitch(isOn: $converter.auto.isOn, label: "Compress by itself")
-                .help(converter.auto.isOn ? "New screenshots, recordings and PDFs there, and copied pictures, are compressed by themselves; each has Undo" : "Compress new screenshots, recordings and copied pictures by themselves")
+            if converter.savedBytes > 0 {
+                Button { showInApp(.converter) } label: {
+                    Text("\(SavedBytes.text(converter.savedBytes)) saved")
+                        .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                        .foregroundStyle(Color.ink3)
+                        .contentTransition(.numericText())
+                }
+                .buttonStyle(.plain)
+                .help("Saved by compressing · Convert settings")
+            }
             Button(action: toggle) {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .bold))
@@ -1941,49 +1945,6 @@ struct ConvertCard: View {
                 .truncationMode(.middle)
         }
         .frame(height: 14)
-    }
-
-    private var status: some View {
-        Group {
-            if converter.working != nil {
-                progress
-            } else {
-                Button {
-                    showInApp(.converter)
-                } label: {
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(converter.auto.isOn ? Color.themeAccent : Color.ink4)
-                            .frame(width: 5, height: 5)
-                        Text(statusText)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(Color.ink3)
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        if converter.savedBytes > 0 {
-                            Text("\(SavedBytes.text(converter.savedBytes)) saved")
-                                .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(Color.ink2)
-                                .contentTransition(.numericText())
-                        }
-                    }
-                    .frame(height: 14)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Convert & Compress settings")
-            }
-        }
-    }
-
-    private var statusText: String {
-        guard converter.auto.isOn else { return "Auto is off" }
-        var parts: [String] = []
-        if converter.auto.images || converter.auto.videos || converter.auto.pdfs {
-            parts.append(WatchedFolders.names(converter.watching.isEmpty ? WatchedFolders.resolve(converter.auto) : converter.watching))
-        }
-        if converter.auto.clipboard { parts.append("clipboard") }
-        return parts.isEmpty ? "Auto is on" : "Watching " + parts.joined(separator: " · ")
     }
 
     /// The file URLs in a drop, all at once.
@@ -2210,7 +2171,7 @@ private struct LatestResult: View {
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
-            .help(made.changedInPlace ? "Undo: put the original back" : "Undo: move this copy to the Trash")
+            .help("Undo: move this copy to the Trash")
         }
         .frame(height: 20)
         .contentShape(Rectangle())

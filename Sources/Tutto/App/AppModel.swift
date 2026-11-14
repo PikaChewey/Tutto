@@ -196,7 +196,6 @@ final class AppModel {
         case .clipboard:
             if clipboard == nil { clipboard = ClipboardModule(model: self) }
             clipboard?.start()
-            converter?.clipboardHistoryChanged()
         case .windows:
             if windows == nil { windows = WindowModule(model: self) }
             windows?.start()
@@ -255,7 +254,6 @@ final class AppModel {
         case .clipboard:
             clipboard?.stop()
             clipboard = nil
-            converter?.clipboardHistoryChanged()
         case .windows:
             windows?.stop()
             windows = nil

@@ -61,60 +61,10 @@ final class MediaEditTests: XCTestCase {
         XCTAssertEqual(focus.y, 0.2, accuracy: 0.0001)
     }
 
-    func testWhichNewFilesAreCompressed() {
-        let now = Date()
-        let settings = AutoCompressSettings()
-        func ok(_ name: String, _ kind: FileKind = .image, bytes: Int = 900_000, age: TimeInterval = 2, done: Bool = false,
-                _ s: AutoCompressSettings = AutoCompressSettings()) -> Bool {
-            AutoCompressRules.shouldCompress(name: name, kind: kind, bytes: bytes, created: now.addingTimeInterval(-age), now: now,
-                                             settings: s, alreadyDone: done)
-        }
-        XCTAssertTrue(ok("Screenshot 2026-11-13 at 02.10.11.png"))
-        XCTAssertTrue(ok("Screen Recording 2026-11-13.mov", .video, bytes: 80_000_000))
-        XCTAssertTrue(ok("invoice.pdf", .pdf))
-        XCTAssertFalse(ok(".hidden.png"))
-        XCTAssertFalse(ok("movie.mp4.crdownload", .video))
-        XCTAssertFalse(ok("photo (compressed).jpg"))
-        XCTAssertFalse(ok("photo (cropped).jpg"))
-        XCTAssertFalse(ok("tiny.png", bytes: 4_000))
-        XCTAssertFalse(ok("old.png", age: 3_600))
-        XCTAssertFalse(ok("again.png", done: true))
-        XCTAssertFalse(ok("song.m4a", .audio))
-        var noVideo = settings
-        noVideo.videos = false
-        XCTAssertFalse(ok("clip.mov", .video, noVideo))
-        var off = settings
-        off.isOn = false
-        XCTAssertFalse(ok("Screenshot.png", .image, off))
-        XCTAssertFalse(ok("huge.png", bytes: 61_000_000))
-        XCTAssertFalse(ok("small clip.mov", .video, bytes: 150_000))
-        XCTAssertTrue(AutoCompressRules.withinBurst([.image, .image, .video]))
-        XCTAssertFalse(AutoCompressRules.withinBurst([.video, .video]))
-        XCTAssertFalse(AutoCompressRules.withinBurst(Array(repeating: .image, count: 5)))
-        XCTAssertTrue(AutoCompressRules.worthKeeping(before: 1_000, after: 900))
-        XCTAssertFalse(AutoCompressRules.worthKeeping(before: 1_000, after: 970))
-        XCTAssertTrue(AutoCompressRules.isRetinaScreenshot(name: "Screenshot 2026.png", dpi: 144))
-        XCTAssertFalse(AutoCompressRules.isRetinaScreenshot(name: "holiday.png", dpi: 144))
-    }
-
-    func testSettingsDecodeOlderCopies() throws {
-        let old = #"{"isOn":false,"folders":["/tmp/x"]}"#.data(using: .utf8)!
-        let decoded = try JSONDecoder().decode(AutoCompressSettings.self, from: old)
-        XCTAssertFalse(decoded.isOn)
-        XCTAssertEqual(decoded.folders, ["/tmp/x"])
-        XCTAssertTrue(decoded.clipboard)
-        XCTAssertEqual(decoded.keepOriginalsDays, 3)
-    }
-
-    func testKeptOriginalsPruning() {
-        let now = Date()
-        let items = [
-            KeptOriginals.Item(url: URL(fileURLWithPath: "/a"), date: now.addingTimeInterval(-5 * 86_400), bytes: 10),
-            KeptOriginals.Item(url: URL(fileURLWithPath: "/b"), date: now.addingTimeInterval(-3_600), bytes: 600),
-            KeptOriginals.Item(url: URL(fileURLWithPath: "/c"), date: now.addingTimeInterval(-60), bytes: 600),
-        ]
-        XCTAssertEqual(KeptOriginals.toRemove(items, now: now, keepDays: 3, maxBytes: 10_000).map(\.path), ["/a"])
-        XCTAssertEqual(Set(KeptOriginals.toRemove(items, now: now, keepDays: 3, maxBytes: 1_000).map(\.path)), ["/a", "/b"])
+    func testCompressWorthKeeping() {
+        XCTAssertTrue(CompressRules.worthKeeping(before: 1_000, after: 900))
+        XCTAssertFalse(CompressRules.worthKeeping(before: 1_000, after: 970))
+        XCTAssertFalse(CompressRules.worthKeeping(before: 0, after: 0))
     }
 
     func testNamesAndPlanner() {
