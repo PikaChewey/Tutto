@@ -139,6 +139,12 @@ private struct SessionLine: View {
                     .foregroundStyle(session.activity.needsYou || agents.runaway.contains(session.id) ? Color.themeAccent : Color.ink3)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                if let load {
+                    Text(AgentText.costLong(load))
+                        .font(.system(size: 11.5).monospacedDigit())
+                        .foregroundStyle(Color.ink3)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 8)
             if confirming {
@@ -178,11 +184,9 @@ private struct SessionLine: View {
             parts.append(line)
         case .yourTurn: parts.append("Your turn · idle \(AgentText.age(since: session.since, now: agents.now))")
         }
-        parts.append("\(session.tool.name) in \(session.host == .claudeApp ? "Claude" : session.host == .codexApp ? "Codex" : "a terminal")")
+        parts.append(session.host == .claudeApp ? "in Claude's app" : session.host == .codexApp ? "in the Codex app" : "\(session.tool.name) in a terminal")
         parts.append(AgentSession.displayFolder(session.folder))
-        var text = parts.joined(separator: " · ")
-        if let load { text += "\n" + AgentText.costLong(load) }
-        return text
+        return parts.joined(separator: " · ")
     }
 }
 

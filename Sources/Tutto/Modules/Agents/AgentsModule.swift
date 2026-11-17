@@ -477,6 +477,9 @@ final class AgentsModule: ModuleController {
     // MARK: What it costs (on screen only)
 
     func begin() {
+        #if DEBUG
+        if previewing { return }
+        #endif
         watchers += 1
         now = Date()
         guard sampler == nil else { return }
@@ -575,9 +578,12 @@ final class AgentsModule: ModuleController {
     // MARK: Renders
 
     #if DEBUG
+    @ObservationIgnored private var previewing = false
+
     /// Offscreen renders (`agents-demo`): sessions, limits and loads like a busy afternoon.
     func previewDemo() {
         let now = Date()
+        previewing = true
         installed = true
         sessions = AgentSession.ordered([
             AgentSession(tool: .claude, sessionID: "a", name: "Plus One sound effects", folder: NSHomeDirectory() + "/Projects/plusone",

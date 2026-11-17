@@ -243,11 +243,11 @@ private struct AgentRow: View {
     }
 }
 
-/// A session's state at a glance.
+/// A session's state at a glance: a raised hand (needs you), the system's spinner (working), a tick
+/// (your turn).
 struct AgentMark: View {
     var activity: AgentActivity
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var turning = false
 
     var body: some View {
         Group {
@@ -262,13 +262,11 @@ struct AgentMark: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.ink2)
                 } else {
-                    Circle()
-                        .trim(from: 0, to: 0.7)
-                        .stroke(Color.ink2, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
-                        .frame(width: 10, height: 10)
-                        .rotationEffect(.degrees(turning ? 360 : 0))
-                        .animation(.linear(duration: 1.1).repeatForever(autoreverses: false), value: turning)
-                        .onAppear { turning = true }
+                    // AppKit's own spinner: it turns on the render server, not in SwiftUI's layout.
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .controlSize(.mini)
+                        .scaleEffect(0.8)
                 }
             case .yourTurn:
                 Image(systemName: "checkmark")
@@ -297,15 +295,17 @@ struct LimitLine: View {
                 .foregroundStyle(Color.ink2)
                 .frame(width: 44, alignment: .leading)
             LimitBar(percent: estimate.percent, urgent: urgent)
+                .frame(minWidth: 36)
             Text(AgentText.percent(estimate))
                 .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
                 .foregroundStyle(urgent ? Color.themeAccent : Color.ink)
-                .frame(width: 42, alignment: .trailing)
+                .frame(width: 40, alignment: .trailing)
             Text(AgentText.timing(estimate, now: now))
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(urgent ? Color.themeAccent : Color.ink3)
                 .lineLimit(1)
-                .frame(width: 112, alignment: .trailing)
+                .fixedSize()
+                .layoutPriority(1)
         }
         .help(AgentText.limitsHelp(limits, now: now))
         .accessibilityElement(children: .combine)
@@ -374,7 +374,7 @@ enum AgentText {
     }
 
     static func window(_ window: LimitEstimate.Window) -> String {
-        window == .fiveHour ? "5 h" : "Week"
+        window == .fiveHour ? "5 h" : "week"
     }
 
     /// "5 h · resets 3:40 PM", "Week · resets Thu", "5 h · out at 2:55 PM", "5 h · reached".
