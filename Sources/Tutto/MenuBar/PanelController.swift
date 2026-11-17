@@ -361,8 +361,11 @@ struct StatusLabel: View {
         let agents = model.awake?.isAgentSession == true
         let clicking = model.clicker?.isOn == true
         let recording = model.screenshots?.recorder.recordingSince
+        // Coding agents: a raised hand while one waits on you; a limit only when it matters.
+        let waiting = model.agents.map { $0.menuBarSignal ? $0.needsYou.count : 0 } ?? 0
+        let limit = model.agents?.menuBarLimit
         Group {
-            if awake != nil || clicking || agents || recording != nil {
+            if awake != nil || clicking || agents || recording != nil || waiting > 0 || limit != nil {
                 HStack(spacing: 3) {
                     Image(nsImage: MenuBarGlyph.image())
                     if let recording {
@@ -373,6 +376,16 @@ struct StatusLabel: View {
                                 Text(RecordingRules.elapsed(context.date.timeIntervalSince(recording))).monospacedDigit()
                             }
                         }
+                    }
+                    if waiting > 0 {
+                        HStack(spacing: 1) {
+                            Image(systemName: "hand.raised.fill")
+                            if waiting > 1 { Text("\(waiting)").monospacedDigit() }
+                        }
+                    }
+                    if let limit {
+                        Text("\(limit.tool.name) \(limit.estimate.reached ? "limit" : "\(Int(limit.estimate.percent.rounded()))%")")
+                            .monospacedDigit()
                     }
                     if agents { Image(systemName: "cup.and.heat.waves") }
                     if clicking { Image(systemName: "cursorarrow.click.2") }

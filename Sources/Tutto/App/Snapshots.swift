@@ -66,6 +66,8 @@ enum Snapshots {
         if only.contains("clicker-open") { ClickerRow.startsExpanded = true }
         // `compress-demo`: the Convert & Compress card with a result under it and a total saved.
         if only.contains("compress-demo") { model.converter?.previewDemo() }
+        // `agents-demo`: the Agents card and page with sessions, limits and leftovers.
+        if only.contains("agents-demo") { model.agents?.previewDemo() }
         // `convert-open`: the Convert & Compress card open (it starts closed).
         if only.contains("convert-open") { ConvertCard.startsOpen = true }
         if only.contains("convert-closed") { ConvertCard.startsClosed = true }

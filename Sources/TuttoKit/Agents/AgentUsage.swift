@@ -248,7 +248,17 @@ public enum ClaudeLogScanner {
     private static let tokenKeys = [#""input_tokens":"#, #""output_tokens":"#, #""cache_creation_input_tokens":"#,
                                     #""cache_read_input_tokens":"#].map { Array($0.utf8) }
 
+    /// Where a line says what it is: Claude Code writes `"type"` near a line's start in some lines
+    /// and just after the message in others. Only replies (and Claude's own errors, which are
+    /// replies too) are searched whole; the long lines, tool results with files and pictures in
+    /// them, are passed over after a look at their ends.
+    static let headLength = 300
+    static let tailLength = 1500
+
     static func line(_ line: UnsafeBufferPointer<UInt8>, into found: inout Found) {
+        let head = UnsafeBufferPointer(rebasing: line[..<min(line.count, headLength)])
+        let tail = UnsafeBufferPointer(rebasing: line[max(0, line.count - tailLength)...])
+        guard find(assistant, in: head) != nil || find(assistant, in: tail) != nil else { return }
         if find(rateLimit, in: line) != nil, let hit = find(hitYour, in: line) {
             // "You've hit your session limit · resets 7:10am" / "…your weekly limit…"
             let after = UnsafeBufferPointer(rebasing: line[(hit + hitYour.count)...])
@@ -259,7 +269,7 @@ public enum ClaudeLogScanner {
             }
             return
         }
-        guard find(assistant, in: line) != nil, let usageAt = findLast(usage, in: line) else { return }
+        guard let usageAt = findLast(usage, in: line) else { return }
         // The top-level timestamp is the line's last; the reply's model and id come first in its message.
         guard let time = lastString(timestamp, in: line).flatMap(ISOTime.parse) else { return }
         let modelName = string(after: model, in: line) ?? ""
@@ -445,14 +455,16 @@ public enum ClaudeLimitEstimator {
         let reached = hits.contains { current <= $0.time && $0.time < end }
         let percent = reached ? 100 : min(used / limit * 100, 99)
         return (LimitEstimate(window: .week, percent: percent, resetsAt: end, reached: reached,
-                              limitAt: reached ? nil : pace(ledger, limit: limit, used: used, now: now, windowStart: current, resets: end),
+                              limitAt: reached ? nil : pace(ledger, limit: limit, used: used, now: now, windowStart: current, resets: end, lookback: 6 * 3600),
                               exact: false), calibration.basis)
     }
 
-    /// At the spend of the last hour (or since the window began, if that's sooner, and at least 10
-    /// minutes ago), when the window would fill, if that's before it resets.
-    static func pace(_ ledger: Ledger, limit: Double, used: Double, now: Date, windowStart: Date, resets: Date) -> Date? {
-        let from = max(now.addingTimeInterval(-3600), windowStart)
+    /// At the spend of the last hour (six for the week, where an hour's burst says little; or since
+    /// the window began, if that's sooner, and at least 10 minutes ago), when the window would fill,
+    /// if that's before it resets.
+    static func pace(_ ledger: Ledger, limit: Double, used: Double, now: Date, windowStart: Date, resets: Date,
+                     lookback: TimeInterval = 3600) -> Date? {
+        let from = max(now.addingTimeInterval(-lookback), windowStart)
         let span = now.timeIntervalSince(from)
         let spent = ledger.cost(from: from, to: now)
         guard span >= 600, spent > 0, limit > used else { return nil }

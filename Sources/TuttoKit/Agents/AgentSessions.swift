@@ -197,6 +197,32 @@ public struct CodexThreadState: Equatable, Sendable {
         return started
     }
 
+    /// Reads the complete lines in `bytes` and returns how many bytes they took. Only the few kinds
+    /// of line that matter are decoded, told apart by their first bytes (Codex writes each line's
+    /// type first; the rest are model output, often megabytes).
+    @discardableResult
+    public mutating func scan(_ bytes: UnsafeRawBufferPointer) -> Int {
+        guard let base = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self), bytes.count > 0 else { return 0 }
+        var start = 0
+        while start < bytes.count {
+            guard let newline = memchr(base + start, 0x0A, bytes.count - start) else { break }
+            let end = base.distance(to: newline.assumingMemoryBound(to: UInt8.self))
+            let head = UnsafeBufferPointer(start: base + start, count: min(end - start, 200))
+            if Self.matters(head) {
+                read(line: Substring(String(decoding: UnsafeBufferPointer(start: base + start, count: end - start), as: UTF8.self)))
+            }
+            start = end + 1
+        }
+        return start
+    }
+
+    private static let kinds = [#""type":"session_meta""#, #""type":"task_started""#, #""type":"task_complete""#,
+                                #""type":"turn_aborted""#, #""type":"token_count""#].map { Array($0.utf8) }
+
+    static func matters(_ head: UnsafeBufferPointer<UInt8>) -> Bool {
+        kinds.contains { ClaudeLogScanner.find($0, in: head) != nil }
+    }
+
     public mutating func read(line: Substring) {
         guard let data = line.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }

@@ -25,7 +25,7 @@ struct TuttoApp: App {
         #if DEBUG
         let flags = ["--snapshot", "--record-probe", "--scroll-probe", "--scroll-events-probe", "--scroll-fade-probe", "--editor-probe",
                      "--convert-probe", "--cleanup-probe", "--audio-probe", "--volume-probe", "--volume-glitch-probe",
-                     "--sound-module-probe", "--live-volume-check", "--tone-player", "--memory-lab", "--switcher-lab"]
+                     "--sound-module-probe", "--live-volume-check", "--tone-player", "--memory-lab", "--switcher-lab", "--agents-probe"]
         return CommandLine.arguments.contains(where: flags.contains)
         #else
         return false
@@ -68,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if ConvertProbe.runCleanupIfRequested() { return NSApp.terminate(nil) }
         if SwitcherLab.runIfRequested() { return NSApp.terminate(nil) }
         if MemoryLab.runIfRequested() { return NSApp.terminate(nil) }
+        if AgentsProbe.runIfRequested() { return NSApp.terminate(nil) }
         #endif
         let model = AppModel.shared
         let launchedAtLogin = Self.wasLaunchedAsLoginItem()

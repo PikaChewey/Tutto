@@ -23,7 +23,7 @@ import TuttoKit
 
 /// The grid, its spacing scaled by the theme's density (the panel's width never changes).
 @MainActor
-private enum PanelGrid {
+enum PanelGrid {
     static let width: CGFloat = 320
     static var outer: CGFloat { (10 * ThemeStore.shared.tokens.densityScale).rounded() }
     static var inset: CGFloat { (12 * ThemeStore.shared.tokens.densityScale).rounded() }
@@ -302,6 +302,8 @@ private struct WidgetGrid: View {
             }
         case .card(.devices):
             DevicesCard(placeholder: editing != nil)
+        case .card(.agents):
+            if let agents = model.agents { AgentsCard(agents: agents, placeholder: editing != nil) }
         case .card(.compress):
             if let converter = model.converter { ConvertCard(converter: converter, placeholder: editing != nil) }
         case .card(.sound):
@@ -411,7 +413,7 @@ private struct PanelWindowReader: NSViewRepresentable {
 // MARK: - Pieces
 
 @MainActor
-private extension View {
+extension View {
     /// A group on the panel: a soft rounded surface instead of rules and captions. `vertical` trims
     /// a one-row card (the sides stay on the grid).
     func panelCard(vertical: CGFloat? = nil) -> some View {
@@ -429,7 +431,7 @@ private extension View {
 }
 
 /// Text button that brightens on hover, for the few quiet actions on the panel.
-private struct QuietLink: View {
+struct QuietLink: View {
     var title: String
     var size: CGFloat = 12
     var action: () -> Void
@@ -448,7 +450,7 @@ private struct QuietLink: View {
 }
 
 /// A card's title row: the title, and something quiet on the right.
-private struct CardTitle<Trailing: View>: View {
+struct CardTitle<Trailing: View>: View {
     var title: String
     @ViewBuilder var trailing: Trailing
 
@@ -467,7 +469,7 @@ private struct CardTitle<Trailing: View>: View {
 /// Runs an action after the panel has closed, so it isn't in the picture or in the way, and
 /// the app you were in is the front app again.
 @MainActor
-private func afterPanelCloses(_ action: @escaping @MainActor () -> Void) {
+func afterPanelCloses(_ action: @escaping @MainActor () -> Void) {
     closePanel()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
         MainActor.assumeIsolated { action() }
@@ -477,13 +479,13 @@ private func afterPanelCloses(_ action: @escaping @MainActor () -> Void) {
 /// Closes the panel. Opening Tutto's window doesn't close it by itself, so anything that opens a
 /// page closes the panel first.
 @MainActor
-private func closePanel() {
+func closePanel() {
     PanelController.shared.close()
 }
 
 /// Opens a page of the app (or the app where you left it) and closes the panel.
 @MainActor
-private func showInApp(_ page: MainPage? = nil) {
+func showInApp(_ page: MainPage? = nil) {
     closePanel()
     if let page { MainWindowController.shared.show(page: page) } else { MainWindowController.shared.show() }
 }

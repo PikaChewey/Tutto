@@ -12,7 +12,7 @@ import TuttoKit
 enum MainPage: String, Hashable, CaseIterable, Identifiable {
     case overview
     case battery, cpu, gpu, memory, disk, network, sensors
-    case clipboard, windows, switcher, strip, screenshots, archives, corner, wordCounter, sound, awake, clicker, converter, cleaner, menuBarItems
+    case clipboard, windows, switcher, strip, screenshots, archives, corner, wordCounter, sound, awake, clicker, converter, cleaner, menuBarItems, agents
     case customize, appearance, plugins, shortcuts, permissions, general
 
     var id: String { rawValue }
@@ -39,6 +39,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .converter: "Convert"
         case .cleaner: "Clean Up"
         case .menuBarItems: "Menu Bar Icons"
+        case .agents: "Agents"
         case .switcher: "Window Switcher"
         case .strip: "Scrolling Strip"
         case .customize: "Customize"
@@ -72,6 +73,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .converter: ModuleID.converter.symbol
         case .cleaner: ModuleID.cleaner.symbol
         case .menuBarItems: ModuleID.menuBarItems.symbol
+        case .agents: ModuleID.agents.symbol
         case .switcher: ModuleID.switcher.symbol
         case .strip: ModuleID.strip.symbol
         case .customize: "slider.horizontal.3"
@@ -99,6 +101,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
         case .converter: .converter
         case .cleaner: .cleaner
         case .menuBarItems: .menuBarItems
+        case .agents: .agents
         case .switcher: .switcher
         case .strip: .strip
         case .overview, .customize, .appearance, .plugins, .shortcuts, .permissions, .general: nil
@@ -106,7 +109,7 @@ enum MainPage: String, Hashable, CaseIterable, Identifiable {
     }
 
     static let systemPages: [MainPage] = [.battery, .cpu, .gpu, .memory, .disk, .network, .sensors]
-    static let toolPages: [MainPage] = [.awake, .clicker, .clipboard, .windows, .switcher, .strip, .screenshots, .converter, .cleaner,
+    static let toolPages: [MainPage] = [.agents, .awake, .clicker, .clipboard, .windows, .switcher, .strip, .screenshots, .converter, .cleaner,
                                         .archives, .corner, .wordCounter, .sound, .menuBarItems]
     static let settingsPages: [MainPage] = [.customize, .appearance, .plugins, .shortcuts, .permissions, .general]
 }
@@ -191,6 +194,7 @@ struct MainView: View {
         case .converter: ConverterPage(model: model)
         case .cleaner: CleanupPage(model: model)
         case .menuBarItems: MenuBarItemsPage(model: model)
+        case .agents: AgentsPage(model: model)
         case .switcher: SwitcherPage(model: model)
         case .strip: StripPage(model: model)
         case .customize: CustomizePage(model: model)
@@ -304,6 +308,7 @@ extension ModuleID {
         case .converter: .converter
         case .cleaner: .cleaner
         case .menuBarItems: .menuBarItems
+        case .agents: .agents
         }
     }
 }

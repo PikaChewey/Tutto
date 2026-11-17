@@ -25,6 +25,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
     case converter
     case cleaner
     case menuBarItems
+    case agents
 
     var id: String { rawValue }
 
@@ -54,6 +55,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .converter: "Convert"
         case .cleaner: "Clean Up"
         case .menuBarItems: "Menu Bar Icons"
+        case .agents: "Agents"
         }
     }
 
@@ -75,6 +77,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .converter: "arrow.triangle.2.circlepath"
         case .cleaner: "sparkles"
         case .menuBarItems: "menubar.rectangle"
+        case .agents: "terminal"
         }
     }
 
@@ -97,6 +100,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .converter: "Pictures, video, sound, PDFs and documents into other formats, or smaller. Tap ⇧ while dragging files."
         case .cleaner: "Leftovers from removed apps, caches, logs and the Trash. You review it all; it goes to the Trash."
         case .menuBarItems: "Tuck away the menu bar icons you rarely use; one click brings them back."
+        case .agents: "Claude Code and Codex: which need you (one click opens that session), what each costs, what they left running, and their limits."
         }
     }
 
@@ -117,6 +121,7 @@ enum ModuleID: String, CaseIterable, Identifiable, Codable {
         case .converter: "Nothing but a glance at each mouse press and modifier key, for the wheel. Work runs only when you convert."
         case .cleaner: "Nothing. It looks only when you scan."
         case .menuBarItems: "Nothing. Its divider waits for a click."
+        case .agents: "Nothing until an agent writes: macOS reports its files changing. Its processes are read only while the card or page shows, and once a minute while one works. The first launch reads Claude's logs once (a few seconds); after that, only what's new."
         }
     }
 }

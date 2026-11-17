@@ -87,6 +87,18 @@ final class AgentsTests: XCTestCase {
         XCTAssertEqual(state.limits?.fiveHour, 40, "a broken line changes nothing")
     }
 
+    func testCodexLogsAreReadByTheirFirstBytes() {
+        let big = #"{"timestamp":"2026-11-17T02:40:00Z","type":"response_item","payload":{"type":"message","content":"\#(String(repeating: "x", count: 5000)) \"type\":\"task_complete\""}}"#
+        let text = [meta, event("task_started", "2026-11-17T02:36:40Z"), big, tokens("2026-11-17T02:50:00Z", five: 12, week: 3)]
+            .joined(separator: "\n") + "\n" + event("task_complete", "2026-11-17T03:00:00Z")  // still being written
+        var state = CodexThreadState()
+        let used = Data(text.utf8).withUnsafeBytes { state.scan($0) }
+        XCTAssertLessThan(used, text.utf8.count)
+        XCTAssertEqual(state.threadID, "01a1e75c")
+        XCTAssertNil(state.lastFinished, "a model's words about a task aren't the task, and the last line isn't finished")
+        XCTAssertEqual(state.limits?.fiveHour, 12)
+    }
+
     func testCodexNamesTheLastNameWins() {
         let text = """
         {"id":"a","thread_name":"First","updated_at":"2026-11-09T02:11:21Z"}
@@ -165,6 +177,16 @@ final class AgentsTests: XCTestCase {
         XCTAssertEqual(found.events[0].cost, 4, accuracy: 0.0001, "a million Opus input tokens")
         XCTAssertEqual(found.events[2].cost, 1, accuracy: 0.0001, "100k Sonnet output tokens")
         XCTAssertEqual(ClaudePricing.cost(model: "claude-opus-5-5", input: 0, output: 0, cacheWrite: 1_000_000, cacheRead: 1_000_000), 5.2, accuracy: 0.0001)
+    }
+
+    func testALongReplyIsReadFromItsEnds() {
+        // A reply with a big picture or file in it: its model and id at the start, its usage at the end.
+        let long = reply(id: "L", time: "2026-11-17T11:00:00Z", output: 200_000, text: String(repeating: "a", count: 300_000))
+        var found = ClaudeLogScanner.Found()
+        ClaudeLogScanner.scan(Data((long + "\n").utf8), into: &found)
+        XCTAssertEqual(found.events.count, 1)
+        XCTAssertEqual(found.events.first?.cost ?? 0, 4, accuracy: 0.0001, "200k Opus output tokens")
+        XCTAssertEqual(found.events.first?.time, ISOTime.parse("2026-11-17T11:00:00Z"))
     }
 
     func testLimitMessagesAreClaudesOwnNotQuotes() {

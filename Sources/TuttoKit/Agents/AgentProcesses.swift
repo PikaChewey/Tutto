@@ -38,7 +38,7 @@ public struct ProcessEntry: Equatable, Sendable {
 }
 
 /// Every readable process now. About 2 ms for 700 processes.
-public enum ProcessTable {
+public enum ProcessReader {
     public static func snapshot() -> [Int32: ProcessEntry] {
         var table: [Int32: ProcessEntry] = [:]
         for pid in allPIDs() where pid > 0 {
@@ -242,9 +242,9 @@ public enum LeftRunningRules {
 
     /// Everything left running now, biggest first.
     public static func find(in table: [Int32: ProcessEntry], uid: UInt32 = getuid(), now: Date = Date(),
-                            path: (Int32) -> String? = ProcessTable.path,
-                            folder: (Int32) -> String? = ProcessTable.workingFolder,
-                            ports: (Int32) -> [UInt16] = ProcessTable.listeningPorts) -> [LeftRunning] {
+                            path: (Int32) -> String? = ProcessReader.path,
+                            folder: (Int32) -> String? = ProcessReader.workingFolder,
+                            ports: (Int32) -> [UInt16] = ProcessReader.listeningPorts) -> [LeftRunning] {
         table.values.compactMap { entry -> LeftRunning? in
             guard entry.parent == 1, entry.uid == uid else { return nil }
             guard isCandidate(entry, path: path(entry.pid), uid: uid, now: now) else { return nil }
