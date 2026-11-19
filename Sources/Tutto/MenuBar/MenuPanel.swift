@@ -2757,7 +2757,7 @@ struct ToolsCard: View {
 
 /// Places one view centered at `center` across the width it's given, kept 2 pt inside the edges.
 /// (An alignment guide did this before and was ignored: every label sat at the left end.)
-private struct CenteredOver: Layout {
+struct CenteredOver: Layout {
     var center: CGFloat
     var margin: CGFloat = 2
 
@@ -2814,7 +2814,7 @@ private struct ToolLabel: View {
 }
 
 /// The label's capsule: glass under Liquid Glass, else paper with a hairline and a soft shadow.
-private struct ToolLabelSurface: ViewModifier {
+struct ToolLabelSurface: ViewModifier {
     func body(content: Content) -> some View {
         if ThemeStore.liquid {
             content.liquidGlass(Capsule())

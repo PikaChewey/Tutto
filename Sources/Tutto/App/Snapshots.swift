@@ -401,6 +401,29 @@ struct SnapshotExtras {
                     .background(Color(nsColor: .windowBackgroundColor)))
             })
         }
+        // The Agents card's design options side by side (with `agents-demo`).
+        extras.append(SnapshotExtras(name: "agents-options", inDefaultSet: false) { model in
+            guard let agents = model.agents else { return AnyView(EmptyView()) }
+            let names: [(AgentsStyle, String)] = [(.current, "Now"), (.tiles, "A  Tiles"), (.inbox, "B  Inbox"), (.rings, "C  Rings"), (.avatars, "D  Icons")]
+            return AnyView(HStack(alignment: .top, spacing: 28) {
+                ForEach(names, id: \.0) { style, name in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(name).font(.system(size: 15, weight: .semibold)).foregroundStyle(Color.ink)
+                        AgentsCard(agents: agents, style: style).frame(width: PanelGrid.content)
+                    }
+                }
+            }
+            .padding(EdgeInsets(top: 22, leading: 24, bottom: 24, trailing: 24))
+            .background(PanelMaterialStandIn()))
+        })
+        for (name, new) in [("agents-page-now", false), ("agents-page-new", true)] {
+            extras.append(SnapshotExtras(name: name, inDefaultSet: false) { model in
+                guard let agents = model.agents else { return AnyView(EmptyView()) }
+                return AnyView(Group { if new { AgentsDashboard(agents: agents) } else { AgentsDetail(agents: agents) } }
+                    .padding(32).frame(width: 760).background(Color(nsColor: .windowBackgroundColor)))
+            })
+        }
+        extras.append(SnapshotExtras(name: "agents-menubar", inDefaultSet: false) { _ in AnyView(AgentsMenuBarOptions()) })
         extras.append(SnapshotExtras(name: "network-tiles", inDefaultSet: false) { _ in
             AnyView(PreviewNetworkTiles().background(PanelMaterialStandIn()))
         })

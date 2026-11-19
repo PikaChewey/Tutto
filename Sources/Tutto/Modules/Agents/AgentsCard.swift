@@ -18,12 +18,33 @@ struct AgentsCard: View {
     @Bindable var agents: AgentsModule
     /// On the Customize page: shown, not used.
     var placeholder = false
-    @State private var confirming: String?
-    @State private var confirmingLeftovers = false
+    /// A design option to draw instead of the chosen one (renders that compare them).
+    var style: AgentsStyle? = nil
+    @State var confirming: String?
+    @State var confirmingLeftovers = false
 
     static let rows = 4
 
     var body: some View {
+        Group {
+            switch style ?? AgentsStyle.chosen {
+            case .current: classicContent
+            case .tiles: tilesContent
+            case .inbox: inboxContent
+            case .rings: ringsContent
+            case .avatars: avatarsContent
+            }
+        }
+        .panelCard()
+        .animation(Motion.snappy, value: agents.sessions.map(\.id))
+        .animation(Motion.micro, value: confirming)
+        .background(VisibilityReader { visible in
+            guard !placeholder else { return }
+            if visible { agents.begin() } else { agents.end() }
+        })
+    }
+
+    private var classicContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             CardTitle(title: "Agents") {
                 QuietLink(title: summary) { showInApp(.agents) }
@@ -56,16 +77,9 @@ struct AgentsCard: View {
             }
             if !agents.leftRunning.isEmpty { leftoversLine }
         }
-        .panelCard()
-        .animation(Motion.snappy, value: agents.sessions.map(\.id))
-        .animation(Motion.micro, value: confirming)
-        .background(VisibilityReader { visible in
-            guard !placeholder else { return }
-            if visible { agents.begin() } else { agents.end() }
-        })
     }
 
-    private var summary: String {
+    var summary: String {
         let waiting = agents.needsYou.count
         if waiting > 0 { return waiting == 1 ? "1 needs you" : "\(waiting) need you" }
         let working = agents.sessions.filter { $0.activity == .working }.count
@@ -73,7 +87,7 @@ struct AgentsCard: View {
         return "All"
     }
 
-    private var runawayLine: some View {
+    var runawayLine: some View {
         let names = agents.sessions.filter { agents.runaway.contains($0.id) }
         let count = names.compactMap { $0.pid.flatMap { agents.loads[$0]?.processes } }.max()
         return HStack(spacing: 6) {
@@ -91,7 +105,7 @@ struct AgentsCard: View {
     }
 
     @ViewBuilder
-    private var leftoversLine: some View {
+    var leftoversLine: some View {
         let count = agents.leftRunning.count
         let memory = agents.leftRunning.reduce(UInt64(0)) { $0 + $1.memory }
         HStack(spacing: 6) {

@@ -19,7 +19,7 @@ struct AgentsPage: View {
                        subtitle: "Claude Code and Codex on this Mac: which need you, what each costs, what they left running, and how close you are to your limits.",
                        module: .agents)
             if let agents = model.agents {
-                AgentsDetail(agents: agents)
+                if AgentsStyle.chosen == .current { AgentsDetail(agents: agents) } else { AgentsDashboard(agents: agents) }
             } else {
                 ModuleOffView(module: .agents, model: model)
             }
@@ -27,7 +27,7 @@ struct AgentsPage: View {
     }
 }
 
-private struct AgentsDetail: View {
+struct AgentsDetail: View {
     @Bindable var agents: AgentsModule
 
     var body: some View {
