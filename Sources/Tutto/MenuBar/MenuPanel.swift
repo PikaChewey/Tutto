@@ -496,7 +496,7 @@ func showInApp(_ page: MainPage? = nil) {
 // MARK: - Header
 
 /// Tutto's mark and how the Mac is doing in plain words: a problem first, else the battery.
-private struct PanelHeader: View {
+struct PanelHeader: View {
     var model: AppModel
 
     var body: some View {
@@ -555,7 +555,7 @@ struct VerdictLine: View {
 
 /// The battery: how full, what the Mac is drawing, how healthy it is, and the apps using the
 /// processor most right now.
-private struct BatteryCard: View {
+struct BatteryCard: View {
     var battery: BatteryInfo
     var system: SystemMonitor
     @State private var hovering = false
@@ -705,7 +705,7 @@ private struct BusyAppChip: View {
 /// With Sensors & Fans off there's no temperature tile.
 /// One of the readings: CPU, memory, GPU, disk, network or temperature. Temperatures are read only
 /// while their tile is on screen.
-private struct ReadingTile: View {
+struct ReadingTile: View {
     var reading: PanelLayoutStore.Card
     var system: SystemMonitor
     var sensors: SensorsModule?
@@ -968,7 +968,7 @@ private struct StatTile<Graph: View>: View {
 /// fan. Next to each other on the panel they share a card. A row grows only while it's in use (a
 /// session's countdown, the clicker's count, the fan's custom speed).
 /// Bryan picked these rows over tiles, typed lines and a drawer (2026-11-12).
-private struct ControlRows: View {
+struct ControlRows: View {
     var model: AppModel
     var ids: [String]
     var editing: PanelEditing?
@@ -1299,7 +1299,7 @@ private struct MenuValue: View {
 
 /// Stay Awake: type a time (or pick one) and the Mac stays on, lid closed included. While it runs:
 /// the countdown, when it ends, chips to add time, End, and one line on what the lid does.
-private struct AwakeRow: View {
+struct AwakeRow: View {
     @Bindable var awake: StayAwakeModule
     @State private var visible = false
 
@@ -1532,7 +1532,7 @@ private struct Shake: GeometryEffect {
 
 /// Auto, Custom or Max for the fans, right in the panel (Bryan: "very useful and convenient to have
 /// there"). Every fan follows the one choice; the helper set-up and the full fan page are in the app.
-private struct FanRow: View {
+struct FanRow: View {
     @Bindable var sensors: SensorsModule
     @State private var customRPM: Double = 0
 
@@ -2343,7 +2343,7 @@ private struct ResultRow: View {
 
 /// The battery: the full card when wide, a tile with the charge and the watts when small. A Mac
 /// without a battery shows its busiest apps instead.
-private struct BatteryWidget: View {
+struct BatteryWidget: View {
     var model: AppModel
     var wide: Bool
 
@@ -2373,7 +2373,7 @@ private struct BatteryWidget: View {
 
 /// One line per Bluetooth device that reports a charge: symbol, name, levels (low ones in the
 /// alert colour). Nothing is drawn when none does; on the Customize page it shows a stand-in.
-private struct DevicesCard: View {
+struct DevicesCard: View {
     var placeholder: Bool
     @State private var hovering = false
 
@@ -2909,7 +2909,7 @@ private struct LevelAppIcon: View {
 
 // MARK: - Footer
 
-private struct PanelFooter: View {
+struct PanelFooter: View {
     @Bindable var model: AppModel
     @State private var hovering = false
 

@@ -238,7 +238,7 @@ private struct GlassStage<Panel: View>: View {
 }
 
 /// The menu bar window's material doesn't render offscreen; this approximates it.
-private struct PanelMaterialStandIn: View {
+struct PanelMaterialStandIn: View {
     @Environment(\.colorScheme) private var scheme
     var body: some View {
         Color(white: scheme == .dark ? 0.16 : 0.93)
@@ -413,6 +413,25 @@ struct SnapshotExtras {
             return AnyView(AgentsDashboard(agents: agents).padding(32).frame(width: 760)
                 .background(Color(nsColor: .windowBackgroundColor)))
         })
+        // Shorter-panel studies (Bryan, 2026-11-20), each at rest and after one click; the board is
+        // put together from these. `study-original` is today's panel, whole, without scrolling.
+        func study(_ name: String, levels: Bool = false, _ view: @escaping @MainActor (AppModel) -> some View) {
+            extras.append(SnapshotExtras(name: "study-\(name)", inDefaultSet: false) { model in
+                ThinScrollStage.limit = name == "original" ? 5_000 : nil
+                SoundCard.startsShowingLevels = levels
+                print("study: screen", NSScreen.main?.visibleFrame.height ?? 0)
+                return AnyView(view(model))
+            })
+        }
+        study("original") { MenuPanel(model: $0).background(PanelMaterialStandIn()) }
+        study("glance") { StudyGlance(model: $0, open: nil) }
+        study("glance-open") { StudyGlance(model: $0, open: "sound") }
+        study("modules") { StudyModules(model: $0, open: nil) }
+        study("modules-open") { StudyModules(model: $0, open: "agents") }
+        study("wide") { StudyWide(model: $0) }
+        study("wide-open", levels: true) { StudyWide(model: $0) }
+        study("list") { StudyList(model: $0, open: nil) }
+        study("list-open") { StudyList(model: $0, open: "agents") }
         extras.append(SnapshotExtras(name: "network-tiles", inDefaultSet: false) { _ in
             AnyView(PreviewNetworkTiles().background(PanelMaterialStandIn()))
         })
