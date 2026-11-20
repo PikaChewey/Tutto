@@ -37,6 +37,7 @@ struct ThinScrollArea<Content: View>: View {
             ThinScrollView(lane: lane, edgeInset: edgeInset, fadesEdges: fadesEdges) { content }
         } else {
             ScrollView(.vertical) { content }
+                .scrollIndicators(.never)
         }
     }
 }
@@ -71,8 +72,11 @@ private struct ThinScrollView<Content: View>: View {
     private static var fade: CGFloat { 14 }
 
     var body: some View {
+        // `.never`, not `.hidden`: with a mouse connected (or "Show scroll bars: Always") macOS keeps
+        // its legacy scroller under `.hidden`, a fat bar over the cards that also takes 15 pt of
+        // width and pushed the whole panel against the frame's left edge (Bryan, 2026-11-20).
         ScrollView(.vertical) { content }
-            .scrollIndicators(.hidden)
+            .scrollIndicators(.never)
             .scrollPosition($position)
             .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
                 ScrollMetrics(offset: geometry.contentOffset.y + geometry.contentInsets.top,

@@ -56,6 +56,16 @@ extension LimitEstimate {
         if let limitAt { return "Out \(at(limitAt))" }
         return resetsAt.map { "Resets \(at($0))" } ?? ""
     }
+
+    /// A meter's caption, short enough to sit under half a card at full size: "5 h · Out in 45 min",
+    /// "Week est. · Resets in 13 h", "Week est. · Sun 10 AM" (a reset days away is just when).
+    func caption(now: Date) -> String {
+        let window = shortWindow + (exact ? "" : " est.")
+        if !reached, limitAt == nil, let resetsAt, resetsAt.timeIntervalSince(now) >= 20 * 3600 {
+            return "\(window) · \(AgentText.clock(resetsAt, now: now))"
+        }
+        return "\(window) · \(when(now: now))"
+    }
 }
 
 /// A thin bar with a tick where an even pace would be: past the tick, you're using it faster than
@@ -119,7 +129,7 @@ struct ToolIcon: View {
 
 /// The disc behind a badge: white on a light card, a raised grey on a dark one. The cards are
 /// see-through, so the window's own paper (black in dark mode) read as a hole punched in the icon.
-private let badgeDisc = Color(nsColor: NSColor(name: "agentBadge") { appearance in
+let badgeDisc = Color(nsColor: NSColor(name: "agentBadge") { appearance in
     appearance.isDark ? NSColor(white: 0.30, alpha: 1) : .white
 })
 
@@ -284,9 +294,14 @@ struct DoneLine: View {
             showInApp(.agents)
         } label: {
             HStack(spacing: 8) {
-                HStack(spacing: -5) {
-                    ForEach(sessions.prefix(3)) { session in
+                // Overlapping, each with a thin ring of the card between it and the next, so they read
+                // as separate icons rather than one grey smudge.
+                HStack(spacing: -4) {
+                    ForEach(Array(sessions.prefix(3).enumerated()), id: \.element.id) { index, session in
                         SessionAvatar(agents: agents, session: session, size: 16, badge: false)
+                            .padding(1.5)
+                            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(badgeDisc))
+                            .zIndex(Double(3 - index))
                     }
                 }
                 Text("\(sessions.count) done")
@@ -329,11 +344,10 @@ struct MiniMeter: View {
                 PercentFigure(value: estimate.percent, size: 15, color: estimate.urgent ? .themeAccent : .ink)
             }
             PaceBar(estimate: estimate, now: now, height: 4)
-            Text("\(estimate.shortWindow)\(estimate.exact ? "" : " · est.") · \(estimate.when(now: now))")
+            Text(estimate.caption(now: now))
                 .font(.system(size: 10).monospacedDigit())
                 .foregroundStyle(estimate.urgent ? Color.themeAccent : Color.ink3)
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .help(AgentText.limitsHelp(limits, now: now))

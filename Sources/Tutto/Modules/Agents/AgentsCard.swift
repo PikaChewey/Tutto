@@ -53,7 +53,7 @@ struct AgentsCard: View {
             if !agents.runaway.isEmpty { runawayLine }
             if !agents.leftRunning.isEmpty { leftoversLine }
             if !agents.limits.isEmpty {
-                HStack(spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
                     ForEach(agents.limits, id: \.tool) { limits in
                         if let estimate = limits.headline { MiniMeter(limits: limits, estimate: estimate, now: agents.now) }
                     }

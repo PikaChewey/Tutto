@@ -77,6 +77,9 @@ struct MenuPanel: View {
                     .scrollBounceBehavior(.basedOnSize)
                     .frame(maxHeight: Self.cardsHeightLimit)
                     .fixedSize(horizontal: false, vertical: true)
+                    // Exactly the cards' width, whatever a scroll view asks for: anything wider
+                    // shifts the whole column off-centre in the frame.
+                    .frame(width: PanelGrid.content)
             }
             PanelFooter(model: model)
         }
