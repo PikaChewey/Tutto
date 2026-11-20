@@ -909,10 +909,10 @@ private struct MiniMeter: View {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     PercentFigure(value: estimate.percent, size: 15, color: estimate.urgent ? .themeAccent : .ink)
-                    Text(estimate.shortWindow)
+                    Text(estimate.shortWindow + (estimate.exact ? "" : " est."))
                         .font(.system(size: 10)).foregroundStyle(Color.ink3).lineLimit(1).fixedSize()
                 }
-                Text((estimate.exact ? "" : "est. · ") + estimate.when(now: now))
+                Text(estimate.when(now: now))
                     .font(.system(size: 10).monospacedDigit())
                     .foregroundStyle(estimate.urgent ? Color.themeAccent : Color.ink3)
                     .lineLimit(1).minimumScaleFactor(0.8)
