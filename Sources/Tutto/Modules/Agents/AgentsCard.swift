@@ -2,13 +2,13 @@
 //  AgentsCard.swift
 //  Tutto
 //
-//  The Agents card on the menu bar panel. Up to four sessions, what needs you first: a raised hand
-//  in the accent for one waiting on you, a turning ring while one works, a quiet tick when it's
-//  your turn. A click opens that exact session. An idle one that's been sitting a while says what
-//  it holds ("idle 2 h · 271 MB"); under the pointer every row says what it costs and offers to
-//  stop it, with a confirmation in place. Under them, one line per agent for its limit, in the
-//  accent only when it'll run out before it resets; then what agents left running, and any agent
-//  whose processes are multiplying. Nothing shows that has nothing to say.
+//  The Agents card on the menu bar panel. What needs you and what's working get a row each: the
+//  app with its state in a badge, the name, and a soft accent pill only for the one waiting on you
+//  (the rest a quiet time). A click opens that exact session; under the pointer a row says what it
+//  costs and offers to stop it, asking in place. Finished sessions fold into one grey line. Then
+//  what agents left running, any agent whose processes are multiplying, and each agent's limit as
+//  a small meter side by side: the figure, a bar with a tick where an even pace would be, and when
+//  it resets. Nothing shows that has nothing to say.
 //
 
 import SwiftUI
@@ -18,29 +18,46 @@ struct AgentsCard: View {
     @Bindable var agents: AgentsModule
     /// On the Customize page: shown, not used.
     var placeholder = false
-    /// A design option to draw instead of the chosen one (renders that compare them).
-    var style: AgentsStyle? = nil
     @State var confirming: String?
     @State var confirmingLeftovers = false
 
+    /// Rows for sessions that need you or are working; past that, "N more".
     static let rows = 4
 
     var body: some View {
-        Group {
-            switch style ?? AgentsStyle.chosen {
-            case .current: classicContent
-            case .tiles: tilesContent
-            case .inbox: inboxContent
-            case .rings: ringsContent
-            case .avatars: avatarsContent
-            case .combo: comboContent
-            case .usageFirst: usageFirstContent
-            case .bothWindows: bothWindowsContent
-            case .tinted: tintedContent
-            case .collapsed: collapsedContent
-            case .ringIcons: ringIconsContent
-            case .quietCaptions: quietCaptionsContent
-            case .unreadDots: unreadDotsContent
+        let active = agents.sessions.filter { $0.activity != .yourTurn }
+        let done = agents.sessions.filter { $0.activity == .yourTurn }
+        VStack(alignment: .leading, spacing: 10) {
+            CardTitle(title: "Agents") {
+                QuietLink(title: summary) { showInApp(.agents) }
+                    .help("Open Agents in Tutto")
+            }
+            if agents.sessions.isEmpty {
+                Text("No agents running")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.ink3)
+            }
+            if !active.isEmpty {
+                VStack(spacing: 1) {
+                    ForEach(active.prefix(Self.rows)) { session in
+                        AgentSessionRow(agents: agents, session: session, confirming: $confirming, placeholder: placeholder)
+                    }
+                }
+                .padding(.horizontal, -6)
+                if active.count > Self.rows {
+                    QuietLink(title: "\(active.count - Self.rows) more", size: 11.5) { showInApp(.agents) }
+                        .padding(.top, -6)
+                }
+            }
+            if !done.isEmpty { DoneLine(agents: agents, sessions: done, placeholder: placeholder) }
+            if !agents.runaway.isEmpty { runawayLine }
+            if !agents.leftRunning.isEmpty { leftoversLine }
+            if !agents.limits.isEmpty {
+                HStack(spacing: 12) {
+                    ForEach(agents.limits, id: \.tool) { limits in
+                        if let estimate = limits.headline { MiniMeter(limits: limits, estimate: estimate, now: agents.now) }
+                    }
+                }
             }
         }
         .panelCard()
@@ -50,41 +67,6 @@ struct AgentsCard: View {
             guard !placeholder else { return }
             if visible { agents.begin() } else { agents.end() }
         })
-    }
-
-    private var classicContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            CardTitle(title: "Agents") {
-                QuietLink(title: summary) { showInApp(.agents) }
-                    .help("Open Agents in Tutto")
-            }
-            if agents.sessions.isEmpty {
-                Text("No agents running")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.ink3)
-            } else {
-                VStack(spacing: 1) {
-                    ForEach(agents.sessions.prefix(Self.rows)) { session in
-                        AgentRow(agents: agents, session: session, confirming: $confirming, placeholder: placeholder)
-                    }
-                }
-                .padding(.horizontal, -6)
-                if agents.sessions.count > Self.rows {
-                    QuietLink(title: "\(agents.sessions.count - Self.rows) more", size: 11.5) { showInApp(.agents) }
-                        .padding(.top, -4)
-                }
-            }
-            if !agents.runaway.isEmpty { runawayLine }
-            if !agents.limits.isEmpty {
-                Hairline().opacity(0.6)
-                VStack(spacing: 6) {
-                    ForEach(agents.limits, id: \.tool) { limits in
-                        if let headline = limits.headline { LimitLine(limits: limits, estimate: headline, now: agents.now) }
-                    }
-                }
-            }
-            if !agents.leftRunning.isEmpty { leftoversLine }
-        }
     }
 
     var summary: String {
@@ -149,126 +131,12 @@ struct AgentsCard: View {
     }
 }
 
-// MARK: - A session
-
-private struct AgentRow: View {
-    @Bindable var agents: AgentsModule
-    var session: AgentSession
-    @Binding var confirming: String?
-    var placeholder: Bool
-    @State private var hovering = false
-
-    private var load: AgentLoad? { session.pid.flatMap { agents.loads[$0] } }
-    private var stopping: Bool { session.pid.map { agents.stopping.contains($0) } ?? false }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if confirming == session.id {
-                confirm
-            } else {
-                AgentMark(activity: session.activity)
-                Text(session.name)
-                    .font(.system(size: 12.5, weight: session.activity.needsYou ? .semibold : .medium))
-                    .foregroundStyle(session.activity == .yourTurn ? Color.ink2 : Color.ink)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 6)
-                Text(detail)
-                    .font(.system(size: 11.5).monospacedDigit())
-                    .foregroundStyle(detailColor)
-                    .lineLimit(1)
-                    .contentTransition(.opacity)
-                if hovering, !placeholder, session.pid != nil, session.tool == .claude {
-                    Button {
-                        confirming = session.id
-                    } label: {
-                        Image(systemName: "stop.circle")
-                            .font(.system(size: 12.5))
-                            .foregroundStyle(Color.ink2)
-                            .lensHover(cornerRadius: 7, x: 2, y: 2, swell: Motion.iconSwell)
-                    }
-                    .buttonStyle(PressStyle())
-                    .help("Stop this session: its process quits; the conversation is kept")
-                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
-                }
-            }
-        }
-        .padding(.horizontal, 6)
-        .frame(height: 26)
-        .hoverBackground(hovering && confirming != session.id, x: 0)
-        .contentShape(Rectangle())
-        .onHover { inside in withAnimation(Motion.micro) { hovering = inside } }
-        .onTapGesture {
-            guard !placeholder, confirming != session.id else { return }
-            afterPanelCloses { agents.show(session) }
-        }
-        .opacity(stopping ? 0.45 : 1)
-        .help(help)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(session.name), \(AgentText.state(session.activity))")
-        .accessibilityValue(detail)
-        .accessibilityHint("Opens the session")
-        .accessibilityAddTraits(.isButton)
-    }
-
-    private var confirm: some View {
-        HStack(spacing: 8) {
-            Text("Stop \u{201C}\(session.name)\u{201D}?")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.ink)
-                .lineLimit(1)
-            Spacer(minLength: 4)
-            QuietLink(title: "Keep", size: 11.5) { confirming = nil }
-            Button("Stop") {
-                agents.stop(session)
-                confirming = nil
-            }
-            .buttonStyle(OutlineButtonStyle(compact: true))
-        }
-    }
-
-    /// Short: how long, and what it holds when that's worth knowing. Under the pointer, its cost.
-    private var detail: String {
-        if stopping { return "stopping…" }
-        if hovering, let load, session.tool == .claude {
-            return AgentText.cost(load)
-        }
-        if agents.runaway.contains(session.id), let load {
-            return "\(load.processes) processes"
-        }
-        let age = AgentText.age(since: session.since, now: agents.now)
-        switch session.activity {
-        case .needsYou: return "waiting \(age)"
-        case .working:
-            if let quiet = agents.quiet(session) { return "quiet \(AgentText.age(since: agents.now.addingTimeInterval(-quiet), now: agents.now))" }
-            return age
-        case .yourTurn:
-            if let load, load.memory >= 150_000_000, agents.now.timeIntervalSince(session.since) >= 1800 {
-                return "idle \(age) · \(Format.bytes(Int64(load.memory)))"
-            }
-            return "idle \(age)"
-        }
-    }
-
-    private var detailColor: Color {
-        if session.activity.needsYou || agents.runaway.contains(session.id) { return .themeAccent }
-        return .ink3
-    }
-
-    private var help: String {
-        var lines = ["\(session.tool.name) · \(AgentSession.displayFolder(session.folder))"]
-        if let reason = AgentsModule.reason(session) { lines.append(reason) }
-        if agents.quiet(session) != nil { lines.append("Working, but nothing written for a while: it may be stuck, or waiting on a long command") }
-        if let load { lines.append(AgentText.costLong(load)) }
-        lines.append(session.openURL != nil ? "Click to open it" : "Click to bring its window forward")
-        return lines.joined(separator: "\n")
-    }
-}
-
 /// A session's state at a glance: a raised hand (needs you), the system's spinner (working), a tick
 /// (your turn).
 struct AgentMark: View {
     var activity: AgentActivity
+    /// Drawn on a badge's disc: the tick a step darker so it holds up on the grey.
+    var onBadge = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -293,64 +161,11 @@ struct AgentMark: View {
             case .yourTurn:
                 Image(systemName: "checkmark")
                     .font(.system(size: 9.5, weight: .bold))
-                    .foregroundStyle(Color.ink3)
+                    .foregroundStyle(onBadge ? Color.ink2 : Color.ink3)
             }
         }
         .frame(width: 14, height: 14)
         .accessibilityHidden(true)
-    }
-}
-
-// MARK: - A limit
-
-struct LimitLine: View {
-    var limits: AgentLimits
-    var estimate: LimitEstimate
-    var now: Date
-
-    private var urgent: Bool { estimate.reached || estimate.limitAt != nil || estimate.percent >= 85 }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(limits.tool.name)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.ink2)
-                .frame(width: 44, alignment: .leading)
-            LimitBar(percent: estimate.percent, urgent: urgent)
-                .frame(minWidth: 36)
-            Text(AgentText.percent(estimate))
-                .font(.system(size: 11.5, weight: .semibold).monospacedDigit())
-                .foregroundStyle(urgent ? Color.themeAccent : Color.ink)
-                .frame(width: 40, alignment: .trailing)
-            Text(AgentText.timing(estimate, now: now))
-                .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(urgent ? Color.themeAccent : Color.ink3)
-                .lineLimit(1)
-                .fixedSize()
-                .layoutPriority(1)
-        }
-        .help(AgentText.limitsHelp(limits, now: now))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(limits.tool.name) limit")
-        .accessibilityValue("\(AgentText.percent(estimate)), \(AgentText.timing(estimate, now: now))")
-    }
-}
-
-struct LimitBar: View {
-    var percent: Double
-    var urgent: Bool
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.ink.opacity(0.1))
-                Capsule()
-                    .fill(urgent ? Color.themeAccent : Color.ink.opacity(0.7))
-                    .frame(width: max(proxy.size.width * min(percent, 100) / 100, percent > 0 ? 3 : 0))
-            }
-        }
-        .frame(height: 4)
-        .animation(Motion.snappy, value: percent)
     }
 }
 

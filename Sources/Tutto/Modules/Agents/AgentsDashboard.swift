@@ -5,7 +5,7 @@
 //  The Agents page to go with the new cards: the four limit windows as tiles across the top (figure,
 //  pace bar, countdown), then sessions grouped by what they need from you, each one line of name and
 //  one quiet line of where and what it costs, with its actions under the pointer. What's left running
-//  and the alerts follow. Also the menu bar options, drawn for the comparison renders.
+//  and the alerts follow.
 //
 
 import AppKit
@@ -318,76 +318,3 @@ private struct DashLeftoverRow: View {
 private extension String {
     var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }
-
-// MARK: - Menu bar options (renders)
-
-#if DEBUG
-/// The menu bar beside Tutto's icon, the ways it could say an agent waits and a limit is near.
-struct AgentsMenuBarOptions: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            option("Now", "A hand while one waits (with how many past one); the agent's name and percent when a limit is near") {
-                Image(systemName: "hand.raised.fill")
-                Text("2").monospacedDigit()
-                Text("Codex 92%")
-            }
-            option("1  Quiet", "The hand and count only; a limit as a small ring with no words (its tool in the tooltip)") {
-                Image(systemName: "hand.raised.fill")
-                Text("2").monospacedDigit()
-                MiniRing(percent: 92)
-            }
-            option("2  Figure", "A ring with the percent beside it, the way the rest of the panel writes numbers") {
-                Image(systemName: "hand.raised.fill")
-                MiniRing(percent: 92)
-                HStack(alignment: .firstTextBaseline, spacing: 0.5) {
-                    Text("92").monospacedDigit()
-                    Text("%").font(.system(size: 9.5, weight: .semibold))
-                }
-            }
-            option("3  Dot", "Nothing but a dot on Tutto's icon while one waits; a limit only once it's reached", badge: true) {
-                EmptyView()
-            }
-        }
-        .padding(22)
-        .background(Color(white: 0.12))
-        .environment(\.colorScheme, .dark)
-    }
-
-    private func option(_ name: String, _ note: String, badge: Bool = false, @ViewBuilder _ content: () -> some View) -> some View {
-        HStack(spacing: 18) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
-                Text(note).font(.system(size: 11)).foregroundStyle(.white.opacity(0.55)).frame(width: 300, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack(spacing: 5) {
-                Image(nsImage: MenuBarGlyph.image())
-                    .renderingMode(.template)
-                    .overlay(alignment: .topTrailing) {
-                        if badge { Circle().fill(Color.accentColor).frame(width: 6, height: 6).offset(x: 2, y: -1) }
-                    }
-                content()
-            }
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 10)
-            .frame(height: 24)
-            .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(0.08)))
-            Spacer(minLength: 0)
-        }
-        .frame(width: 520, alignment: .leading)
-    }
-}
-
-private struct MiniRing: View {
-    var percent: Double
-
-    var body: some View {
-        ZStack {
-            Circle().stroke(.white.opacity(0.3), lineWidth: 2)
-            Circle().trim(from: 0, to: percent / 100).stroke(.white, style: StrokeStyle(lineWidth: 2, lineCap: .round)).rotationEffect(.degrees(-90))
-        }
-        .frame(width: 12, height: 12)
-    }
-}
-#endif
