@@ -16,6 +16,7 @@ import TuttoKit
 
 enum AgentsStyle: String, CaseIterable {
     case current, tiles, inbox, rings, avatars
+    case combo, usageFirst, bothWindows, tinted, collapsed, ringIcons, quietCaptions, unreadDots
 
     static let key = "agents.cardStyle"
     nonisolated(unsafe) static var override: AgentsStyle?
@@ -192,6 +193,10 @@ struct SessionStatus: View {
     var agents: AgentsModule
     var session: AgentSession
     var hovering: Bool
+    /// The row itself is tinted: the waiting time is plain accent text, no pill.
+    var plain = false
+    /// A finished one shows its time and, for half an hour, a small dot instead of "Done".
+    var unreadDot = false
 
     private var load: AgentLoad? { session.pid.flatMap { agents.loads[$0] } }
 
@@ -203,6 +208,10 @@ struct SessionStatus: View {
                     .foregroundStyle(Color.ink2)
             } else {
                 switch session.activity {
+                case .needsYou where plain:
+                    Text("Waiting \(age)")
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(Color.themeAccent)
                 case .needsYou:
                     Text("Waiting \(age)")
                         .font(.system(size: 11, weight: .semibold).monospacedDigit())
@@ -216,6 +225,13 @@ struct SessionStatus: View {
                             .foregroundStyle(Color.ink2)
                     } else {
                         Text(age).foregroundStyle(Color.ink3)
+                    }
+                case .yourTurn where unreadDot:
+                    HStack(spacing: 6) {
+                        Text(age).foregroundStyle(Color.ink3)
+                        Circle()
+                            .fill(agents.now.timeIntervalSince(session.since) < 1800 ? Color.themeAccent : Color.clear)
+                            .frame(width: 6, height: 6)
                     }
                 case .yourTurn:
                     Text("Done · \(age)").foregroundStyle(Color.ink3)
@@ -236,6 +252,8 @@ struct AgentSessionRow: View {
     @Binding var confirming: String?
     var placeholder: Bool
     var twoLines = false
+    var tinted = false
+    var unreadDot = false
     @State private var hovering = false
 
     var body: some View {
@@ -267,7 +285,7 @@ struct AgentSessionRow: View {
                     }
                 }
                 Spacer(minLength: 6)
-                SessionStatus(agents: agents, session: session, hovering: hovering && !placeholder)
+                SessionStatus(agents: agents, session: session, hovering: hovering && !placeholder, plain: tinted, unreadDot: unreadDot)
                 if hovering, !placeholder, session.pid != nil, session.tool == .claude {
                     Button {
                         confirming = session.id
@@ -285,6 +303,11 @@ struct AgentSessionRow: View {
         }
         .padding(.horizontal, 6)
         .frame(height: twoLines ? 36 : 26)
+        .background {
+            if tinted, session.activity.needsYou, confirming != session.id {
+                RoundedRectangle(cornerRadius: Radius.of(9), style: .continuous).fill(Color.themeAccent.opacity(0.13))
+            }
+        }
         .hoverBackground(hovering && confirming != session.id, x: 0)
         .contentShape(Rectangle())
         .onHover { inside in withAnimation(Motion.micro) { hovering = inside } }
@@ -339,10 +362,11 @@ extension AgentsCard {
         if !agents.leftRunning.isEmpty { leftoversLine }
     }
 
-    private func rows(_ sessions: some Collection<AgentSession>, twoLines: Bool = false) -> some View {
+    private func rows(_ sessions: some Collection<AgentSession>, twoLines: Bool = false, tinted: Bool = false, unreadDot: Bool = false) -> some View {
         VStack(spacing: 1) {
             ForEach(Array(sessions)) { session in
-                AgentSessionRow(agents: agents, session: session, confirming: $confirming, placeholder: placeholder, twoLines: twoLines)
+                AgentSessionRow(agents: agents, session: session, confirming: $confirming, placeholder: placeholder, twoLines: twoLines,
+                                tinted: tinted, unreadDot: unreadDot)
             }
         }
         .padding(.horizontal, -6)
@@ -446,6 +470,225 @@ extension AgentsCard {
                 }
             }
         }
+    }
+}
+
+// MARK: - Round two: the rows he picked with D's meters
+
+extension AgentsCard {
+    @ViewBuilder
+    private var meters: some View { meterRow() }
+
+    @ViewBuilder
+    private func meterRow(ring: Bool = false, captionOnHover: Bool = false) -> some View {
+        if !agents.limits.isEmpty {
+            HStack(spacing: 12) {
+                ForEach(Array(agents.limits.enumerated()), id: \.element.tool) { index, limits in
+                    if ring, index > 0 { Rectangle().fill(Color.hairline).frame(width: 1, height: 30) }
+                    if let estimate = limits.headline {
+                        MiniMeter(limits: limits, estimate: estimate, now: agents.now, ring: ring, captionOnHover: captionOnHover)
+                    }
+                }
+            }
+        }
+    }
+
+    // J — a ring around each agent's icon is its meter; a hairline between the two.
+    var ringIconsContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            sessionRows
+            footers
+            meterRow(ring: true)
+        }
+    }
+
+    // K — the meters say only the figure and the bar; when it resets comes up under the pointer.
+    var quietCaptionsContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            sessionRows
+            footers
+            meterRow(captionOnHover: true)
+        }
+    }
+
+    // L — finished ones show their time and a dot for half an hour, not "Done".
+    var unreadDotsContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            emptyLine
+            if !agents.sessions.isEmpty {
+                rows(agents.sessions.prefix(4), unreadDot: true)
+                moreLink(shown: 4).padding(.top, -6)
+            }
+            footers
+            meters
+        }
+    }
+
+    @ViewBuilder
+    private var dualMeters: some View {
+        if !agents.limits.isEmpty {
+            HStack(spacing: 12) {
+                ForEach(agents.limits, id: \.tool) { limits in DualMeter(limits: limits, now: agents.now) }
+            }
+        }
+    }
+
+    private var sessionRows: some View {
+        Group {
+            emptyLine
+            if !agents.sessions.isEmpty {
+                rows(agents.sessions.prefix(4))
+                moreLink(shown: 4).padding(.top, -6)
+            }
+        }
+    }
+
+    // E — the rows, what's left running, then the two meters.
+    var comboContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            sessionRows
+            footers
+            meters
+        }
+    }
+
+    // F — the same, usage first.
+    var usageFirstContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            meters
+            Hairline().opacity(0.5)
+            sessionRows
+            footers
+        }
+    }
+
+    // G — each meter shows both windows (5 hours and the week) as two thin bars.
+    var bothWindowsContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            sessionRows
+            footers
+            dualMeters
+        }
+    }
+
+    // H — the one that needs you is a tinted row instead of a pill.
+    var tintedContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            emptyLine
+            if !agents.sessions.isEmpty {
+                rows(agents.sessions.prefix(4), tinted: true)
+                moreLink(shown: 4).padding(.top, -6)
+            }
+            footers
+            meters
+        }
+    }
+
+    // I — finished sessions fold into one line; only what needs you or is working gets a row.
+    var collapsedContent: some View {
+        let active = agents.sessions.filter { $0.activity != .yourTurn }
+        let done = agents.sessions.filter { $0.activity == .yourTurn }
+        return VStack(alignment: .leading, spacing: 10) {
+            header
+            emptyLine
+            if !active.isEmpty { rows(active.prefix(4)) }
+            if !done.isEmpty { DoneLine(agents: agents, sessions: done) }
+            footers
+            meters
+        }
+    }
+}
+
+/// I — "2 done · site, Grasp Project", their icons overlapping; a click opens the page.
+private struct DoneLine: View {
+    var agents: AgentsModule
+    var sessions: [AgentSession]
+    @State private var hovering = false
+
+    var body: some View {
+        Button { showInApp(.agents) } label: {
+            HStack(spacing: 8) {
+                HStack(spacing: -5) {
+                    ForEach(sessions.prefix(3)) { session in
+                        SessionAvatar(agents: agents, session: session, size: 16).overlay(alignment: .bottomTrailing) { EmptyView() }
+                    }
+                }
+                Text("\(sessions.count) done")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.ink2)
+                Text(sessions.map(\.name).joined(separator: ", "))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Color.ink3)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: 26)
+            .hoverBackground(hovering, x: 0)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .onHover { hovering = $0 }
+        .padding(.horizontal, -6)
+        .help("Open them in Tutto")
+    }
+}
+
+/// G — an agent with both windows: the figure of the one that matters, two thin bars labelled.
+private struct DualMeter: View {
+    var limits: AgentLimits
+    var now: Date
+
+    var body: some View {
+        let headline = limits.headline
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                ToolIcon(tool: limits.tool, size: 12)
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+                Text(limits.tool.name)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.ink2)
+                Spacer(minLength: 2)
+                if let headline {
+                    PercentFigure(value: headline.percent, size: 15, color: headline.urgent ? .themeAccent : .ink)
+                }
+            }
+            ForEach([limits.fiveHour, limits.week].compactMap { $0 }, id: \.window) { estimate in
+                HStack(spacing: 5) {
+                    Text(estimate.window == .fiveHour ? "5h" : "wk")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(Color.ink3)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .frame(width: 15, alignment: .leading)
+                    PaceBar(estimate: estimate, now: now, height: 3)
+                    Text("\(Int(estimate.percent.rounded()))")
+                        .font(.system(size: 9.5, weight: .medium).monospacedDigit())
+                        .foregroundStyle(estimate.urgent ? Color.themeAccent : Color.ink3)
+                        .frame(width: 15, alignment: .trailing)
+                }
+            }
+            if let headline {
+                Text("\(headline.exact ? "" : "est. · ")\(headline.when(now: now))")
+                    .font(.system(size: 10).monospacedDigit())
+                    .foregroundStyle(headline.urgent ? Color.themeAccent : Color.ink3)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .help(AgentText.limitsHelp(limits, now: now))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(limits.tool.name) limits")
+        .accessibilityValue([limits.fiveHour, limits.week].compactMap { $0 }
+            .map { "\($0.windowName) \(Int($0.percent.rounded())) percent" }.joined(separator: ", "))
     }
 }
 
@@ -643,8 +886,47 @@ private struct MiniMeter: View {
     var limits: AgentLimits
     var estimate: LimitEstimate
     var now: Date
+    var ring = false
+    var captionOnHover = false
+    @State private var hovering = false
 
     var body: some View {
+        if ring { ringBody } else { plainBody }
+    }
+
+    /// J: the icon inside a thin ring, the figure beside it, the pace bar under both.
+    private var ringBody: some View {
+        HStack(spacing: 9) {
+            ZStack {
+                Circle().stroke(Color.ink.opacity(0.1), lineWidth: 2.5)
+                Circle()
+                    .trim(from: 0, to: min(estimate.percent, 100) / 100)
+                    .stroke(estimate.urgent ? Color.themeAccent : Color.ink.opacity(0.75), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                ToolIcon(tool: limits.tool, size: 15)
+            }
+            .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    PercentFigure(value: estimate.percent, size: 15, color: estimate.urgent ? .themeAccent : .ink)
+                    Text(estimate.shortWindow)
+                        .font(.system(size: 10)).foregroundStyle(Color.ink3).lineLimit(1).fixedSize()
+                }
+                Text((estimate.exact ? "" : "est. · ") + estimate.when(now: now))
+                    .font(.system(size: 10).monospacedDigit())
+                    .foregroundStyle(estimate.urgent ? Color.themeAccent : Color.ink3)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .help(AgentText.limitsHelp(limits, now: now))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(limits.tool.name) limit")
+        .accessibilityValue("\(Int(estimate.percent.rounded())) percent, \(estimate.when(now: now))")
+    }
+
+    private var plainBody: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 ToolIcon(tool: limits.tool, size: 12)
@@ -656,13 +938,18 @@ private struct MiniMeter: View {
                 PercentFigure(value: estimate.percent, size: 15, color: estimate.urgent ? .themeAccent : .ink)
             }
             PaceBar(estimate: estimate, now: now, height: 4)
-            Text("\(estimate.shortWindow)\(estimate.exact ? "" : " · est.") · \(estimate.when(now: now))")
-                .font(.system(size: 10).monospacedDigit())
-                .foregroundStyle(estimate.urgent ? Color.themeAccent : Color.ink3)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            if !captionOnHover || hovering || LensStage.on("meters") {
+                Text("\(estimate.shortWindow)\(estimate.exact ? "" : " · est.") · \(estimate.when(now: now))")
+                    .font(.system(size: 10).monospacedDigit())
+                    .foregroundStyle(estimate.urgent ? Color.themeAccent : Color.ink3)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .transition(.opacity)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onHover { inside in withAnimation(Motion.micro) { hovering = inside } }
         .help(AgentText.limitsHelp(limits, now: now))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(limits.tool.name) limit")

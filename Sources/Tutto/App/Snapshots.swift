@@ -404,12 +404,20 @@ struct SnapshotExtras {
         // The Agents card's design options side by side (with `agents-demo`).
         extras.append(SnapshotExtras(name: "agents-options", inDefaultSet: false) { model in
             guard let agents = model.agents else { return AnyView(EmptyView()) }
-            let names: [(AgentsStyle, String)] = [(.current, "Now"), (.tiles, "A  Tiles"), (.inbox, "B  Inbox"), (.rings, "C  Rings"), (.avatars, "D  Icons")]
-            return AnyView(HStack(alignment: .top, spacing: 28) {
-                ForEach(names, id: \.0) { style, name in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(name).font(.system(size: 15, weight: .semibold)).foregroundStyle(Color.ink)
-                        AgentsCard(agents: agents, style: style).frame(width: PanelGrid.content)
+            let rows: [[(AgentsStyle, String)]] = ProcessInfo.processInfo.environment["AGENTS_ROUND"] == "2"
+                ? [[(.avatars, "D  (usage you liked)"), (.combo, "E  Picked"), (.usageFirst, "F  Usage first"), (.bothWindows, "G  Both windows")],
+                   [(.tinted, "H  Tinted row"), (.collapsed, "I  Done folded"), (.ringIcons, "J  Ring icons"), (.quietCaptions, "K  Quiet captions"),
+                    (.unreadDots, "L  Recent dot")]]
+                : [[(.current, "Now"), (.tiles, "A  Tiles"), (.inbox, "B  Inbox"), (.rings, "C  Rings"), (.avatars, "D  Icons")]]
+            return AnyView(VStack(alignment: .leading, spacing: 30) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    HStack(alignment: .top, spacing: 28) {
+                        ForEach(row, id: \.0) { style, name in
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(name).font(.system(size: 15, weight: .semibold)).foregroundStyle(Color.ink)
+                                AgentsCard(agents: agents, style: style).frame(width: PanelGrid.content)
+                            }
+                        }
                     }
                 }
             }

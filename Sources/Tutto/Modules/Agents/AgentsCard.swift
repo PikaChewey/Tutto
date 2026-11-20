@@ -33,6 +33,14 @@ struct AgentsCard: View {
             case .inbox: inboxContent
             case .rings: ringsContent
             case .avatars: avatarsContent
+            case .combo: comboContent
+            case .usageFirst: usageFirstContent
+            case .bothWindows: bothWindowsContent
+            case .tinted: tintedContent
+            case .collapsed: collapsedContent
+            case .ringIcons: ringIconsContent
+            case .quietCaptions: quietCaptionsContent
+            case .unreadDots: unreadDotsContent
             }
         }
         .panelCard()
