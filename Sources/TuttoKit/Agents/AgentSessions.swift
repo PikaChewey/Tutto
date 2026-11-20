@@ -99,6 +99,20 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
         }
     }
 
+    /// How long a finished session stays listed as done: 36 hours from when it finished (Bryan,
+    /// 2026-11-20). Older ones drop out of the card and the Agents page.
+    public static let doneWindow: TimeInterval = 36 * 3600
+
+    /// Finished, and longer ago than `doneWindow`.
+    public func isStale(now: Date) -> Bool {
+        activity == .yourTurn && now.timeIntervalSince(since) > Self.doneWindow
+    }
+
+    /// The sessions worth showing: everything running or waiting, and what finished in the last 36 hours.
+    public static func shown(_ sessions: [AgentSession], now: Date) -> [AgentSession] {
+        sessions.filter { !$0.isStale(now: now) }
+    }
+
     /// Needs you first, then working, then your turn; the most recent change first within each.
     public static func ordered(_ sessions: [AgentSession]) -> [AgentSession] {
         sessions.sorted { a, b in

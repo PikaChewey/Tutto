@@ -68,7 +68,8 @@ struct AgentsDashboard: View {
 
     @ViewBuilder
     private var sessions: some View {
-        if agents.sessions.isEmpty {
+        let shown = AgentSession.shown(agents.sessions, now: agents.now)
+        if shown.isEmpty {
             DashSection("Sessions") {
                 DashRow(title: "No agents running",
                         detail: "Claude Code sessions (in Claude's app or a terminal) and Codex threads show here while they run, the ones waiting on you first.") {
@@ -77,9 +78,9 @@ struct AgentsDashboard: View {
             }
         } else {
             let groups: [(String, [AgentSession])] = [
-                ("Needs you", agents.sessions.filter { $0.activity.needsYou }),
-                ("Working", agents.sessions.filter { $0.activity == .working }),
-                ("Your turn", agents.sessions.filter { $0.activity == .yourTurn }),
+                ("Needs you", shown.filter { $0.activity.needsYou }),
+                ("Working", shown.filter { $0.activity == .working }),
+                ("Your turn", shown.filter { $0.activity == .yourTurn }),
             ].filter { !$0.1.isEmpty }
             ForEach(groups, id: \.0) { title, sessions in
                 DashSection(title, count: sessions.count, accent: title == "Needs you") {

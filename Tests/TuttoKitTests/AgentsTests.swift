@@ -54,6 +54,18 @@ final class AgentsTests: XCTestCase {
         XCTAssertEqual(ordered.map(\.sessionID), ["ask", "new-work", "old-work", "done"])
     }
 
+    func testFinishedSessionsDropOutAfter36Hours() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func s(_ id: String, _ activity: AgentActivity, hoursAgo: Double) -> AgentSession {
+            AgentSession(tool: .claude, sessionID: id, name: id, folder: "/", activity: activity,
+                         since: now.addingTimeInterval(-hoursAgo * 3600), host: .other)
+        }
+        let shown = AgentSession.shown([s("fresh", .yourTurn, hoursAgo: 2), s("edge", .yourTurn, hoursAgo: 36),
+                                        s("old", .yourTurn, hoursAgo: 37), s("long-run", .working, hoursAgo: 80),
+                                        s("old-ask", .needsYou(nil), hoursAgo: 50)], now: now)
+        XCTAssertEqual(shown.map(\.sessionID), ["fresh", "edge", "long-run", "old-ask"])
+    }
+
     // MARK: Codex
 
     private let meta = #"{"timestamp":"2026-11-17T02:36:34.590Z","type":"session_meta","payload":{"id":"01a1e75c","cwd":"/Users/me/Waterloo","originator":"Codex Desktop","source":"vscode"}}"#

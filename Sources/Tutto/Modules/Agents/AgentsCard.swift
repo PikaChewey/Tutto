@@ -25,14 +25,15 @@ struct AgentsCard: View {
     static let rows = 4
 
     var body: some View {
-        let active = agents.sessions.filter { $0.activity != .yourTurn }
-        let done = agents.sessions.filter { $0.activity == .yourTurn }
+        let sessions = AgentSession.shown(agents.sessions, now: agents.now)
+        let active = sessions.filter { $0.activity != .yourTurn }
+        let done = sessions.filter { $0.activity == .yourTurn }
         VStack(alignment: .leading, spacing: 10) {
             CardTitle(title: "Agents") {
                 QuietLink(title: summary) { showInApp(.agents) }
                     .help("Open Agents in Tutto")
             }
-            if agents.sessions.isEmpty {
+            if sessions.isEmpty {
                 Text("No agents running")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.ink3)
@@ -61,7 +62,7 @@ struct AgentsCard: View {
             }
         }
         .panelCard()
-        .animation(Motion.snappy, value: agents.sessions.map(\.id))
+        .animation(Motion.snappy, value: AgentSession.shown(agents.sessions, now: agents.now).map(\.id))
         .animation(Motion.micro, value: confirming)
         .background(VisibilityReader { visible in
             guard !placeholder else { return }
