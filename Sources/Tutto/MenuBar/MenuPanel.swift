@@ -233,14 +233,18 @@ private struct WidgetGrid: View {
     var editing: PanelEditing?
 
     var body: some View {
-        let lines = PanelLayout.lines(model.layout.slots(model, editing: editing != nil))
+        // The controls fold into one row of chips; the Bluetooth devices into the battery card.
+        let fold = PanelFold(model.layout.slots(model, editing: editing != nil), editing: editing != nil)
+        let lines = PanelLayout.lines(fold.slots)
         VStack(spacing: PanelGrid.gap) {
             ForEach(Self.blocks(lines), id: \.self) { block in
                 switch block {
+                case .line(.cards([ControlStrip.id])):
+                    ControlStripView(model: model, ids: fold.chips, editing: editing)
                 case .line(.cards(let ids)):
                     HStack(spacing: PanelGrid.gap) {
                         ForEach(ids, id: \.self) { id in
-                            Editable(id: id, editing: editing) { card(id, wide: ids.count == 1) }
+                            Editable(id: id, editing: editing) { card(id, wide: ids.count == 1, devices: fold.devicesInBattery) }
                         }
                     }
                 case .line(.rows(let ids)):
@@ -295,10 +299,10 @@ private struct WidgetGrid: View {
     }
 
     @ViewBuilder
-    private func card(_ id: String, wide: Bool) -> some View {
+    private func card(_ id: String, wide: Bool, devices: Bool) -> some View {
         switch PanelLayoutStore.Widget(id: id) {
         case .card(.battery):
-            BatteryWidget(model: model, wide: wide)
+            BatteryWidget(model: model, wide: wide, devices: devices)
         case .card(let reading) where PanelLayout.readingIDs.contains(reading.rawValue):
             if let system = model.system {
                 ReadingTile(reading: reading, system: system, sensors: model.sensors, wide: wide)
@@ -323,7 +327,7 @@ private struct WidgetGrid: View {
 
 /// On the Customize page, a card is something to pick up and move, or click to select; its
 /// own controls don't respond there.
-private struct Editable<Content: View>: View {
+struct Editable<Content: View>: View {
     var id: String
     var editing: PanelEditing?
     var radius: CGFloat = 12
@@ -554,54 +558,57 @@ struct VerdictLine: View {
 // MARK: - Battery
 
 /// The battery: how full, what the Mac is drawing, how healthy it is, and the apps using the
-/// processor most right now.
+/// processor most right now. Compact (Bryan, 2026-11-21: "smaller but show the same amount of
+/// information"): the charge, health and cycles, and the watts share one 30 pt line, the busiest
+/// apps the next; with `devices`, the Bluetooth batteries follow in the same card.
 struct BatteryCard: View {
     var battery: BatteryInfo
     var system: SystemMonitor
+    /// The Bluetooth devices card folded in under a hairline (it sits right below the battery).
+    var devices = false
     @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Button {
                 showInApp(.battery)
             } label: {
-                HStack(alignment: .center, spacing: 12) {
+                HStack(alignment: .center, spacing: 10) {
                     BatteryGlyph(level: Double(battery.percent) / 100, charging: battery.isCharging, alert: low)
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(alignment: .firstTextBaseline, spacing: 1) {
-                            Text("\(battery.percent)")
-                                .font(.figure(24, weight: .semibold))
-                                .foregroundStyle(low ? Color.alert : Color.ink)
-                            Text("%")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Color.ink3)
-                        }
-                        Text(healthLine)
-                            .font(.system(size: 11))
+                    HStack(alignment: .firstTextBaseline, spacing: 1) {
+                        Text("\(battery.percent)")
+                            .font(.figure(22, weight: .semibold))
+                            .foregroundStyle(low ? Color.alert : Color.ink)
+                        Text("%")
+                            .font(.system(size: 12.5, weight: .medium))
                             .foregroundStyle(Color.ink3)
-                            .lineLimit(1)
-                        // Charge limit holding the charge ("Held at 80 %"): one dim line, only then.
-                        if let note = ChargeLimitController.shared.panelNote {
-                            Text(note)
-                                .font(.system(size: 11))
-                                .foregroundStyle(Color.ink3)
-                                .lineLimit(1)
-                        }
                     }
-                    Spacer(minLength: 8)
-                    VStack(alignment: .trailing, spacing: 2) {
+                    .fixedSize()
+                    // Health and cycles stacked beside the charge, not on a line of their own.
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Health \(battery.healthPercent) %")
+                        Text("\(Format.number(battery.cycleCount)) cycles")
+                    }
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Color.ink3)
+                    .lineLimit(1)
+                    .fixedSize()
+                    Spacer(minLength: 6)
+                    VStack(alignment: .trailing, spacing: 0) {
                         HStack(alignment: .firstTextBaseline, spacing: 2) {
                             Text(Format.watts(battery.powerDraw))
-                                .font(.figure(17, weight: .medium))
+                                .font(.figure(16, weight: .medium))
                                 .foregroundStyle(Color.ink)
                             Text("W")
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 10.5, weight: .medium))
                                 .foregroundStyle(Color.ink3)
                         }
                         Caption(powerCaption)
                     }
+                    .fixedSize()
                 }
-                .hoverBackground(hovering, x: 6, y: 4)
+                .frame(height: 30)
+                .hoverBackground(hovering, x: 6, y: 3)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -610,6 +617,13 @@ struct BatteryCard: View {
             .accessibilityLabel("Battery")
             .accessibilityValue("\(battery.percent) percent, \(battery.stateText), \(Format.watts(battery.powerDraw)) watts \(powerCaption), \(healthLine)\(ChargeLimitController.shared.panelNote.map { ", \($0)" } ?? "")")
             .accessibilityHint("Shows details")
+            // Charge limit holding the charge ("Held at 80 %"): one dim line, only then.
+            if let note = ChargeLimitController.shared.panelNote {
+                Text(note)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.ink3)
+                    .lineLimit(1)
+            }
             // A battery that needs attention says so on a line of its own (it's rare, and it matters).
             if let condition = unusualCondition {
                 Label(condition, systemImage: "exclamationmark.triangle.fill")
@@ -618,8 +632,12 @@ struct BatteryCard: View {
                     .lineLimit(1)
             }
             BusyAppsList(apps: system.busyApps, measured: system.busyAppsMeasured)
+            if devices {
+                Hairline().opacity(0.5)
+                DevicesCard(placeholder: false, inline: true)
+            }
         }
-        .panelCard()
+        .panelCard(vertical: 10)
     }
 
     private var unusualCondition: String? {
@@ -2346,12 +2364,14 @@ private struct ResultRow: View {
 struct BatteryWidget: View {
     var model: AppModel
     var wide: Bool
+    /// The Bluetooth devices drawn inside the battery card.
+    var devices = false
 
     var body: some View {
         if let system = model.system {
             if let battery = system.battery {
                 if wide {
-                    BatteryCard(battery: battery, system: system)
+                    BatteryCard(battery: battery, system: system, devices: devices)
                 } else {
                     let low = battery.percent <= 10 && !battery.isPluggedIn
                     StatTile(caption: "Battery", value: "\(battery.percent)", unit: "%",
@@ -2375,6 +2395,8 @@ struct BatteryWidget: View {
 /// alert colour). Nothing is drawn when none does; on the Customize page it shows a stand-in.
 struct DevicesCard: View {
     var placeholder: Bool
+    /// Inside the battery card: no card of its own.
+    var inline = false
     @State private var hovering = false
 
     var body: some View {
@@ -2412,7 +2434,7 @@ struct DevicesCard: View {
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .help("Bluetooth device batteries")
-            .panelCard(vertical: 10)
+            .modifier(DeviceCardSurface(inline: inline, vertical: 10))
         } else if BluetoothBatteries.shared.access != .allowed {
             // AirPods' levels need Bluetooth access, which macOS asks for once: until then, say so.
             let blocked = BluetoothBatteries.shared.access == .blocked
@@ -2441,7 +2463,7 @@ struct DevicesCard: View {
                 .fixedSize()
                 .help(blocked ? "Turn Tutto on under Privacy & Security → Bluetooth" : "macOS asks once to let Tutto read Bluetooth devices")
             }
-            .panelCard(vertical: 8)
+            .modifier(DeviceCardSurface(inline: inline, vertical: 8))
         } else if placeholder {
             HStack(spacing: 8) {
                 Image(systemName: "headphones")
@@ -2452,8 +2474,18 @@ struct DevicesCard: View {
                     .foregroundStyle(Color.ink3)
                     .lineLimit(1)
             }
-            .panelCard(vertical: 10)
+            .modifier(DeviceCardSurface(inline: inline, vertical: 10))
         }
+    }
+}
+
+/// The devices card's own surface, or none inside the battery card.
+private struct DeviceCardSurface: ViewModifier {
+    var inline: Bool
+    var vertical: CGFloat
+
+    func body(content: Content) -> some View {
+        if inline { content } else { content.panelCard(vertical: vertical) }
     }
 }
 

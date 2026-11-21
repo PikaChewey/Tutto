@@ -120,7 +120,8 @@ public struct PanelLayout: Codable, Equatable, Sendable {
 
     public init() {}
 
-    /// The panel's cards, top to bottom by default.
+    /// Every card id, in the order version 1 laid them out (the migration compares against it; the
+    /// panel's own default order is the app's `PanelLayoutStore.available`).
     public static let widgetIDs = ["battery", "devices", "cpu", "memory", "gpu", "disk", "network", "temperature",
                                    "compress", "awake", "clicker", "fan", "sound", "tools"]
     /// Before cards moved freely (a version 1 layout): the panel's parts, its readings and its controls.

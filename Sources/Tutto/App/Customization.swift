@@ -155,7 +155,10 @@ final class PanelLayoutStore {
     /// The cards this Mac and the tools switched on can show, in their default order (a plugin's
     /// card after the readings).
     func available(_ model: AppModel) -> [Widget] {
+        // Bryan, 2026-11-21 (layout A): the tools first, then the battery and the readings, the
+        // agents, and last the controls, which the panel folds into one row of chips.
         var cards: [Widget] = []
+        if !ShortcutRows.rows(model).isEmpty { cards.append(.card(.tools)) }
         if model.system != nil {
             cards += [.card(.battery), .card(.devices), .card(.cpu), .card(.memory), .card(.gpu), .card(.disk), .card(.network)]
         } else {
@@ -164,12 +167,11 @@ final class PanelLayoutStore {
         if model.sensors != nil { cards.append(.card(.temperature)) }
         if model.agents?.installed == true { cards.append(.card(.agents)) }
         cards += model.plugins.cardPlugins.map { .plugin($0.id) }
-        if model.converter != nil { cards.append(.card(.compress)) }
         if model.awake != nil { cards.append(.card(.awake)) }
         if model.clicker != nil { cards.append(.card(.clicker)) }
         if model.sensors?.hasFans == true { cards.append(.card(.fan)) }
         if model.sound != nil, SoundModule.isSupported { cards.append(.card(.sound)) }
-        if !ShortcutRows.rows(model).isEmpty { cards.append(.card(.tools)) }
+        if model.converter != nil { cards.append(.card(.compress)) }
         return cards
     }
 
