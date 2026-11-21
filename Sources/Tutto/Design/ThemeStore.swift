@@ -299,6 +299,24 @@ struct CardSurface: View {
     }
 }
 
+extension View {
+    /// A card's surface. In the glass looks the glass wraps the card's content, the way the header and
+    /// footer capsules do, instead of sitting behind it as a separate view: macOS turns a small piece of
+    /// glass light over a bright window behind the panel, and only content inside the glass follows it
+    /// (dark text on the light glass). Drawn behind, the chips went white with white text over a white
+    /// page (Bryan, 2026-11-21).
+    @ViewBuilder
+    func cardSurface(radius: CGFloat, hovering: Bool = false) -> some View {
+        if ThemeStore.shared.tokens.liquid, GlassLook.glassCards {
+            let shape = RoundedRectangle(cornerRadius: Radius.of(radius), style: .continuous)
+            prototypeGlass(shape)
+                .overlay(GlassRim(shape: shape, strength: hovering ? 1.3 : 1))
+        } else {
+            background(CardSurface(radius: radius, hovering: hovering))
+        }
+    }
+}
+
 /// A card on the clear sheet: a platter, darker than the glass in the dark look (text reads over a white
 /// page behind), paler in the light look, with a rim of light.
 private struct CardPlatter: View {

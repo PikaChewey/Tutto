@@ -135,10 +135,13 @@ enum Snapshots {
         }
         if only.contains("glass-stage") {
             if only.contains(where: { $0.hasPrefix("wall-") }) { FrostedFrame.blending = .withinWindow }
+            // `behind:<image>`: the panel's window stays clear, over a second window showing the image,
+            // the way the real panel sits over other apps (the glass reads what's behind its window).
+            let behind = only.first { $0.hasPrefix("behind:") }.flatMap { NSImage(contentsOfFile: String($0.dropFirst(7))) }
             for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {
                 let prefix = "wall-\(name):"
                 let wallpaper = only.first { $0.hasPrefix(prefix) }.flatMap { NSImage(contentsOfFile: String($0.dropFirst(prefix.count))) }
-                stage(model: model, appearance: appearance, wallpaper: wallpaper, marker: dir.appendingPathComponent("stage-\(name).window"))
+                stage(model: model, appearance: appearance, wallpaper: wallpaper, behind: behind, marker: dir.appendingPathComponent("stage-\(name).window"))
             }
             model.shutdown()
             return true
@@ -162,7 +165,7 @@ enum Snapshots {
         return true
     }
 
-    static func stage(model: AppModel, appearance: NSAppearance.Name, wallpaper: NSImage?, marker: URL) {
+    static func stage(model: AppModel, appearance: NSAppearance.Name, wallpaper: NSImage?, behind: NSImage? = nil, marker: URL) {
         // As tall as the screen allows: the panel with every card is taller than it was.
         let height = min(1_100, ((NSScreen.main?.visibleFrame.height) ?? 900) - 16)
         let size = NSSize(width: 700, height: height)
@@ -182,9 +185,23 @@ enum Snapshots {
             let area = screen.visibleFrame
             window.setFrameOrigin(NSPoint(x: area.maxX - size.width - 12, y: max(area.maxY - size.height - 8, area.minY)))
         }
+        var backdrop: NSWindow?
+        if let behind {
+            let under = NSWindow(contentRect: window.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            let image = NSImageView(frame: NSRect(origin: .zero, size: window.frame.size))
+            image.image = behind
+            image.imageScaling = .scaleAxesIndependently
+            under.contentView = image
+            under.level = .floating
+            under.isReleasedWhenClosed = false
+            under.ignoresMouseEvents = true
+            under.orderFrontRegardless()
+            backdrop = under
+        }
         window.orderFrontRegardless()
         RunLoop.main.run(until: Date().addingTimeInterval(2))
-        try? "\(window.windowNumber)".write(to: marker, atomically: true, encoding: .utf8)
+        // With a backdrop, the capture is of both windows: write "<panel> <backdrop>".
+        try? "\(window.windowNumber)\(backdrop.map { " \($0.windowNumber)" } ?? "")".write(to: marker, atomically: true, encoding: .utf8)
         print("stage:", marker.lastPathComponent, window.windowNumber)
         let done = marker.appendingPathExtension("done")
         let deadline = Date().addingTimeInterval(20)
@@ -192,6 +209,7 @@ enum Snapshots {
             RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         }
         window.orderOut(nil)
+        backdrop?.orderOut(nil)
     }
 
     static func render(_ view: some View, appearance: NSAppearance.Name, to url: URL) {

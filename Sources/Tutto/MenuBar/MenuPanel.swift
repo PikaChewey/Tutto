@@ -211,7 +211,7 @@ private struct RecordingBanner: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 40)
-        .background(CardSurface(radius: 12))
+        .cardSurface(radius: 12)
     }
 }
 
@@ -427,7 +427,7 @@ extension View {
         padding(.horizontal, PanelGrid.inset)
             .padding(.vertical, vertical ?? PanelGrid.inset)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(CardSurface(radius: 12))
+            .cardSurface(radius: 12)
     }
 
     /// A hover background that reaches `x` and `y` past the content, so the content stays on the grid.
@@ -493,6 +493,10 @@ func closePanel() {
 /// Opens a page of the app (or the app where you left it) and closes the panel.
 @MainActor
 func showInApp(_ page: MainPage? = nil) {
+    #if DEBUG
+    // The click probe counts what a click opened instead of opening it.
+    if ClickProbe.running { ClickProbe.opened.append(page.map { "\($0)" } ?? "app"); return }
+    #endif
     closePanel()
     if let page { MainWindowController.shared.show(page: page) } else { MainWindowController.shared.show() }
 }
@@ -644,8 +648,9 @@ struct BatteryCard: View {
         .contentShape(Rectangle())
         .onTapGesture { showInApp(.battery) }
         .modifier(CardLift(on: hovering || LensStage.on("Battery"), radius: 12))
-        .background(CardSurface(radius: 12))
+        .cardSurface(radius: 12)
         .onHover { hovering = $0 }
+        .probeFrame("battery")
     }
 
     private var unusualCondition: String? {
@@ -917,11 +922,12 @@ private struct StatTile<Graph: View>: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .modifier(CardLift(on: lifted, radius: 10))
-            .background(CardSurface(radius: 10))
+            .cardSurface(radius: 10)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .onHover { hovering = $0 }
+        .probeFrame("tile.\(caption)")
         .help(detail.isEmpty ? help : "\(help) · \(detail)")
         .accessibilityLabel(spokenName)
         .accessibilityValue(spokenValue)
@@ -976,7 +982,7 @@ private struct StatTile<Graph: View>: View {
             .padding(.vertical, 9)
             .frame(width: wide ? PanelGrid.tile * 2 + PanelGrid.gap : PanelGrid.tile, alignment: .leading)
             .modifier(CardLift(on: lifted, radius: 10))
-            .background(CardSurface(radius: 10))
+            .cardSurface(radius: 10)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
@@ -2459,6 +2465,7 @@ struct DevicesCard: View {
                 }
                 .buttonStyle(OutlineButtonStyle(compact: true))
                 .fixedSize()
+                .probeFrame("battery.show")
                 .help(blocked ? "Turn Tutto on under Privacy & Security → Bluetooth" : "macOS asks once to let Tutto read Bluetooth devices")
             }
             .modifier(DeviceCardSurface(inline: inline, vertical: 8))
@@ -2586,7 +2593,7 @@ private struct PluginCard: View {
         .padding(.horizontal, PanelGrid.inset)
         .padding(.vertical, 9)
         .frame(width: wide ? PanelGrid.tile * 2 + PanelGrid.gap : PanelGrid.tile, alignment: .leading)
-        .background(CardSurface(radius: 10, hovering: hovering))
+        .cardSurface(radius: 10, hovering: hovering)
         .contentShape(Rectangle())
     }
 
@@ -2708,7 +2715,7 @@ struct ToolsCard: View {
         .padding(.horizontal, Self.inset)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
-        .background(CardSurface(radius: 12))
+        .cardSurface(radius: 12)
         .overlay(alignment: .topLeading) {
             if let id = hovered, let index = rows.firstIndex(where: { $0.id == id }) {
                 let row = rows[index]
@@ -3081,7 +3088,7 @@ private struct NoticeRow: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, PanelGrid.inset)
-        .background(CardSurface(radius: 12))
+        .cardSurface(radius: 12)
         .help(help)
     }
 }

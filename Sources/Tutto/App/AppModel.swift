@@ -332,6 +332,15 @@ final class AppModel {
         }))
     }
 
+    #if DEBUG
+    /// `--modules-probe`: switches a tool off or on in memory only (nothing saved, nothing started or
+    /// stopped) and rebinds, to check that a tool that's off has no live shortcut.
+    func probeSetEnabled(_ id: ModuleID, _ on: Bool) {
+        if on { enabled.insert(id) } else { enabled.remove(id) }
+        bindShortcuts()
+    }
+    #endif
+
     /// Runs whatever action this shortcut is bound to (for key filters that take the keys first).
     func perform(shortcut: KeyShortcut) {
         guard let action = ShortcutAction.all.first(where: { action in

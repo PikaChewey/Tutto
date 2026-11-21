@@ -246,6 +246,9 @@ struct IconButton: View {
 struct PressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            // A card in the label brightens while pressed (CardLift reads it): the button's own press,
+            // never a second gesture competing with its click.
+            .environment(\.cardPressed, configuration.isPressed)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(Motion.press, value: configuration.isPressed)
     }
@@ -389,5 +392,15 @@ enum Format {
     static func temperature(_ celsius: Double?) -> String {
         guard let celsius else { return "—" }
         return String(format: "%.0f°", celsius)
+    }
+}
+
+private struct CardPressedKey: EnvironmentKey { static let defaultValue = false }
+
+extension EnvironmentValues {
+    /// Inside a pressed `PressStyle` button.
+    var cardPressed: Bool {
+        get { self[CardPressedKey.self] }
+        set { self[CardPressedKey.self] = newValue }
     }
 }

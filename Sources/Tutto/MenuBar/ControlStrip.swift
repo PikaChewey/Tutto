@@ -58,6 +58,10 @@ struct ControlStripView: View {
 
     /// Snapshots: the control drawn open (`open:<id>`).
     nonisolated(unsafe) static var startsOpen: String?
+    #if DEBUG
+    /// The click probe: which control is open, and where each chip is (window, top-left origin).
+    nonisolated(unsafe) static var probeOpen: String?
+    #endif
 
     private var shown: String? {
         let id = open ?? Self.startsOpen
@@ -70,6 +74,7 @@ struct ControlStripView: View {
                 ForEach(ids, id: \.self) { id in
                     Editable(id: id, editing: editing, radius: 10) {
                         ControlChip(model: model, id: id, selected: shown == id) { toggle(id) }
+                            .probeFrame("chip.\(id)")
                             .onDrop(of: [.fileURL], isTargeted: Binding(get: { false }, set: { over in
                                 if over, id == "compress", shown != id { toggle(id) }
                             })) { _ in false }
@@ -93,6 +98,9 @@ struct ControlStripView: View {
     private func toggle(_ id: String) {
         Self.startsOpen = nil
         withAnimation(reduceMotion ? nil : Motion.snappy) { open = shown == id ? nil : id }
+        #if DEBUG
+        Self.probeOpen = open
+        #endif
     }
 
     @ViewBuilder
@@ -143,7 +151,7 @@ private struct ControlChip: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
             .modifier(CardLift(on: lifted, radius: 10))
-            .background(CardSurface(radius: 10, hovering: selected))
+            .cardSurface(radius: 10, hovering: selected)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
@@ -203,5 +211,17 @@ private struct ControlChip: View {
             if converter.working != nil { return ("\(Int((converter.progress * 100).rounded())) %", true) }
             return ("Drop files", false)
         }
+    }
+}
+
+extension View {
+    /// The click probe's map of where things are (window, top-left origin); nothing in a release build.
+    @ViewBuilder
+    func probeFrame(_ key: String) -> some View {
+        #if DEBUG
+        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { ClickProbe.frames[key] = $0 }
+        #else
+        self
+        #endif
     }
 }

@@ -121,12 +121,13 @@ extension View {
 /// excessive", "doing too much"; Control Center's hover isn't tied to the pointer). It waits a
 /// moment before showing, so sweeping the pointer across the panel doesn't light every card it
 /// crosses, fades in over 0.15 s and out over 0.3 s, and a press brightens it a touch more
-/// (Liquid Glass "illuminates from within" under the finger). It sits under the text.
+/// (Liquid Glass "illuminates from within" under the finger), read from the button's own press:
+/// a drag gesture here once swallowed a quarter of the chips' clicks (`--click-probe`). Under the text.
 struct CardLift: ViewModifier {
     var on: Bool
     var radius: CGFloat
     @State private var shown = false
-    @State private var pressed = false
+    @Environment(\.cardPressed) private var pressed
     @State private var pending: DispatchWorkItem?
     @Environment(\.colorScheme) private var scheme
 
@@ -142,12 +143,10 @@ struct CardLift: ViewModifier {
             .background {
                 shape.fill(Color.white.opacity(veil))
                     .overlay(shape.strokeBorder(Color.white.opacity(dark ? 0.14 : 0.5), lineWidth: 0.75))
-                    .opacity(shown ? 1 : 0)
+                    .opacity(shown || pressed ? 1 : 0)
+                    .animation(.easeOut(duration: pressed ? 0.1 : 0.35), value: pressed)
                     .allowsHitTesting(false)
             }
-            .simultaneousGesture(DragGesture(minimumDistance: 0)
-                .onChanged { _ in if !pressed { withAnimation(.easeOut(duration: 0.1)) { pressed = true } } }
-                .onEnded { _ in withAnimation(.easeOut(duration: 0.35)) { pressed = false } })
             .onChange(of: on, initial: true) { _, now in
                 pending?.cancel()
                 if now {
