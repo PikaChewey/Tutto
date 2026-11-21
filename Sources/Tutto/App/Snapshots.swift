@@ -430,6 +430,8 @@ struct SnapshotExtras {
                 ThinScrollStage.limit = 5_000
                 SoundCard.startsShowingLevels = levels
                 ControlStripView.startsOpen = open
+                // The clicker render also shows the Fan chip under the pointer.
+                LensStage.forced = name == "panel-clicker" ? ["chip.fan"] : []
                 return AnyView(MenuPanel(model: model).background(PanelMaterialStandIn()))
             })
         }

@@ -112,17 +112,22 @@ private struct ControlChip: View {
     var selected: Bool
     var action: () -> Void
     @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Under the pointer (or forced on a snapshot): the same lift as the readings' tiles.
+    private var lifted: Bool { hovering || LensStage.on("chip.\(id)") }
 
     var body: some View {
         let state = Self.state(id, model: model)
         Button(action: action) {
-            // The same surface as every other card (glass in the glass look), a symbol and a name.
-            // The state is in the tooltip; a control that's running lights its symbol and a dot.
+            // The readings' tile, word for word: the card surface (glass in the glass look), lifted
+            // under the pointer with a rim of light, the symbol swelling like the tools bar's.
+            // Open, it stays lifted with its symbol in the accent; running, a dot says so.
             VStack(spacing: 4) {
                 Image(systemName: Self.symbol(id))
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(state.live || selected ? Color.themeAccent : Color.ink2)
+                    .foregroundStyle(state.live || selected ? Color.themeAccent : (lifted ? Color.ink : Color.ink2))
                     .frame(height: 18)
+                    .scaleEffect(lifted && !reduceMotion ? Motion.iconSwell : 1)
                     .overlay(alignment: .topTrailing) {
                         if state.live {
                             Circle().fill(Color.themeAccent).frame(width: 5, height: 5).offset(x: 6, y: -1)
@@ -130,7 +135,7 @@ private struct ControlChip: View {
                     }
                 Text(Self.title(id))
                     .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(selected ? Color.ink : Color.ink2)
+                    .foregroundStyle(selected || lifted ? Color.ink : Color.ink2)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
                     .allowsTightening(true)
@@ -138,16 +143,14 @@ private struct ControlChip: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
-            .background(CardSurface(radius: 12, hovering: hovering))
-            .overlay {
-                RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous)
-                    .strokeBorder(Color.themeAccent.opacity(selected ? 0.7 : 0), lineWidth: 1.25)
-            }
+            .background(CardSurface(radius: 10, hovering: lifted || selected))
+            .modifier(CardLift(on: lifted || selected, radius: 10))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .onHover { hovering = $0 }
-        .animation(Motion.snappy, value: selected)
+        .animation(Motion.lens(reduceMotion: reduceMotion), value: lifted)
+        .animation(Motion.lens(reduceMotion: reduceMotion), value: selected)
         .help("\(Self.title(id)) · \(state.text)")
         .accessibilityLabel(Self.title(id))
         .accessibilityValue(state.text)
