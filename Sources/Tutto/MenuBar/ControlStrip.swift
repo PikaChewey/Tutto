@@ -119,15 +119,14 @@ private struct ControlChip: View {
     var body: some View {
         let state = Self.state(id, model: model)
         Button(action: action) {
-            // The readings' tile, word for word: the card surface (glass in the glass look), lifted
-            // under the pointer with a rim of light, the symbol swelling like the tools bar's.
-            // Open, it stays lifted with its symbol in the accent; running, a dot says so.
+            // The readings' tile, word for word: the card surface (glass in the glass look) and the
+            // light that follows the pointer (CardLift). Open, the glass stays a shade brighter with
+            // its symbol in the accent; running, a dot says so.
             VStack(spacing: 4) {
                 Image(systemName: Self.symbol(id))
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(state.live || selected ? Color.themeAccent : (lifted ? Color.ink : Color.ink2))
                     .frame(height: 18)
-                    .scaleEffect(lifted && !reduceMotion ? Motion.iconSwell : 1)
                     .overlay(alignment: .topTrailing) {
                         if state.live {
                             Circle().fill(Color.themeAccent).frame(width: 5, height: 5).offset(x: 6, y: -1)
@@ -143,8 +142,8 @@ private struct ControlChip: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
+            .modifier(CardLift(on: lifted, radius: 10))
             .background(CardSurface(radius: 10, hovering: lifted || selected))
-            .modifier(CardLift(on: lifted || selected, radius: 10))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())

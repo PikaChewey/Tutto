@@ -115,27 +115,67 @@ extension View {
     }
 }
 
-/// A card that opens something lifts under the pointer: brighter rim, a sheen, 2 % larger.
+/// A card under the pointer, lit the way Liquid Glass is (WWDC25 "Meet Liquid Glass": highlights
+/// "respond to geometry and motion", and the material "illuminates from within" where you touch,
+/// the glow spreading from under the finger; "Design hover interactions for visionOS": a highlight,
+/// not a scale, on views people use often; RealityKit's spotlight hover "tracks the hover location").
+/// Bryan, 2026-11-21: the lift "doesn't feel like apple", it shouldn't enlarge, and the light sat in
+/// the same place every time. So: nothing grows; a soft light sits under the pointer and follows it
+/// on a critically damped spring (it trails a touch, never wobbles, and keeps its speed when you
+/// change direction); the rim catches that light on the edge nearest the pointer; a press brightens
+/// the light and spreads it across the card, then it settles. It fades in quickly and out slowly,
+/// left where the pointer last was. Reduce Motion: the light stays still, from above.
 struct CardLift: ViewModifier {
     var on: Bool
     var radius: CGFloat
+    @State private var point: CGPoint?
+    @State private var pressed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
 
+    /// The light trailing the pointer: quick, no overshoot.
+    private static let follow = Animation.spring(response: 0.22, dampingFraction: 1)
+
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: Radius.of(radius), style: .continuous)
+        let dark = scheme == .dark
+        // Under the content, over the card's surface (apply it before `.background(CardSurface…)`):
+        // the light never washes over the text.
         content
-            .overlay {
-                if on {
-                    shape
-                        .fill(LinearGradient(colors: [Color.white.opacity(scheme == .dark ? 0.1 : 0.28), Color.white.opacity(0)],
-                                             startPoint: .top, endPoint: .bottom))
-                        .overlay(GlassRim(shape: shape, strength: 0.9))
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
+            .background {
+                GeometryReader { geo in
+                    let size = geo.size
+                    let at = reduceMotion || point == nil ? CGPoint(x: size.width / 2, y: point == nil ? 0 : size.height * 0.2) : point!
+                    let reach = max(size.width, size.height) * (pressed ? 2.2 : 1.5)
+                    ZStack {
+                        // The light itself: feathered, faint, brighter while pressed.
+                        Circle()
+                            .fill(RadialGradient(colors: [Color.white.opacity((dark ? 0.12 : 0.55) * (pressed ? 1.6 : 1)), Color.white.opacity(0)],
+                                                 center: .center, startRadius: 0, endRadius: reach / 2))
+                            .frame(width: reach, height: reach)
+                            .position(at)
+                        // The rim, lit only where the light reaches it.
+                        shape.strokeBorder(Color.white.opacity(dark ? 0.5 : 0.95), lineWidth: 1)
+                            .mask {
+                                Circle()
+                                    .fill(RadialGradient(colors: [.white, .white.opacity(0.08)], center: .center, startRadius: 0, endRadius: reach * 0.42))
+                                    .frame(width: reach, height: reach)
+                                    .position(at)
+                            }
+                    }
+                    .clipShape(shape)
+                    .blendMode(dark ? .plusLighter : .normal)
                 }
+                .opacity(on ? 1 : 0)
+                .allowsHitTesting(false)
             }
-            .scaleEffect(on && !reduceMotion ? 1.02 : 1)
-            .animation(Motion.lens(reduceMotion: reduceMotion), value: on)
+            .onContinuousHover(coordinateSpace: .local) { phase in
+                guard case .active(let location) = phase else { return }
+                if point == nil || reduceMotion { point = location } else { withAnimation(Self.follow) { point = location } }
+            }
+            .simultaneousGesture(DragGesture(minimumDistance: 0)
+                .onChanged { _ in if !pressed { withAnimation(.easeOut(duration: 0.12)) { pressed = true } } }
+                .onEnded { _ in withAnimation(.easeOut(duration: 0.45)) { pressed = false } })
+            .animation(on ? .easeOut(duration: 0.15) : .easeOut(duration: 0.4), value: on)
     }
 }
