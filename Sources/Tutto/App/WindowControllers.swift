@@ -327,7 +327,7 @@ final class Toast {
     }
 }
 
-private struct ToastView: View {
+struct ToastView: View {
     static let widest: CGFloat = 420
     var content: Toast.Content
     var click: () -> Void

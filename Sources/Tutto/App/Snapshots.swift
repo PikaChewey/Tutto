@@ -141,7 +141,8 @@ enum Snapshots {
             for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {
                 let prefix = "wall-\(name):"
                 let wallpaper = only.first { $0.hasPrefix(prefix) }.flatMap { NSImage(contentsOfFile: String($0.dropFirst(prefix.count))) }
-                stage(model: model, appearance: appearance, wallpaper: wallpaper, behind: behind, marker: dir.appendingPathComponent("stage-\(name).window"))
+                stage(model: model, appearance: appearance, wallpaper: wallpaper, behind: behind, toasts: only.contains("toast-studies"),
+                      marker: dir.appendingPathComponent("stage-\(name).window"))
             }
             model.shutdown()
             return true
@@ -165,11 +166,13 @@ enum Snapshots {
         return true
     }
 
-    static func stage(model: AppModel, appearance: NSAppearance.Name, wallpaper: NSImage?, behind: NSImage? = nil, marker: URL) {
+    static func stage(model: AppModel, appearance: NSAppearance.Name, wallpaper: NSImage?, behind: NSImage? = nil, toasts: Bool = false, marker: URL) {
         // As tall as the screen allows: the panel with every card is taller than it was.
         let height = min(1_100, ((NSScreen.main?.visibleFrame.height) ?? 900) - 16)
-        let size = NSSize(width: 700, height: height)
-        let view = GlassStage(wallpaper: wallpaper, size: size) { MenuPanel(model: model, preview: true, glassRoot: true) }
+        let size = NSSize(width: toasts ? 1_440 : 700, height: height)
+        let view = GlassStage(wallpaper: wallpaper, size: size) {
+            if toasts { ToastStudyBoard() } else { MenuPanel(model: model, preview: true, glassRoot: true) }
+        }
         let host = NSHostingView(rootView: view)
         host.appearance = NSAppearance(named: appearance)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
