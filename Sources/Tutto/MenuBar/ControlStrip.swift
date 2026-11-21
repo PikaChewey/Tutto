@@ -119,13 +119,13 @@ private struct ControlChip: View {
     var body: some View {
         let state = Self.state(id, model: model)
         Button(action: action) {
-            // The readings' tile, word for word: the card surface (glass in the glass look) and the
-            // light that follows the pointer (CardLift). Open, the glass stays a shade brighter with
+            // The readings' tile, word for word: the card surface (glass in the glass look) and its
+            // quiet hover (CardLift). Open, the glass stays a shade brighter with
             // its symbol in the accent; running, a dot says so.
             VStack(spacing: 4) {
                 Image(systemName: Self.symbol(id))
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(state.live || selected ? Color.themeAccent : (lifted ? Color.ink : Color.ink2))
+                    .foregroundStyle(state.live || selected ? Color.themeAccent : Color.ink2)
                     .frame(height: 18)
                     .overlay(alignment: .topTrailing) {
                         if state.live {
@@ -134,7 +134,7 @@ private struct ControlChip: View {
                     }
                 Text(Self.title(id))
                     .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(selected || lifted ? Color.ink : Color.ink2)
+                    .foregroundStyle(selected ? Color.ink : Color.ink2)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
                     .allowsTightening(true)
@@ -143,7 +143,7 @@ private struct ControlChip: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
             .modifier(CardLift(on: lifted, radius: 10))
-            .background(CardSurface(radius: 10, hovering: lifted || selected))
+            .background(CardSurface(radius: 10, hovering: selected))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())

@@ -909,7 +909,7 @@ private struct StatTile<Graph: View>: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .modifier(CardLift(on: lifted, radius: 10))
-            .background(CardSurface(radius: 10, hovering: lifted))
+            .background(CardSurface(radius: 10))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
@@ -968,7 +968,7 @@ private struct StatTile<Graph: View>: View {
             .padding(.vertical, 9)
             .frame(width: wide ? PanelGrid.tile * 2 + PanelGrid.gap : PanelGrid.tile, alignment: .leading)
             .modifier(CardLift(on: lifted, radius: 10))
-            .background(CardSurface(radius: 10, hovering: lifted))
+            .background(CardSurface(radius: 10))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
