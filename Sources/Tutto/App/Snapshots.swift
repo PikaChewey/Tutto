@@ -431,7 +431,7 @@ struct SnapshotExtras {
                 SoundCard.startsShowingLevels = levels
                 ControlStripView.startsOpen = open
                 // The clicker render also shows the Fan chip under the pointer.
-                LensStage.forced = name == "panel-clicker" ? ["chip.fan", "Memory"] : []
+                LensStage.forced = name == "panel-clicker" ? ["chip.fan", "Memory", "Battery"] : []
                 return AnyView(MenuPanel(model: model).background(PanelMaterialStandIn()))
             })
         }

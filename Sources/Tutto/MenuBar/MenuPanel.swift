@@ -608,11 +608,9 @@ struct BatteryCard: View {
                     .fixedSize()
                 }
                 .frame(height: 30)
-                .hoverBackground(hovering, x: 6, y: 3)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .onHover { hovering = $0 }
             .help("Battery details")
             .accessibilityLabel("Battery")
             .accessibilityValue("\(battery.percent) percent, \(battery.stateText), \(Format.watts(battery.powerDraw)) watts \(powerCaption), \(healthLine)\(ChargeLimitController.shared.panelNote.map { ", \($0)" } ?? "")")
@@ -637,7 +635,17 @@ struct BatteryCard: View {
                 DevicesCard(placeholder: false, inline: true)
             }
         }
-        .panelCard(vertical: 10)
+        // One card, one answer to the pointer (Bryan, 2026-11-21: a box lighting up around the top
+        // line alone "doesn't make sense"): the whole card brightens like the readings' tiles, and a
+        // click anywhere on it opens Battery (the Show button inside still does its own thing).
+        .padding(.horizontal, PanelGrid.inset)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { showInApp(.battery) }
+        .modifier(CardLift(on: hovering || LensStage.on("Battery"), radius: 12))
+        .background(CardSurface(radius: 12))
+        .onHover { hovering = $0 }
     }
 
     private var unusualCondition: String? {
@@ -2417,7 +2425,8 @@ struct DevicesCard: View {
                         .accessibilityValue(BluetoothBatteryRules.spoken(device.levels))
                     }
                 }
-                .hoverBackground(hovering, x: 6, y: 4)
+                // Inside the battery card, the card answers the pointer; on its own, its own lens.
+                .hoverBackground(hovering && !inline, x: 6, y: 4)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
