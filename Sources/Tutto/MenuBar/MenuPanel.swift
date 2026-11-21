@@ -1961,17 +1961,6 @@ struct ConvertCard: View {
             RowLabel(symbol: ModuleID.converter.symbol, title: "Convert & Compress", live: converter.working != nil,
                      help: "Compress, convert, resize, crop or zip files")
             Spacer(minLength: 6)
-            if converter.savedBytes > 0 {
-                Button { showInApp(.converter) } label: {
-                    Text("\(SavedBytes.text(converter.savedBytes)) saved")
-                        .font(.system(size: 10.5, weight: .medium).monospacedDigit())
-                        .foregroundStyle(Color.ink3)
-                        .contentTransition(.numericText())
-                        .lensHover(x: 6, y: 3)
-                }
-                .buttonStyle(PressStyle())
-                .help("Saved by compressing · Convert settings")
-            }
             Button(action: toggle) {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .bold))
@@ -2963,14 +2952,6 @@ struct PanelFooter: View {
             if let strip = model.strip, strip.isRunning {
                 WindowModeSwitch(strip: strip)
             }
-            if let system = model.system, let footprint = system.ownFootprint {
-                // What Tutto itself costs, right now: never a guess.
-                Text("\(Int(footprint.rounded())) MB")
-                    .font(.geist(10.5, weight: .medium))
-                    .foregroundStyle(Color.ink3)
-                    .help("What Tutto itself is using right now: \(ownCost(footprint, system.ownCPU))")
-                    .accessibilityLabel("Tutto is using \(ownCost(footprint, system.ownCPU))")
-            }
             Menu {
                 if let clipboard = model.clipboard {
                     Toggle("Pause Clipboard History", isOn: Binding(get: { clipboard.isPaused }, set: { clipboard.isPaused = $0 }))
@@ -3004,12 +2985,6 @@ struct PanelFooter: View {
         .padding(.leading, PanelGrid.inset)
         .padding(.trailing, PanelGrid.inset - 6)
         .modifier(FloatingCapsule())
-    }
-
-    private func ownCost(_ footprint: Double, _ cpu: Double?) -> String {
-        let memory = "\(Int(footprint.rounded())) MB"
-        guard let cpu else { return memory }
-        return memory + " · " + String(format: "%.1f %% CPU", cpu)
     }
 }
 

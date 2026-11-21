@@ -5,7 +5,8 @@
 //  The controls as one row of chips (Bryan, 2026-11-21, picking layout A of the shorter-panel
 //  studies: the panel was 946 pt on an 835 pt screen, so it scrolled and the tools fell below the
 //  fold). Stay awake, the auto clicker, the fan, Sound and Convert & Compress each become a chip
-//  with its state ("On", "10 CPS", "2,500 rpm", "3 playing"); a click opens that control, as the
+//  on the cards' own surface, its state in the tooltip (Bryan, 2026-11-21: the chips' own fill and
+//  third line read as clutter, not glass); a click opens that control, as the
 //  panel always drew it, under the row, and a second click (or another chip) closes it. Files
 //  dragged over the Compress chip open it, so dropping still works in one move.
 //
@@ -65,7 +66,7 @@ struct ControlStripView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: PanelGrid.gap) {
-            HStack(spacing: 6) {
+            HStack(spacing: PanelGrid.gap) {
                 ForEach(ids, id: \.self) { id in
                     Editable(id: id, editing: editing, radius: 10) {
                         ControlChip(model: model, id: id, selected: shown == id) { toggle(id) }
@@ -115,37 +116,39 @@ private struct ControlChip: View {
     var body: some View {
         let state = Self.state(id, model: model)
         Button(action: action) {
-            VStack(spacing: 2) {
+            // The same surface as every other card (glass in the glass look), a symbol and a name.
+            // The state is in the tooltip; a control that's running lights its symbol and a dot.
+            VStack(spacing: 4) {
                 Image(systemName: Self.symbol(id))
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(state.live || selected ? Color.themeAccent : Color.ink2)
-                    .frame(height: 17)
+                    .frame(height: 18)
+                    .overlay(alignment: .topTrailing) {
+                        if state.live {
+                            Circle().fill(Color.themeAccent).frame(width: 5, height: 5).offset(x: 6, y: -1)
+                        }
+                    }
                 Text(Self.title(id))
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(Color.ink)
-                Text(state.text)
-                    .font(.system(size: 9.5, weight: .medium).monospacedDigit())
-                    .foregroundStyle(state.live ? Color.themeAccent : Color.ink3)
-                    .contentTransition(.numericText())
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(selected ? Color.ink : Color.ink2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .allowsTightening(true)
+                    .padding(.horizontal, 2)
             }
-            .lineLimit(1)
-            .minimumScaleFactor(0.85)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            .background {
-                RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous)
-                    .fill(selected ? Color.themeAccent.opacity(0.16) : Color.ink.opacity(hovering ? 0.1 : 0.06))
-            }
+            .padding(.vertical, 9)
+            .background(CardSurface(radius: 12, hovering: hovering))
             .overlay {
-                RoundedRectangle(cornerRadius: Radius.of(10), style: .continuous)
-                    .strokeBorder(selected ? Color.themeAccent.opacity(0.5) : .clear, lineWidth: 1)
+                RoundedRectangle(cornerRadius: Radius.of(12), style: .continuous)
+                    .strokeBorder(Color.themeAccent.opacity(selected ? 0.7 : 0), lineWidth: 1.25)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .onHover { hovering = $0 }
         .animation(Motion.snappy, value: selected)
-        .help(selected ? "Close \(Self.title(id))" : "Open \(Self.title(id))")
+        .help("\(Self.title(id)) · \(state.text)")
         .accessibilityLabel(Self.title(id))
         .accessibilityValue(state.text)
         .accessibilityAddTraits(selected ? .isSelected : [])

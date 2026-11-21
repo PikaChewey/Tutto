@@ -229,17 +229,10 @@ final class SystemMonitor {
 
     /// Tutto's own footprint and processor use since the last reading.
     private func sampleOwnCost() {
-        var info = rusage_info_v4()
-        let status: Int32 = withUnsafeMutablePointer(to: &info) { pointer -> Int32 in
-            pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { raw -> Int32 in proc_pid_rusage(getpid(), RUSAGE_INFO_V4, raw) }
-        }
-        guard status == 0 else { return }
-        ownFootprint = Double(info.ri_phys_footprint) / 1_048_576
-        let now = mach_absolute_time(), cpu = info.ri_user_time + info.ri_system_time
-        if let ownLast, now > ownLast.at, cpu >= ownLast.cpu {
-            ownCPU = Double(cpu - ownLast.cpu) / Double(now - ownLast.at) * 100
-        }
-        ownLast = (cpu, now)
+        guard let sample = OwnCost.sample() else { return }
+        ownFootprint = sample.footprint
+        if let ownLast { ownCPU = OwnCost.cpu(from: OwnCost.Sample(footprint: 0, cpu: ownLast.cpu, at: ownLast.at), to: sample) }
+        ownLast = (sample.cpu, sample.at)
     }
 
     /// Things that change slowly: battery, volumes, addresses.
@@ -270,5 +263,26 @@ extension View {
             guard let monitor else { return }
             if visible { monitor.begin(feeds) } else { monitor.end(feeds) }
         })
+    }
+}
+
+/// Tutto's own cost, read from the kernel (the menu bar panel's monitor and the General page).
+enum OwnCost {
+    struct Sample { var footprint: Double; var cpu: UInt64; var at: UInt64 }
+    struct Reading { var megabytes: Double; var cpu: Double? }
+
+    static func sample() -> Sample? {
+        var info = rusage_info_v4()
+        let status: Int32 = withUnsafeMutablePointer(to: &info) { pointer -> Int32 in
+            pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { raw -> Int32 in proc_pid_rusage(getpid(), RUSAGE_INFO_V4, raw) }
+        }
+        guard status == 0 else { return nil }
+        return Sample(footprint: Double(info.ri_phys_footprint) / 1_048_576, cpu: info.ri_user_time + info.ri_system_time, at: mach_absolute_time())
+    }
+
+    /// Processor use between two samples, in percent of one core.
+    static func cpu(from old: Sample, to new: Sample) -> Double? {
+        guard new.at > old.at, new.cpu >= old.cpu else { return nil }
+        return Double(new.cpu - old.cpu) / Double(new.at - old.at) * 100
     }
 }

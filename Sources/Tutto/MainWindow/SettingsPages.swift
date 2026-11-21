@@ -329,9 +329,37 @@ struct GeneralPage: View {
                     Button("Show") { OnboardingWindowController.shared.show() }
                         .buttonStyle(OutlineButtonStyle(compact: true))
                 }
+                Hairline().opacity(0.6)
+                LabeledRow("Tutto itself", detail: "What Tutto is using right now (read here, not in the menu bar).") {
+                    OwnCostText()
+                }
             }
             AboutFooter()
         }
+    }
+}
+
+/// Tutto's own memory and processor use, read every 2 s while this page is open.
+private struct OwnCostText: View {
+    @State private var reading: OwnCost.Reading?
+    @State private var last: OwnCost.Sample?
+
+    var body: some View {
+        Text(reading.map { r in
+            "\(Int(r.megabytes.rounded())) MB" + (r.cpu.map { String(format: " · %.1f %% CPU", $0) } ?? "")
+        } ?? "Measuring…")
+            .font(.system(size: 12, weight: .medium).monospacedDigit())
+            .foregroundStyle(Color.ink2)
+            .contentTransition(.numericText())
+            .task {
+                while !Task.isCancelled {
+                    if let sample = OwnCost.sample() {
+                        reading = OwnCost.Reading(megabytes: sample.footprint, cpu: last.flatMap { OwnCost.cpu(from: $0, to: sample) })
+                        last = sample
+                    }
+                    try? await Task.sleep(for: .seconds(2))
+                }
+            }
     }
 }
 
