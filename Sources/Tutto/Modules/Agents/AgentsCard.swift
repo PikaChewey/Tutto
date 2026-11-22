@@ -87,7 +87,7 @@ struct AgentsCard: View {
                 AgentSessionRow(agents: agents, session: session, confirming: $confirming, placeholder: placeholder)
             }
             ForEach(chats) { chat in UnreadChatRow(agents: agents, chat: chat) }
-            if moreActive > 0 || !unread.isEmpty {
+            if moreActive > 0 || moreUnread > 0 {
                 HStack(spacing: 12) {
                     if moreActive > 0 {
                         QuietLink(title: "\(moreActive) more", size: 11.5) { showInApp(.agents) }
@@ -96,13 +96,6 @@ struct AgentsCard: View {
                         QuietLink(title: allUnread ? "Fewer" : "\(moreUnread) more unread", size: 11.5) { allUnread.toggle() }
                     }
                     Spacer(minLength: 0)
-                    if !unread.isEmpty {
-                        QuietLink(title: unread.count == 1 ? "Mark as read" : "Mark all as read", size: 11.5) {
-                            agents.markAllRead()
-                            allUnread = false
-                        }
-                        .help("Clears them from Tutto. Claude and Codex keep their own dots until you open the chats there.")
-                    }
                 }
                 .padding(.horizontal, 6)
                 .padding(.top, 4)

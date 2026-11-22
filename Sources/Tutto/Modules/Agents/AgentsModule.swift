@@ -101,7 +101,8 @@ final class AgentsModule: ModuleController {
         alertNeedsYou = flag(Keys.alertNeedsYou)
         alertFinished = flag(Keys.alertFinished)
         menuBarSignal = flag(Keys.menuBarSignal)
-        menuBarLimits = flag(Keys.menuBarLimits)
+        // Off unless switched on: the menu bar shows just Tutto's icon (Bryan, 2026-11-21).
+        menuBarLimits = d.object(forKey: Keys.menuBarLimits) as? Bool ?? false
         warnRunaway = flag(Keys.warnRunaway)
     }
 

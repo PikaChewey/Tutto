@@ -319,10 +319,6 @@ struct UnreadChatRow: View {
         }
         .buttonStyle(PressStyle())
         .onHover { inside in withAnimation(Motion.micro) { hovering = inside } }
-        .contextMenu {
-            Button("Read in \(chat.tool.name)") { afterPanelCloses { agents.open(chat) } }
-            Button("Mark as Read") { agents.markRead([chat]) }
-        }
         .help(help)
         .accessibilityLabel("Unread: \(chat.title), \(chat.tool.name)")
         .accessibilityHint("Opens the chat in \(chat.tool.name)")
