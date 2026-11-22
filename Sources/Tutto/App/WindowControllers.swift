@@ -342,7 +342,7 @@ struct ToastView: View {
 
     private var hasArt: Bool { content.image != nil || content.swatch != nil }
     /// Round enough to read as a capsule at one line of detail, still tidy when the detail wraps.
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 22, style: .continuous) }
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 27, style: .continuous) }
     private var liquid: Bool {
         if #available(macOS 26, *) { return ThemeStore.shared.tokens.liquid }
         return false
@@ -350,21 +350,21 @@ struct ToastView: View {
 
     var body: some View {
         Button(action: click) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 if let swatch = content.swatch {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Color(nsColor: swatch))
-                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Color.hairline))
-                        .frame(width: 28, height: 28)
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.hairline))
+                        .frame(width: 32, height: 32)
                 } else if let image = content.image {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 28, height: 28)
-                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Color.hairline))
+                        .frame(width: 32, height: 32)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.hairline))
                 }
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(content.title)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Color.ink)
@@ -379,12 +379,12 @@ struct ToastView: View {
                     }
                 }
             }
-            .padding(.vertical, content.detail == nil ? 11 : 8)
-            .padding(.leading, hasArt ? 9 : 16)
-            .padding(.trailing, 18)
-            .frame(minHeight: 44)
+            .padding(.vertical, content.detail == nil ? 15 : 11)
+            .padding(.leading, hasArt ? 11 : 22)
+            .padding(.trailing, 24)
+            .frame(minHeight: 54)
             .frame(maxWidth: Self.widest)
-            .background { if !liquid { PaletteBackground(radius: 22) } }
+            .background { if !liquid { PaletteBackground(radius: 27) } }
             .prototypeGlass(shape)
             .overlay(liquid ? AnyView(GlassRim(shape: shape, strength: 0.7)) : AnyView(shape.strokeBorder(Color.hairline)))
             .contentShape(shape)
