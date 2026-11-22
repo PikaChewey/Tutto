@@ -116,7 +116,15 @@ final class PanelController: NSObject {
     func open() {
         guard !isOpen, let button = item?.button, let buttonWindow = button.window else { return }
         let buttonFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
-        let screen = buttonWindow.screen ?? NSScreen.main
+        open(under: buttonFrame, screen: buttonWindow.screen ?? NSScreen.main)
+        button.highlight(true)
+        watchForDismissal(button: button)
+    }
+
+    /// The panel's window under `buttonFrame` (the icon's frame on screen; the panel stage passes a
+    /// made-up one, with no icon to highlight or clicks to watch).
+    func open(under buttonFrame: NSRect, screen: NSScreen?) {
+        guard !isOpen else { return }
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let width: CGFloat = 320
         // Under the icon, its middle over the icon's middle, kept 8 pt inside the screen; the top
@@ -177,8 +185,6 @@ final class PanelController: NSObject {
                 }
             }
         }
-        button.highlight(true)
-        watchForDismissal(button: button)
     }
 
     func close() {

@@ -133,6 +133,16 @@ enum Snapshots {
         if let name = only.first(where: { $0.hasPrefix("frost:") }).map({ String($0.dropFirst(6)) }), let material = materials[name] {
             FrostedFrame.material = material
         }
+        // `panel-stage behind:<image>`: the menu bar's own panel window, opened as the icon opens it,
+        // over a window showing the image (the real window: tall and clear, the panel pinned to its
+        // top, at the pop-up menu level). Writes "<panel> <backdrop>" to stage-panel.window and stays
+        // up until stage-panel.window.done exists.
+        if only.contains("panel-stage") {
+            panelStage(model: model, behind: only.first { $0.hasPrefix("behind:") }.flatMap { NSImage(contentsOfFile: String($0.dropFirst(7))) },
+                       marker: dir.appendingPathComponent("stage-panel.window"))
+            model.shutdown()
+            return true
+        }
         if only.contains("glass-stage") {
             if only.contains(where: { $0.hasPrefix("wall-") }) { FrostedFrame.blending = .withinWindow }
             // `behind:<image>`: the panel's window stays clear, over a second window showing the image,
@@ -213,6 +223,40 @@ enum Snapshots {
         }
         window.orderOut(nil)
         backdrop?.orderOut(nil)
+    }
+
+    static func panelStage(model: AppModel, behind: NSImage?, marker: URL) {
+        guard let screen = NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        // Where the icon would be: near the right end of the menu bar.
+        let icon = NSRect(x: visible.maxX - 220, y: visible.maxY, width: 24, height: 24)
+        var backdrop: NSWindow?
+        if let behind {
+            let frame = NSRect(x: visible.maxX - 420, y: visible.minY, width: 420, height: visible.height)
+            let under = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            let image = NSImageView(frame: NSRect(origin: .zero, size: frame.size))
+            image.image = behind
+            image.imageScaling = .scaleAxesIndependently
+            under.contentView = image
+            under.level = .floating
+            under.isReleasedWhenClosed = false
+            under.ignoresMouseEvents = true
+            under.orderFrontRegardless()
+            backdrop = under
+        }
+        PanelController.shared.open(under: icon, screen: screen)
+        RunLoop.main.run(until: Date().addingTimeInterval(2.5))
+        let panel = PanelWindow.current
+        try? "\(panel?.windowNumber ?? 0)\(backdrop.map { " \($0.windowNumber)" } ?? "")".write(to: marker, atomically: true, encoding: .utf8)
+        print("stage:", marker.lastPathComponent, panel?.windowNumber ?? 0)
+        let done = marker.appendingPathExtension("done")
+        let deadline = Date().addingTimeInterval(30)
+        while !FileManager.default.fileExists(atPath: done.path), Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+        PanelController.shared.close()
+        backdrop?.orderOut(nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
     }
 
     static func render(_ view: some View, appearance: NSAppearance.Name, to url: URL) {

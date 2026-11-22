@@ -83,6 +83,7 @@ struct MenuPanel: View {
             }
             PanelFooter(model: model)
         }
+        .modifier(GlassGroup())
         .padding(.horizontal, PanelGrid.outer)
         .padding(.top, PanelGrid.outer)
         .padding(.bottom, 6)
@@ -114,6 +115,9 @@ struct MenuPanel: View {
             Notices(model: model)
         }
         .frame(width: PanelGrid.content)
+        // The cards' glass in a group of its own inside the scroll view, so it scrolls and is cut off
+        // at the edges with the cards (in the panel's group alone it drew over the footer).
+        .modifier(GlassGroup())
     }
 
     /// The screen's usable height, less the header, the footer and a margin.
@@ -174,12 +178,35 @@ private struct StageSheet: ViewModifier {
     }
 }
 
+/// Every piece of the panel's glass in one container, so macOS judges them together. On their own,
+/// macOS turns a small piece of glass light when what's behind it is bright: over a white page the
+/// header, the tools, the control chips and the footer went white (and not all of them, nor the
+/// same ones each time) while the larger cards stayed dark (Bryan, 2026-11-22: "why is it not
+/// black frame like ... the rest of the project"). Together they keep one look over any background.
+private struct GlassGroup: ViewModifier {
+    /// Renders: each piece on its own, as before (`no-glass-group`).
+    nonisolated(unsafe) static var off = CommandLine.arguments.contains("no-glass-group")
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *), ThemeStore.liquid, !Self.off {
+            GlassEffectContainer(spacing: 0) { content }
+        } else {
+            content
+        }
+    }
+}
+
 /// The floating prototype's header and footer: a glass capsule each.
 private struct FloatingCapsule: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+    /// Outside the cards' own group (they scroll; these stay put), the two capsules come out a
+    /// shade lighter than the cards over a bright page: a little shade under the text evens them up.
+    nonisolated(unsafe) static var shade = 0.18
+
     func body(content: Content) -> some View {
         if ThemeStore.liquid, GlassLook.glassCards {
             content
                 .padding(.vertical, 6)
+                .background { if scheme == .dark { Capsule().fill(Color.black.opacity(Self.shade)) } }
                 .prototypeGlass(Capsule())
                 .overlay(GlassRim(shape: Capsule()))
         } else {
