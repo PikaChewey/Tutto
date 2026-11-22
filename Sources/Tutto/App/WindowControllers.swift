@@ -225,13 +225,15 @@ final class FloatingPanel: NSPanel {
 
 /// Glass background for palettes: the system material is the only glass.
 struct PaletteBackground: NSViewRepresentable {
+    var radius: CGFloat = 14
+
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = .popover
         view.blendingMode = .behindWindow
         view.state = .active
         view.wantsLayer = true
-        view.layer?.cornerRadius = 14
+        view.layer?.cornerRadius = radius
         view.layer?.cornerCurve = .continuous
         view.layer?.masksToBounds = true
         return view
@@ -327,6 +329,10 @@ final class Toast {
     }
 }
 
+/// A pill of Liquid Glass (Bryan picked design A, 2026-11-21): the picture, the title in sentence
+/// case at the panel's title weight, the detail beneath. The text sits inside the glass so it turns
+/// dark when the glass turns light over a bright window. Before macOS 26 (or with glass off) it
+/// falls back to the frosted popover material in the same shape.
 struct ToastView: View {
     static let widest: CGFloat = 420
     var content: Toast.Content
@@ -334,27 +340,35 @@ struct ToastView: View {
     @State private var shown = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var hasArt: Bool { content.image != nil || content.swatch != nil }
+    /// Round enough to read as a capsule at one line of detail, still tidy when the detail wraps.
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 22, style: .continuous) }
+    private var liquid: Bool {
+        if #available(macOS 26, *) { return ThemeStore.shared.tokens.liquid }
+        return false
+    }
+
     var body: some View {
         Button(action: click) {
             HStack(spacing: 10) {
                 if let swatch = content.swatch {
-                    RoundedRectangle(cornerRadius: Radius.of(6), style: .continuous)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(Color(nsColor: swatch))
-                        .overlay(RoundedRectangle(cornerRadius: Radius.of(6), style: .continuous).strokeBorder(Color.hairline))
+                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Color.hairline))
                         .frame(width: 28, height: 28)
                 } else if let image = content.image {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .frame(width: 32, height: 32)
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.of(5), style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: Radius.of(5), style: .continuous).strokeBorder(Color.hairline))
+                        .frame(width: 28, height: 28)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Color.hairline))
                 }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(content.title.uppercased())
-                        .font(.geist(10.5, weight: .semibold))
-                        .tracking(0.8)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(content.title)
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Color.ink)
+                        .lineLimit(1)
                     if let detail = content.detail {
                         Text(detail)
                             .font(.system(size: 11.5).monospacedDigit())
@@ -365,14 +379,18 @@ struct ToastView: View {
                     }
                 }
             }
-            .padding(.vertical, 9)
-            .padding(.leading, content.image != nil || content.swatch != nil ? 9 : 14)
-            .padding(.trailing, 16)
+            .padding(.vertical, content.detail == nil ? 11 : 8)
+            .padding(.leading, hasArt ? 9 : 16)
+            .padding(.trailing, 18)
+            .frame(minHeight: 44)
             .frame(maxWidth: Self.widest)
-            .background(PaletteBackground())
-            .overlay(RoundedRectangle(cornerRadius: Radius.of(14), style: .continuous).strokeBorder(Color.hairline))
+            .background { if !liquid { PaletteBackground(radius: 22) } }
+            .prototypeGlass(shape)
+            .overlay(liquid ? AnyView(GlassRim(shape: shape, strength: 0.7)) : AnyView(shape.strokeBorder(Color.hairline)))
+            .contentShape(shape)
         }
         .buttonStyle(.plain)
+        .scaleEffect(shown || reduceMotion ? 1 : 0.96, anchor: .bottom)
         .offset(y: shown || reduceMotion ? 0 : 8)
         .onAppear { withAnimation(Motion.snappy) { shown = true } }
         .accessibilityElement(children: .combine)
