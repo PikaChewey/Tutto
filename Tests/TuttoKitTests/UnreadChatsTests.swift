@@ -125,6 +125,32 @@ final class UnreadChatsTests: XCTestCase {
         XCTAssertEqual(ClaudeUnread.ids("not json"), [])
     }
 
+    func testEntriesKnowWhichWereMarkedUnreadByHand() {
+        let json = #"{"state":{"unreadIds":["local_a","local_b"],"explicitUnreadIds":["local_b"]},"version":0}"#
+        let entries = ClaudeUnread.entries(json)
+        XCTAssertEqual(entries.map(\.id), ["local_a", "local_b"])
+        XCTAssertEqual(entries.map(\.marked), [false, true])
+    }
+
+    /// Marked read in Tutto: hidden while the chat stays as it was; back after a new reply or after
+    /// "Mark as Unread" in its app.
+    func testTuttoReadMarkYieldsToTheApp() {
+        let head = Data(#"{"lastTurnEdgeAt":1795312240090,"title":"NeetCode"}"#.utf8)
+        let chat = ClaudeUnread.chat(id: "local_a", head: head)!
+        let mark: Any = chat.state
+        XCTAssertTrue(chat.isCovered(by: mark))
+        XCTAssertFalse(ClaudeUnread.chat(id: "local_a", head: head, marked: true)!.isCovered(by: mark), "marked unread in Claude")
+        let replied = ClaudeUnread.chat(id: "local_a", head: Data(#"{"lastTurnEdgeAt":1795312999000,"title":"NeetCode"}"#.utf8))!
+        XCTAssertFalse(replied.isCovered(by: mark), "a new reply")
+        XCTAssertFalse(chat.isCovered(by: nil))
+        // An older mark, saved as the turn's time.
+        XCTAssertTrue(chat.isCovered(by: NSNumber(value: 1_795_312_240.090)))
+        XCTAssertFalse(ClaudeUnread.chat(id: "local_a", head: head, marked: true)!.isCovered(by: NSNumber(value: 1_795_312_240.090)))
+        let thread = UnreadChat(tool: .codex, chatID: "t", title: "x", at: Date(), state: "u1|r1")
+        XCTAssertTrue(thread.isCovered(by: "u1|r1"))
+        XCTAssertFalse(UnreadChat(tool: .codex, chatID: "t", title: "x", at: Date(), state: "u1|r2").isCovered(by: "u1|r1"))
+    }
+
     func testSessionHeadGivesTitleFolderAndTime() {
         let head = #"{"sessionId":"local_a","cwd":"/Users/me/Projects/site","lastFocusedAt":1795312186401,"lastTurnEdgeAt":1795312240090,"isArchived":false,"title":"Fix \"login\" flow","previousTitles":["#
         let chat = ClaudeUnread.chat(id: "local_a", head: Data(head.utf8))
@@ -179,6 +205,7 @@ final class UnreadChatsTests: XCTestCase {
         XCTAssertEqual(chats.map(\.title), ["Renamed thread", "Help me fix the login bug", "Index name"])
         XCTAssertEqual(chats[2].at, Date(timeIntervalSince1970: 50), "seconds when there's no millisecond time")
         XCTAssertEqual(chats[0].openURL?.absoluteString, "codex://threads/t2")
+        XCTAssertEqual(chats[0].state, "u2|r", "its read receipt, so marking it unread in Codex shows it again")
         XCTAssertNil(CodexUnread.chats(database: "/nonexistent/state.sqlite"))
     }
 }

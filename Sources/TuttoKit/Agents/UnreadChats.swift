@@ -27,15 +27,20 @@ public struct UnreadChat: Identifiable, Equatable, Sendable {
     public var folder: String?
     /// When its latest turn ended.
     public var at: Date
+    /// What its app says about why it's unread (a new turn, "Mark as Unread"), as one string: Tutto's
+    /// own "mark as read" holds only while this stays the same, so marking it unread again in its
+    /// app, or a new reply, brings it back.
+    public var state: String
 
     public var id: String { "\(tool.rawValue):\(chatID)" }
 
-    public init(tool: AgentTool, chatID: String, title: String, folder: String? = nil, at: Date) {
+    public init(tool: AgentTool, chatID: String, title: String, folder: String? = nil, at: Date, state: String? = nil) {
         self.tool = tool
         self.chatID = chatID
         self.title = title
         self.folder = folder
         self.at = at
+        self.state = state ?? String(Int64((at.timeIntervalSince1970 * 1000).rounded()))
     }
 
     /// Opens exactly this chat in its app.
@@ -50,6 +55,16 @@ public struct UnreadChat: Identifiable, Equatable, Sendable {
     public func matches(_ session: AgentSession) -> Bool {
         guard session.tool == tool else { return false }
         return tool == .claude ? session.hostSessionID == chatID : session.sessionID == chatID
+    }
+
+    /// Whether a "mark as read" saved in Tutto still hides this chat: only while the chat is as it
+    /// was then. A saved number (older marks) is the time of the turn that was unread.
+    public func isCovered(by mark: Any?) -> Bool {
+        switch mark {
+        case let saved as String: return saved == state
+        case let at as NSNumber: return self.at.timeIntervalSince1970 <= at.doubleValue && !state.hasSuffix("|marked")
+        default: return false
+        }
     }
 
     /// Newest first.
@@ -72,34 +87,42 @@ public enum ClaudeUnread {
     public static let storageKey = "epitaxy-unread-v1"
 
     /// The ids in the stored state, unread and marked unread.
-    public static func ids(_ value: String) -> [String] {
+    public static func ids(_ value: String) -> [String] { entries(value).map(\.id) }
+
+    /// Each unread id, and whether it was marked unread by hand ("Mark as Unread" in the sidebar).
+    public static func entries(_ value: String) -> [(id: String, marked: Bool)] {
         guard let data = value.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let state = object["state"] as? [String: Any] else { return [] }
-        var seen = Set<String>(), ids: [String] = []
+        let marked = Set(state["explicitUnreadIds"] as? [String] ?? [])
+        var seen = Set<String>(), entries: [(id: String, marked: Bool)] = []
         for key in ["unreadIds", "explicitUnreadIds"] {
-            for id in state[key] as? [String] ?? [] where seen.insert(id).inserted { ids.append(id) }
+            for id in state[key] as? [String] ?? [] where seen.insert(id).inserted { entries.append((id, marked.contains(id))) }
         }
-        return ids
+        return entries
     }
 
     /// The unread ids as the app last stored them, from its LevelDB folder.
     public static func ids(storage folder: URL, cache: LevelDBReader.Cache? = nil) -> [String]? {
+        entries(storage: folder, cache: cache)?.map(\.id)
+    }
+
+    public static func entries(storage folder: URL, cache: LevelDBReader.Cache? = nil) -> [(id: String, marked: Bool)]? {
         guard let value = LevelDBReader.latest(in: folder, keySuffix: Array(storageKey.utf8), cache: cache) else { return nil }
-        return ids(LevelDBReader.chromiumString(value))
+        return entries(LevelDBReader.chromiumString(value))
     }
 
     /// What a session's record starts with: its title, folder, when its last turn ended, whether
     /// it's archived. Only the head of the file is needed (the fields come first; the rest is
     /// snapshots).
-    public static func chat(id: String, head: Data) -> UnreadChat? {
+    public static func chat(id: String, head: Data, marked: Bool = false) -> UnreadChat? {
         let text = String(decoding: head, as: UTF8.self)
         if JSONHead.bool("isArchived", in: text) == true { return nil }
         let title = JSONHead.string("title", in: text).flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled session"
         let millis = JSONHead.number("lastTurnEdgeAt", in: text) ?? JSONHead.number("lastActivityAt", in: text)
             ?? JSONHead.number("createdAt", in: text) ?? 0
         return UnreadChat(tool: .claude, chatID: id, title: title, folder: JSONHead.string("cwd", in: text),
-                          at: Date(timeIntervalSince1970: millis / 1000))
+                          at: Date(timeIntervalSince1970: millis / 1000), state: "\(Int64(millis))" + (marked ? "|marked" : ""))
     }
 }
 
@@ -151,7 +174,8 @@ public enum CodexUnread {
         defer { sqlite3_close(db) }
         sqlite3_busy_timeout(db, 200)
         let sql = """
-            SELECT t.id, COALESCE(t.name, ''), t.title, t.cwd, COALESCE(t.updated_at_ms, t.updated_at * 1000)
+            SELECT t.id, COALESCE(t.name, ''), t.title, t.cwd, COALESCE(t.updated_at_ms, t.updated_at * 1000),
+                   r.first_unread_turn, r.revision
             FROM thread_read_receipts r JOIN threads t ON t.id = r.thread_id
             WHERE r.first_unread_turn IS NOT NULL AND t.archived = 0
             ORDER BY 5 DESC LIMIT \(limit)
@@ -166,7 +190,8 @@ public enum CodexUnread {
             let name = [text(1), names[id] ?? ""].first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
             let title = name ?? UnreadChat.headline(text(2))
             chats.append(UnreadChat(tool: .codex, chatID: id, title: title.isEmpty ? "Untitled thread" : title,
-                                    folder: text(3), at: Date(timeIntervalSince1970: sqlite3_column_double(statement, 4) / 1000)))
+                                    folder: text(3), at: Date(timeIntervalSince1970: sqlite3_column_double(statement, 4) / 1000),
+                                    state: "\(text(5))|\(text(6))"))
         }
         return chats
     }

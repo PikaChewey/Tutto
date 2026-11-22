@@ -82,8 +82,10 @@ final class AgentsModule: ModuleController {
     @ObservationIgnored private var allUnread: [UnreadChat] = []
     /// Chats opened from here, hidden until their app says they're read (or a couple of minutes pass).
     @ObservationIgnored private var opened: [String: Date] = [:]
-    /// Chats marked read in Tutto: when the turn it had unread ended. A newer turn brings it back.
-    @ObservationIgnored private var readMarks: [String: Double] = UserDefaults.standard.dictionary(forKey: Keys.readMarks) as? [String: Double] ?? [:]
+    /// Chats marked read in Tutto, with their `state` then: a new reply, or "Mark as Unread" in the
+    /// chat's app, changes it and brings the chat back. (Marks saved before that are numbers: the
+    /// time of the turn that was unread.)
+    @ObservationIgnored private var readMarks: [String: Any] = UserDefaults.standard.dictionary(forKey: Keys.readMarks) ?? [:]
     @ObservationIgnored private var unreadWork: DispatchWorkItem?
     @ObservationIgnored private var unreadStale = true
     @ObservationIgnored private let sampleQueue = DispatchQueue(label: "ca.bryanyao.Tutto.agent-processes", qos: .utility)
@@ -535,13 +537,20 @@ final class AgentsModule: ModuleController {
     nonisolated private static func readUnread(codexNames: [String: String], cache: LevelDBReader.Cache) -> [UnreadChat]? {
         let cutoff = Date().addingTimeInterval(-unreadWindow)
         var chats: [UnreadChat] = []
-        if let ids = ClaudeUnread.ids(storage: claudeStorage, cache: cache), !ids.isEmpty {
-            let paths = claudeRecordPaths(Set(ids))
-            for id in ids {
-                guard let path = paths[id], let handle = FileHandle(forReadingAtPath: path) else { continue }
+        let entries = ClaudeUnread.entries(storage: claudeStorage, cache: cache)
+        // Claude's storage unreadable this once (mid-compaction): keep the last list rather than
+        // dropping every Claude chat and the marks that go with them.
+        if entries == nil, FileManager.default.fileExists(atPath: claudeStorage.path) { return nil }
+        if let entries, !entries.isEmpty {
+            let paths = claudeRecordPaths(Set(entries.map(\.id)))
+            for entry in entries {
+                guard let path = paths[entry.id], let handle = FileHandle(forReadingAtPath: path) else { continue }
                 let head = (try? handle.read(upToCount: 16_384)) ?? Data()
                 try? handle.close()
-                if let chat = ClaudeUnread.chat(id: id, head: head), chat.at >= cutoff { chats.append(chat) }
+                // One marked unread by hand shows however old its last turn is.
+                if let chat = ClaudeUnread.chat(id: entry.id, head: head, marked: entry.marked), entry.marked || chat.at >= cutoff {
+                    chats.append(chat)
+                }
             }
         }
         let codexDB = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/state_5.sqlite").path
@@ -575,7 +584,7 @@ final class AgentsModule: ModuleController {
         let active = sessions.filter { $0.activity != .yourTurn }
         let next = allUnread.filter { chat in
             opened[chat.id] == nil && !active.contains { chat.matches($0) }
-                && (readMarks[chat.id].map { chat.at.timeIntervalSince1970 > $0 } ?? true)
+                && !markedRead(chat)
         }
         if next != unread { unread = next }
     }
@@ -584,17 +593,22 @@ final class AgentsModule: ModuleController {
     /// Their apps keep their own dots (Tutto only reads the apps' files, never writes them).
     func markRead(_ chats: [UnreadChat]) {
         guard !chats.isEmpty else { return }
-        for chat in chats { readMarks[chat.id] = chat.at.timeIntervalSince1970 }
+        for chat in chats { readMarks[chat.id] = chat.state }
         defaults.set(readMarks, forKey: Keys.readMarks)
         filterUnread()
     }
 
     func markAllRead() { markRead(unread) }
 
+    /// Marked read in Tutto and unchanged in its app since.
+    private func markedRead(_ chat: UnreadChat) -> Bool {
+        chat.isCovered(by: readMarks[chat.id])
+    }
+
     /// Forgets marks for chats the apps no longer count as unread (they were read there).
     private func pruneReadMarks() {
-        let ids = Set(allUnread.map(\.id))
-        let kept = readMarks.filter { ids.contains($0.key) }
+        // Dropped once the app reads it, or once it changes there (a new reply, marked unread again).
+        let kept = readMarks.filter { mark in allUnread.contains { $0.id == mark.key && markedRead($0) } }
         if kept.count != readMarks.count {
             readMarks = kept
             defaults.set(kept, forKey: Keys.readMarks)
