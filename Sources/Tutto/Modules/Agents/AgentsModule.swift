@@ -36,6 +36,9 @@ final class AgentsModule: ModuleController {
     private(set) var stopping: Set<Int32> = []
     /// A clock for "12 min" while something shows it.
     private(set) var now = Date()
+    /// Chats with something you haven't read, as Claude's and Codex's apps count them, newest first
+    /// (read while the card or page is on screen).
+    private(set) var unread: [UnreadChat] = []
 
     // Settings
     var alertNeedsYou: Bool { didSet { defaults.set(alertNeedsYou, forKey: Keys.alertNeedsYou) } }
@@ -73,6 +76,13 @@ final class AgentsModule: ModuleController {
     @ObservationIgnored private var queuedAlerts: [(kind: AlertKind, session: AgentSession)] = []
     @ObservationIgnored private var alertWork: DispatchWorkItem?
     @ObservationIgnored private var warnedRunaway: [String: Date] = [:]
+    @ObservationIgnored private let unreadQueue = DispatchQueue(label: "ca.bryanyao.Tutto.agent-unread", qos: .utility)
+    @ObservationIgnored private let tableCache = LevelDBReader.Cache()
+    @ObservationIgnored private var allUnread: [UnreadChat] = []
+    /// Chats opened from here, hidden until their app says they're read (or a couple of minutes pass).
+    @ObservationIgnored private var opened: [String: Date] = [:]
+    @ObservationIgnored private var unreadWork: DispatchWorkItem?
+    @ObservationIgnored private var unreadStale = true
     @ObservationIgnored private let sampleQueue = DispatchQueue(label: "ca.bryanyao.Tutto.agent-processes", qos: .utility)
 
     private enum AlertKind { case needsYou, finished }
@@ -147,8 +157,8 @@ final class AgentsModule: ModuleController {
 
     private func watch() {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let paths = [".claude/sessions", ".claude/projects", ".codex/sessions", ".codex"]
-            .map { home.appendingPathComponent($0).path }
+        let paths = ([".claude/sessions", ".claude/projects", ".codex/sessions", ".codex"]
+            .map { home.appendingPathComponent($0).path } + [Self.claudeStorage.path])
             .filter { FileManager.default.fileExists(atPath: $0) }
         guard !paths.isEmpty else { return }
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
@@ -165,6 +175,7 @@ final class AgentsModule: ModuleController {
     }
 
     private func changed(_ paths: [String]) {
+        var unreadChanged = false
         var sessionsChanged = false, codexChanged: [String] = [], transcripts: [String] = []
         for path in paths {
             if path.contains("/.claude/sessions/") { sessionsChanged = true }
@@ -174,7 +185,9 @@ final class AgentsModule: ModuleController {
             }
             else if path.contains("/.codex/sessions/"), path.hasSuffix(".jsonl") { codexChanged.append(path) }
             else if path.hasSuffix("/.codex/session_index.jsonl") { codexNames = Self.readCodexNames() ; codexChanged.append("") }
+            if path.contains("/.codex/state_5.sqlite") || path.hasPrefix(Self.claudeStorage.path) { unreadChanged = true }
         }
+        if unreadChanged { scheduleUnread() }
         if sessionsChanged { reloadClaude(initial: false) }
         if !codexChanged.isEmpty { readCodex(codexChanged.filter { !$0.isEmpty }) }
         if !transcripts.isEmpty { usage.changed(transcripts) }
@@ -311,6 +324,7 @@ final class AgentsModule: ModuleController {
         }
         listed = true
         if next != sessions { sessions = next }
+        filterUnread()
         let gone = Set(previous.keys).subtracting(next.map(\.id))
         if !gone.isEmpty { runaway.subtract(gone) }
         updateMinute()
@@ -474,6 +488,104 @@ final class AgentsModule: ModuleController {
         leftRunning.forEach(stop)
     }
 
+    // MARK: Unread chats
+
+    nonisolated static var claudeStorage: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Claude/Local Storage/leveldb", isDirectory: true)
+    }
+
+    nonisolated private static var claudeRecords: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Claude/claude-code-sessions", isDirectory: true)
+    }
+
+    /// How far back an unread chat still gets a row.
+    nonisolated static let unreadWindow: TimeInterval = 7 * 86_400
+
+    /// Reads the unread chats again soon (the apps write their storage in bursts); while nothing
+    /// shows them, only notes that they changed.
+    private func scheduleUnread(delay: TimeInterval = 1) {
+        guard watchers > 0 else { unreadStale = true; return }
+        unreadStale = false
+        guard unreadWork == nil else { return }
+        let names = codexNames
+        let cache = tableCache
+        let work = DispatchWorkItem { [weak self] in
+            let chats = Self.readUnread(codexNames: names, cache: cache)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.unreadWork = nil
+                    if let chats { self.allUnread = chats }
+                    self.filterUnread()
+                }
+            }
+        }
+        unreadWork = work
+        unreadQueue.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    nonisolated private static func readUnread(codexNames: [String: String], cache: LevelDBReader.Cache) -> [UnreadChat]? {
+        let cutoff = Date().addingTimeInterval(-unreadWindow)
+        var chats: [UnreadChat] = []
+        if let ids = ClaudeUnread.ids(storage: claudeStorage, cache: cache), !ids.isEmpty {
+            let paths = claudeRecordPaths(Set(ids))
+            for id in ids {
+                guard let path = paths[id], let handle = FileHandle(forReadingAtPath: path) else { continue }
+                let head = (try? handle.read(upToCount: 16_384)) ?? Data()
+                try? handle.close()
+                if let chat = ClaudeUnread.chat(id: id, head: head), chat.at >= cutoff { chats.append(chat) }
+            }
+        }
+        let codexDB = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/state_5.sqlite").path
+        if FileManager.default.fileExists(atPath: codexDB) {
+            chats += (CodexUnread.chats(database: codexDB, names: codexNames) ?? []).filter { $0.at >= cutoff }
+        }
+        return UnreadChat.ordered(chats)
+    }
+
+    /// Where each session's record is: claude-code-sessions/<account>/<org>/<id>.json.
+    nonisolated private static func claudeRecordPaths(_ wanted: Set<String>) -> [String: String] {
+        let fm = FileManager.default
+        var found: [String: String] = [:]
+        for account in (try? fm.contentsOfDirectory(atPath: claudeRecords.path)) ?? [] {
+            let accountPath = claudeRecords.appendingPathComponent(account).path
+            for org in (try? fm.contentsOfDirectory(atPath: accountPath)) ?? [] {
+                let folder = (accountPath as NSString).appendingPathComponent(org)
+                for id in wanted where found[id] == nil {
+                    let path = (folder as NSString).appendingPathComponent(id + ".json")
+                    if fm.fileExists(atPath: path) { found[id] = path }
+                }
+            }
+        }
+        return found
+    }
+
+    /// The rows: not one already shown as working or waiting, nor one just opened from here.
+    private func filterUnread() {
+        let now = Date()
+        opened = opened.filter { entry in now.timeIntervalSince(entry.value) < 120 && allUnread.contains { $0.id == entry.key } }
+        let active = sessions.filter { $0.activity != .yourTurn }
+        let next = allUnread.filter { chat in opened[chat.id] == nil && !active.contains { chat.matches($0) } }
+        if next != unread { unread = next }
+    }
+
+    /// Opens the chat in its app, which marks it read.
+    func open(_ chat: UnreadChat) {
+        opened[chat.id] = Date()
+        filterUnread()
+        guard let url = chat.openURL else { return }
+        NSWorkspace.shared.open(url)
+        let id = chat.tool == .claude ? Self.claudeAppID : Self.codexAppID
+        NSRunningApplication.runningApplications(withBundleIdentifier: id).first?.activate()
+    }
+
+    /// A finished session that's also an unread chat (it gets the unread row instead).
+    func isUnread(_ session: AgentSession) -> Bool {
+        unread.contains { $0.matches(session) }
+    }
+
     // MARK: What it costs (on screen only)
 
     func begin() {
@@ -482,6 +594,7 @@ final class AgentsModule: ModuleController {
         #endif
         watchers += 1
         now = Date()
+        if unreadStale { scheduleUnread(delay: 0) }
         guard sampler == nil else { return }
         sample()
         let timer = DispatchSource.makeTimerSource(queue: .main)
@@ -612,6 +725,10 @@ final class AgentsModule: ModuleController {
                                    started: now.addingTimeInterval(-26_000)),
                        LeftRunning(pid: 9101, name: "node", folder: NSHomeDirectory() + "/Projects/stdout", ports: [3000], memory: 488_000_000,
                                    started: now.addingTimeInterval(-90_000))]
+        unread = [UnreadChat(tool: .claude, chatID: "local_demo1", title: "Morning brief", at: now.addingTimeInterval(-1500)),
+                  UnreadChat(tool: .codex, chatID: "demo2", title: "Set up the release script", at: now.addingTimeInterval(-7400)),
+                  UnreadChat(tool: .claude, chatID: "local_demo3", title: "Review the landing page copy", at: now.addingTimeInterval(-30_000)),
+                  UnreadChat(tool: .claude, chatID: "local_demo4", title: "Daily notes", at: now.addingTimeInterval(-90_000))]
         self.now = now
     }
     #endif

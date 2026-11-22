@@ -20,20 +20,25 @@ struct AgentsCard: View {
     var placeholder = false
     @State var confirming: String?
     @State var confirmingLeftovers = false
+    @State var allUnread = false
 
     /// Rows for sessions that need you or are working; past that, "N more".
     static let rows = 4
+    /// Rows for unread chats, until "N more unread" shows the rest (up to `unreadMax`).
+    static let unreadRows = 3
+    static let unreadMax = 12
 
     var body: some View {
         let sessions = AgentSession.shown(agents.sessions, now: agents.now)
         let active = sessions.filter { $0.activity != .yourTurn }
-        let done = sessions.filter { $0.activity == .yourTurn }
+        let done = sessions.filter { $0.activity == .yourTurn && !agents.isUnread($0) }
+        let unread = placeholder ? [] : agents.unread
         VStack(alignment: .leading, spacing: 10) {
             CardTitle(title: "Agents") {
                 QuietLink(title: summary) { showInApp(.agents) }
                     .help("Open Agents in Tutto")
             }
-            if sessions.isEmpty {
+            if sessions.isEmpty && unread.isEmpty {
                 Text("No agents running")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.ink3)
@@ -50,6 +55,7 @@ struct AgentsCard: View {
                         .padding(.top, -6)
                 }
             }
+            if !unread.isEmpty { unreadRows(unread) }
             if !done.isEmpty { DoneLine(agents: agents, sessions: done, placeholder: placeholder) }
             if !agents.runaway.isEmpty { runawayLine }
             if !agents.leftRunning.isEmpty { leftoversLine }
@@ -64,6 +70,8 @@ struct AgentsCard: View {
         .panelCard()
         .animation(Motion.snappy, value: AgentSession.shown(agents.sessions, now: agents.now).map(\.id))
         .animation(Motion.micro, value: confirming)
+        .animation(Motion.snappy, value: agents.unread.map(\.id))
+        .animation(Motion.snappy, value: allUnread)
         .background(VisibilityReader { visible in
             guard !placeholder else { return }
             if visible { agents.begin() } else { agents.end() }
@@ -75,7 +83,24 @@ struct AgentsCard: View {
         if waiting > 0 { return waiting == 1 ? "1 needs you" : "\(waiting) need you" }
         let working = agents.sessions.filter { $0.activity == .working }.count
         if working > 0 { return "\(working) working" }
+        if !agents.unread.isEmpty { return "\(agents.unread.count) unread" }
         return "All"
+    }
+
+    /// Chats with something you haven't read: newest first, a click reads it in its app.
+    func unreadRows(_ unread: [UnreadChat]) -> some View {
+        let shown = allUnread ? Array(unread.prefix(Self.unreadMax)) : Array(unread.prefix(Self.unreadRows))
+        return VStack(alignment: .leading, spacing: 1) {
+            ForEach(shown) { chat in UnreadChatRow(agents: agents, chat: chat) }
+            if unread.count > Self.unreadRows {
+                QuietLink(title: allUnread ? "Fewer" : "\(unread.count - Self.unreadRows) more unread", size: 11.5) {
+                    allUnread.toggle()
+                }
+                .padding(.horizontal, 6)
+                .padding(.top, 2)
+            }
+        }
+        .padding(.horizontal, -6)
     }
 
     var runawayLine: some View {

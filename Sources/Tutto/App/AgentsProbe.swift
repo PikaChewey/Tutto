@@ -49,6 +49,9 @@ enum AgentsProbe {
         print("runaway:", agents.runaway)
         if let limit = agents.menuBarLimit { print("menu bar limit:", limit.tool.name, AgentText.percent(limit.estimate)) }
         print("needs you:", agents.needsYou.map(\.name))
+        for chat in agents.unread {
+            print("unread:", chat.tool.name, "|", chat.title.prefix(50), "|", AgentText.age(since: chat.at, now: now), "|", chat.openURL?.absoluteString ?? "-")
+        }
         agents.end()
         agents.stop()
         RunLoop.main.run(until: Date().addingTimeInterval(1))

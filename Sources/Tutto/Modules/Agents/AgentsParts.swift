@@ -280,6 +280,57 @@ struct AgentSessionRow: View {
     }
 }
 
+/// A chat with something you haven't read, as its own app marks it: a small accent dot, the app's
+/// icon, the title, how long ago its last turn ended. A click opens that chat, which reads it.
+struct UnreadChatRow: View {
+    var agents: AgentsModule
+    var chat: UnreadChat
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            afterPanelCloses { agents.open(chat) }
+        } label: {
+            HStack(spacing: 9) {
+                ToolIcon(tool: chat.tool, size: 16)
+                    .overlay(alignment: .topTrailing) {
+                        Circle()
+                            .fill(Color.themeAccent)
+                            .frame(width: 7, height: 7)
+                            .background(Circle().fill(badgeDisc).frame(width: 9, height: 9))
+                            .offset(x: 3, y: -3)
+                    }
+                Text(chat.title)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Color.ink)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 6)
+                Text(hovering ? "Read" : AgentText.age(since: chat.at, now: agents.now))
+                    .font(.system(size: 11, weight: hovering ? .medium : .regular).monospacedDigit())
+                    .foregroundStyle(hovering ? Color.themeAccent : Color.ink3)
+                    .lineLimit(1)
+                    .contentTransition(.opacity)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: 26)
+            .hoverBackground(hovering, x: 0)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .onHover { inside in withAnimation(Motion.micro) { hovering = inside } }
+        .help(help)
+        .accessibilityLabel("Unread: \(chat.title), \(chat.tool.name)")
+        .accessibilityHint("Opens the chat in \(chat.tool.name)")
+    }
+
+    private var help: String {
+        var lines = [chat.tool.name + (chat.folder.map { " · " + AgentSession.displayFolder($0) } ?? "")]
+        lines.append("Unread. Click to read it in \(chat.tool.name)")
+        return lines.joined(separator: "\n")
+    }
+}
+
 /// Finished sessions in one line: "2 done · site, Grasp Project", their icons overlapping. A
 /// click opens them on the Agents page.
 struct DoneLine: View {
