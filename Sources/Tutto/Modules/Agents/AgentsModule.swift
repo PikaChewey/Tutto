@@ -53,6 +53,7 @@ final class AgentsModule: ModuleController {
         static let menuBarSignal = "agents.menuBarSignal"
         static let menuBarLimits = "agents.menuBarLimits"
         static let warnRunaway = "agents.warnRunaway"
+        static let readMarks = "agents.readMarks"
     }
 
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -81,6 +82,8 @@ final class AgentsModule: ModuleController {
     @ObservationIgnored private var allUnread: [UnreadChat] = []
     /// Chats opened from here, hidden until their app says they're read (or a couple of minutes pass).
     @ObservationIgnored private var opened: [String: Date] = [:]
+    /// Chats marked read in Tutto: when the turn it had unread ended. A newer turn brings it back.
+    @ObservationIgnored private var readMarks: [String: Double] = UserDefaults.standard.dictionary(forKey: Keys.readMarks) as? [String: Double] ?? [:]
     @ObservationIgnored private var unreadWork: DispatchWorkItem?
     @ObservationIgnored private var unreadStale = true
     @ObservationIgnored private let sampleQueue = DispatchQueue(label: "ca.bryanyao.Tutto.agent-processes", qos: .utility)
@@ -517,7 +520,10 @@ final class AgentsModule: ModuleController {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.unreadWork = nil
-                    if let chats { self.allUnread = chats }
+                    if let chats {
+                        self.allUnread = chats
+                        self.pruneReadMarks()
+                    }
                     self.filterUnread()
                 }
             }
@@ -567,8 +573,32 @@ final class AgentsModule: ModuleController {
         let now = Date()
         opened = opened.filter { entry in now.timeIntervalSince(entry.value) < 120 && allUnread.contains { $0.id == entry.key } }
         let active = sessions.filter { $0.activity != .yourTurn }
-        let next = allUnread.filter { chat in opened[chat.id] == nil && !active.contains { chat.matches($0) } }
+        let next = allUnread.filter { chat in
+            opened[chat.id] == nil && !active.contains { chat.matches($0) }
+                && (readMarks[chat.id].map { chat.at.timeIntervalSince1970 > $0 } ?? true)
+        }
         if next != unread { unread = next }
+    }
+
+    /// Marks chats read in Tutto: they leave the card and the page until a new turn lands in them.
+    /// Their apps keep their own dots (Tutto only reads the apps' files, never writes them).
+    func markRead(_ chats: [UnreadChat]) {
+        guard !chats.isEmpty else { return }
+        for chat in chats { readMarks[chat.id] = chat.at.timeIntervalSince1970 }
+        defaults.set(readMarks, forKey: Keys.readMarks)
+        filterUnread()
+    }
+
+    func markAllRead() { markRead(unread) }
+
+    /// Forgets marks for chats the apps no longer count as unread (they were read there).
+    private func pruneReadMarks() {
+        let ids = Set(allUnread.map(\.id))
+        let kept = readMarks.filter { ids.contains($0.key) }
+        if kept.count != readMarks.count {
+            readMarks = kept
+            defaults.set(kept, forKey: Keys.readMarks)
+        }
     }
 
     /// Opens the chat in its app, which marks it read.

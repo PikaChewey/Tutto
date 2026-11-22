@@ -18,6 +18,7 @@ struct AgentsDashboard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             if !agents.limits.isEmpty { limits }
+            unread
             sessions
             if let codex = agents.codexLoad {
                 DashSection("Codex app") {
@@ -88,6 +89,24 @@ struct AgentsDashboard: View {
                         if index > 0 { Hairline().opacity(0.5).padding(.leading, 40) }
                         DashSessionRow(agents: agents, session: session)
                     }
+                }
+            }
+        }
+    }
+
+    // MARK: Unread
+
+    @ViewBuilder
+    private var unread: some View {
+        let chats = agents.unread
+        if !chats.isEmpty {
+            DashSection("Unread", count: chats.count, accent: true,
+                        trailing: AnyView(Button("Mark All as Read") { withAnimation(Motion.snappy) { agents.markAllRead() } }
+                            .buttonStyle(OutlineButtonStyle(compact: true))
+                            .help("Clears them from Tutto. Claude and Codex keep their own dots until you open the chats there."))) {
+                ForEach(Array(chats.enumerated()), id: \.element.id) { index, chat in
+                    if index > 0 { Hairline().opacity(0.5).padding(.leading, 40) }
+                    DashUnreadRow(agents: agents, chat: chat)
                 }
             }
         }
@@ -318,4 +337,46 @@ private struct DashLeftoverRow: View {
 
 private extension String {
     var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
+}
+
+/// An unread chat on the page: its app, its title, where and when; Read opens it, the tick marks it read.
+private struct DashUnreadRow: View {
+    var agents: AgentsModule
+    var chat: UnreadChat
+    @State private var hovering = false
+
+    var body: some View {
+        DashRow(title: chat.title, detail: detail) {
+            ToolIcon(tool: chat.tool, size: 24)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Color.themeAccent).frame(width: 8, height: 8)
+                        .background(Circle().fill(badgeDisc).frame(width: 10, height: 10))
+                        .offset(x: 3, y: -3)
+                }
+        } trailing: {
+            HStack(spacing: 10) {
+                Button {
+                    withAnimation(Motion.snappy) { agents.markRead([chat]) }
+                } label: {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.ink2)
+                }
+                .buttonStyle(PressStyle())
+                .help("Mark as read")
+                .opacity(hovering ? 1 : 0)
+                Button("Read") { agents.open(chat) }
+                    .buttonStyle(OutlineButtonStyle(compact: true))
+                    .help("Open it in \(chat.tool.name)")
+            }
+        }
+        .onHover { inside in withAnimation(Motion.micro) { hovering = inside } }
+    }
+
+    private var detail: String {
+        var parts = [chat.tool.name]
+        if let folder = chat.folder { parts.append(AgentSession.displayFolder(folder)) }
+        parts.append(AgentText.age(since: chat.at, now: agents.now) + (AgentText.age(since: chat.at, now: agents.now) == "now" ? "" : " ago"))
+        return parts.joined(separator: " · ")
+    }
 }

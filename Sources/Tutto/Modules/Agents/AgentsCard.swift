@@ -92,13 +92,21 @@ struct AgentsCard: View {
         let shown = allUnread ? Array(unread.prefix(Self.unreadMax)) : Array(unread.prefix(Self.unreadRows))
         return VStack(alignment: .leading, spacing: 1) {
             ForEach(shown) { chat in UnreadChatRow(agents: agents, chat: chat) }
-            if unread.count > Self.unreadRows {
-                QuietLink(title: allUnread ? "Fewer" : "\(unread.count - Self.unreadRows) more unread", size: 11.5) {
-                    allUnread.toggle()
+            HStack(spacing: 12) {
+                if unread.count > Self.unreadRows {
+                    QuietLink(title: allUnread ? "Fewer" : "\(unread.count - Self.unreadRows) more unread", size: 11.5) {
+                        allUnread.toggle()
+                    }
                 }
-                .padding(.horizontal, 6)
-                .padding(.top, 2)
+                Spacer(minLength: 0)
+                QuietLink(title: unread.count == 1 ? "Mark as read" : "Mark all as read", size: 11.5) {
+                    agents.markAllRead()
+                    allUnread = false
+                }
+                .help("Clears them from Tutto. Claude and Codex keep their own dots until you open the chats there.")
             }
+            .padding(.horizontal, 6)
+            .padding(.top, 2)
         }
         .padding(.horizontal, -6)
     }

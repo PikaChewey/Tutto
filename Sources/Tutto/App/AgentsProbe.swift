@@ -52,6 +52,11 @@ enum AgentsProbe {
         for chat in agents.unread {
             print("unread:", chat.tool.name, "|", chat.title.prefix(50), "|", AgentText.age(since: chat.at, now: now), "|", chat.openURL?.absoluteString ?? "-")
         }
+        if args.contains("--mark-all-read") {
+            let before = agents.unread.count
+            agents.markAllRead()
+            print("mark all read:", before, "->", agents.unread.count)
+        }
         agents.end()
         agents.stop()
         RunLoop.main.run(until: Date().addingTimeInterval(1))
