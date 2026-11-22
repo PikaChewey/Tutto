@@ -43,19 +43,7 @@ struct AgentsCard: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Color.ink3)
             }
-            if !active.isEmpty {
-                VStack(spacing: 1) {
-                    ForEach(active.prefix(Self.rows)) { session in
-                        AgentSessionRow(agents: agents, session: session, confirming: $confirming, placeholder: placeholder)
-                    }
-                }
-                .padding(.horizontal, -6)
-                if active.count > Self.rows {
-                    QuietLink(title: "\(active.count - Self.rows) more", size: 11.5) { showInApp(.agents) }
-                        .padding(.top, -6)
-                }
-            }
-            if !unread.isEmpty { unreadRows(unread) }
+            if !active.isEmpty || !unread.isEmpty { list(active: active, unread: unread) }
             if !done.isEmpty { DoneLine(agents: agents, sessions: done, placeholder: placeholder) }
             if !agents.runaway.isEmpty { runawayLine }
             if !agents.leftRunning.isEmpty { leftoversLine }
@@ -87,26 +75,38 @@ struct AgentsCard: View {
         return "All"
     }
 
-    /// Chats with something you haven't read: newest first, a click reads it in its app.
-    func unreadRows(_ unread: [UnreadChat]) -> some View {
-        let shown = allUnread ? Array(unread.prefix(Self.unreadMax)) : Array(unread.prefix(Self.unreadRows))
+    /// Sessions that need you or are working, then chats with something you haven't read (newest
+    /// first, a click reads it in its app): one list, every row the same step apart, and one line of
+    /// links under it.
+    func list(active: [AgentSession], unread: [UnreadChat]) -> some View {
+        let chats = allUnread ? Array(unread.prefix(Self.unreadMax)) : Array(unread.prefix(Self.unreadRows))
+        let moreActive = active.count - Self.rows
+        let moreUnread = unread.count - Self.unreadRows
         return VStack(alignment: .leading, spacing: 1) {
-            ForEach(shown) { chat in UnreadChatRow(agents: agents, chat: chat) }
-            HStack(spacing: 12) {
-                if unread.count > Self.unreadRows {
-                    QuietLink(title: allUnread ? "Fewer" : "\(unread.count - Self.unreadRows) more unread", size: 11.5) {
-                        allUnread.toggle()
+            ForEach(active.prefix(Self.rows)) { session in
+                AgentSessionRow(agents: agents, session: session, confirming: $confirming, placeholder: placeholder)
+            }
+            ForEach(chats) { chat in UnreadChatRow(agents: agents, chat: chat) }
+            if moreActive > 0 || !unread.isEmpty {
+                HStack(spacing: 12) {
+                    if moreActive > 0 {
+                        QuietLink(title: "\(moreActive) more", size: 11.5) { showInApp(.agents) }
+                    }
+                    if moreUnread > 0 {
+                        QuietLink(title: allUnread ? "Fewer" : "\(moreUnread) more unread", size: 11.5) { allUnread.toggle() }
+                    }
+                    Spacer(minLength: 0)
+                    if !unread.isEmpty {
+                        QuietLink(title: unread.count == 1 ? "Mark as read" : "Mark all as read", size: 11.5) {
+                            agents.markAllRead()
+                            allUnread = false
+                        }
+                        .help("Clears them from Tutto. Claude and Codex keep their own dots until you open the chats there.")
                     }
                 }
-                Spacer(minLength: 0)
-                QuietLink(title: unread.count == 1 ? "Mark as read" : "Mark all as read", size: 11.5) {
-                    agents.markAllRead()
-                    allUnread = false
-                }
-                .help("Clears them from Tutto. Claude and Codex keep their own dots until you open the chats there.")
+                .padding(.horizontal, 6)
+                .padding(.top, 4)
             }
-            .padding(.horizontal, 6)
-            .padding(.top, 2)
         }
         .padding(.horizontal, -6)
     }
