@@ -84,6 +84,7 @@ struct MenuPanel: View {
             PanelFooter(model: model)
         }
         .modifier(GlassGroup())
+        .overlayPreferenceValue(ToolHoverKey.self) { ToolHoverLabel(hover: $0) }
         .padding(.horizontal, PanelGrid.outer)
         .padding(.top, PanelGrid.outer)
         .padding(.bottom, 6)
@@ -2743,25 +2744,15 @@ struct ToolsCard: View {
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
         .cardSurface(radius: 12)
-        .overlay(alignment: .topLeading) {
-            if let id = hovered, let index = rows.firstIndex(where: { $0.id == id }) {
-                let row = rows[index]
-                let column = CGFloat(index % Self.perRow), line = CGFloat(index / Self.perRow)
-                // Centered over its own icon (kept inside the card at the ends); moving to the next
-                // icon glides it there instead of fading out and in.
-                CenteredOver(center: Self.inset + column * (tile + Self.gap) + tile / 2) {
-                    ToolLabel(row: row, shortcut: model.shortcuts.shortcut(for: row.action), lit: lit)
-                }
-                .offset(y: -30 + line * 32)
-                .animation(reduceMotion ? nil : .spring(duration: 0.22, bounce: 0.12), value: id)
-                // Liquid Glass: the label grows out of its icon instead of fading in.
-                .transition(ThemeStore.liquid && !reduceMotion
-                    ? .scale(scale: 0.55, anchor: .bottom).combined(with: .opacity).animation(.spring(duration: 0.28, bounce: 0.2))
-                    : .opacity.animation(reduceMotion ? nil : .easeOut(duration: 0.12)))
-                .allowsHitTesting(false)
-            }
+        // The label is drawn by the panel, over everything: inside the scroll area it was cut off at
+        // the top (above the bar) or covered by the next card's glass (below it) (Bryan, 2026-11-24:
+        // "i still cant see the text of what it does and ... the shortcut/command for it").
+        .anchorPreference(key: ToolHoverKey.self, value: .bounds) { bar in
+            guard let id = hovered, let index = rows.firstIndex(where: { $0.id == id }) else { return nil }
+            let column = CGFloat(index % Self.perRow), line = CGFloat(index / Self.perRow)
+            return ToolHover(row: rows[index], shortcut: model.shortcuts.shortcut(for: rows[index].action), lit: lit, bar: bar,
+                             center: Self.inset + column * (tile + Self.gap) + tile / 2, top: -30 + line * 32)
         }
-        .zIndex(1)
     }
 
     private func toolButton(_ row: ShortcutRows.Row) -> some View {
@@ -2819,6 +2810,46 @@ struct ToolsCard: View {
                 hovered = nil
             }
         }
+    }
+}
+
+/// The tool under the pointer and where its bar is, for the panel to draw its label.
+struct ToolHover {
+    var row: ShortcutRows.Row
+    var shortcut: KeyShortcut?
+    var lit: Int
+    var bar: Anchor<CGRect>
+    /// Across the bar, the icon's middle; the label's top from the bar's.
+    var center: CGFloat
+    var top: CGFloat
+}
+
+struct ToolHoverKey: PreferenceKey {
+    static let defaultValue: ToolHover? = nil
+    static func reduce(value: inout ToolHover?, nextValue: () -> ToolHover?) { value = value ?? nextValue() }
+}
+
+/// Over the whole panel: the hovered tool's name and keys, just above its icon, gliding from icon to icon.
+struct ToolHoverLabel: View {
+    var hover: ToolHover?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        GeometryReader { proxy in
+            if let hover {
+                let bar = proxy[hover.bar]
+                CenteredOver(center: hover.center) {
+                    ToolLabel(row: hover.row, shortcut: hover.shortcut, lit: hover.lit)
+                }
+                .frame(width: bar.width)
+                .offset(x: bar.minX, y: bar.minY + hover.top)
+                .animation(reduceMotion ? nil : .spring(duration: 0.22, bounce: 0.12), value: hover.row.id)
+                .transition(ThemeStore.liquid && !reduceMotion
+                    ? .scale(scale: 0.55, anchor: .bottom).combined(with: .opacity).animation(.spring(duration: 0.28, bounce: 0.2))
+                    : .opacity.animation(reduceMotion ? nil : .easeOut(duration: 0.12)))
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -2880,17 +2911,14 @@ private struct ToolLabel: View {
     }
 }
 
-/// The label's capsule: glass under Liquid Glass, else paper with a hairline and a soft shadow.
+/// The label's capsule: solid paper with a hairline and a soft shadow, in every look. As glass it
+/// sat over the card under the bar, in the same group of glass, and melted into it like a tab.
 private struct ToolLabelSurface: ViewModifier {
     func body(content: Content) -> some View {
-        if ThemeStore.liquid {
-            content.liquidGlass(Capsule())
-        } else {
-            content
-                .background(Capsule().fill(Color.paper))
-                .overlay(Capsule().strokeBorder(Color.hairline))
-                .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
-        }
+        content
+            .background(Capsule().fill(Color.paper))
+            .overlay(Capsule().strokeBorder(ThemeStore.liquid ? Color.white.opacity(0.18) : Color.hairline))
+            .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
     }
 }
 
