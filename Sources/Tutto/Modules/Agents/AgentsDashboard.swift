@@ -406,7 +406,8 @@ private struct ClaudeLimitsSource: View {
         if exact { return "Claude's figures are Claude's own, the ones in its Settings → Usage, checked every few minutes while this shows." }
         let why: String = switch agents.claudePlanStatus {
         case .signInExpired: "Claude Code's sign-in on this Mac has run out (it renews it when it runs); switch on Keep Claude's sign-in fresh below, or run claude once"
-        case .noSignIn: "Claude Code isn't signed in on this Mac"
+        case .needsLogin: "Claude Code's sign-in on this Mac has run out and can't be renewed; run claude /login once in Terminal and they'll be Claude's own from then on"
+        case .noSignIn: "Claude Code isn't signed in on this Mac; run claude /login once in Terminal"
         case .waiting: "Claude asked Tutto to wait before asking again"
         case .failed: "Claude didn't answer"
         default: "Claude's own numbers aren't in yet"

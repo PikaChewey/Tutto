@@ -23,6 +23,8 @@ final class ClaudePlanUsageReader: @unchecked Sendable {
         case noSignIn
         /// The sign-in has run out (Claude Code renews it when it runs).
         case signInExpired
+        /// The sign-in has run out and has nothing to renew it with: only `claude /login` brings it back.
+        case needsLogin
         /// Claude said to wait.
         case waiting(until: Date)
         case failed
@@ -71,6 +73,7 @@ final class ClaudePlanUsageReader: @unchecked Sendable {
             return (nil, .noSignIn)
         }
         if signIn.isExpired(now: now) {
+            if signIn.refreshToken == nil { return (nil, .needsLogin) }
             guard renews, let renewed = renew(signIn, now: now) else { return (nil, .signInExpired) }
             signIn = renewed
         }
@@ -80,6 +83,7 @@ final class ClaudePlanUsageReader: @unchecked Sendable {
             return (usage, .ok)
         case .status(401, _):
             // Taken back or run out early: renew once, if allowed.
+            guard signIn.refreshToken != nil else { return (nil, .needsLogin) }
             guard renews, let renewed = renew(signIn, now: now), case .ok(let body) = get(Self.usageURL, token: renewed.accessToken),
                   let usage = ClaudePlanUsage(json: body, at: now) else { return (nil, .signInExpired) }
             return (usage, .ok)
