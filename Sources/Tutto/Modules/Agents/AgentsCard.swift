@@ -271,7 +271,9 @@ enum AgentText {
             if let at = estimate.limitAt { line += "; at this pace it runs out at \(clock(at, now: now))" }
             lines.append(line)
         }
-        if limits.tool == .claude {
+        if limits.tool == .claude, limits.week?.exact == true || limits.fiveHour?.exact == true {
+            lines.append("As Claude reports it (its Settings → Usage).")
+        } else if limits.tool == .claude {
             lines.append("Estimated from Claude Code's logs on this Mac\(limits.basis.map { ", measured against \($0)" } ?? ""). Chats in Claude's app count toward the same limits and aren't in the logs.")
         } else {
             lines.append("As Codex reports it.")

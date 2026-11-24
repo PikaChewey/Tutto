@@ -57,10 +57,7 @@ struct AgentsDashboard: View {
                 }
             }
             if let claude = agents.claudeLimits {
-                Text("Claude's figures are estimates (\"est.\"): Claude Code doesn't report them, so they're worked out from its logs on this Mac, measured against \(claude.basis ?? "your own use"). Chats in Claude's app count too and aren't in the logs, so they can read low.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.ink3)
-                    .fixedSize(horizontal: false, vertical: true)
+                ClaudeLimitsSource(agents: agents, limits: claude)
             }
         }
     }
@@ -150,6 +147,10 @@ struct AgentsAlertSwitches: View {
             Hairline().opacity(0.6)
             LabeledRow("Limits in the menu bar", detail: "Only when one is reached, nearly full, or will run out within the hour at this pace.") {
                 InkSwitch(isOn: $agents.menuBarLimits, label: "Limits in the menu bar")
+            }
+            Hairline().opacity(0.6)
+            LabeledRow("Keep Claude's sign-in fresh", detail: "Claude's own usage numbers come with Claude Code's sign-in. It runs out when Claude Code isn't used for a while; with this on, Tutto renews it and saves it back for Claude Code.") {
+                InkSwitch(isOn: $agents.renewsClaudeSignIn, label: "Keep Claude's sign-in fresh")
             }
             Hairline().opacity(0.6)
             LabeledRow("Runaway processes", detail: "When one agent runs \(AgentLoad.runawayCount) processes or more: something is usually looping.") {
@@ -378,5 +379,38 @@ private struct DashUnreadRow: View {
         if let folder = chat.folder { parts.append(AgentSession.displayFolder(folder)) }
         parts.append(AgentText.age(since: chat.at, now: agents.now) + (AgentText.age(since: chat.at, now: agents.now) == "now" ? "" : " ago"))
         return parts.joined(separator: " · ")
+    }
+}
+
+
+/// Where Claude's figures come from: Claude itself, or an estimate and why.
+private struct ClaudeLimitsSource: View {
+    var agents: AgentsModule
+    var limits: AgentLimits
+
+    var body: some View {
+        let exact = limits.week?.exact == true || limits.fiveHour?.exact == true
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(text(exact: exact))
+                .font(.system(size: 11))
+                .foregroundStyle(Color.ink3)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button("Refresh") { agents.refreshClaudePlan() }
+                .buttonStyle(OutlineButtonStyle(compact: true))
+                .help("Ask Claude for its usage now")
+        }
+    }
+
+    private func text(exact: Bool) -> String {
+        if exact { return "Claude's figures are Claude's own, the ones in its Settings → Usage, checked every few minutes while this shows." }
+        let why: String = switch agents.claudePlanStatus {
+        case .signInExpired: "Claude Code's sign-in on this Mac has run out (it renews it when it runs); switch on Keep Claude's sign-in fresh below, or run claude once"
+        case .noSignIn: "Claude Code isn't signed in on this Mac"
+        case .waiting: "Claude asked Tutto to wait before asking again"
+        case .failed: "Claude didn't answer"
+        default: "Claude's own numbers aren't in yet"
+        }
+        return "Claude's figures are estimates (\"est.\"): \(why). Until then they're worked out from Claude Code's logs on this Mac, measured against \(limits.basis ?? "your own use"), and chats in Claude's app aren't in them, so they can read low."
     }
 }

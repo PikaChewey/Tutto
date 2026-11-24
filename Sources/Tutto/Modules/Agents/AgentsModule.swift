@@ -23,7 +23,23 @@ import TuttoKit
 final class AgentsModule: ModuleController {
     /// Every session worth showing, what needs you first.
     private(set) var sessions: [AgentSession] = []
+    /// Claude's limits: Claude's own numbers when it answered lately, else the estimate.
     private(set) var claudeLimits: AgentLimits?
+    /// Whether Claude's own numbers are showing, and if not, why.
+    private(set) var claudePlanStatus: ClaudePlanUsageReader.Status = .unknown
+    @ObservationIgnored private var claudeEstimate: AgentLimits?
+    @ObservationIgnored private var claudePlan: ClaudePlanUsage?
+    @ObservationIgnored private var claudePlanSamples: [ClaudePlanUsage] = []
+    @ObservationIgnored private let planReader = ClaudePlanUsageReader()
+    @ObservationIgnored private var planTimer: DispatchSourceTimer?
+    /// Renew Claude Code's sign-in when it has run out, so Claude's own numbers keep coming.
+    var renewsClaudeSignIn: Bool {
+        didSet {
+            UserDefaults.standard.set(renewsClaudeSignIn, forKey: "agents.renewClaudeSignIn")
+            planReader.renews = renewsClaudeSignIn
+            if renewsClaudeSignIn { planReader.read(force: true) }
+        }
+    }
     private(set) var codexLimits: AgentLimits?
     /// What each agent costs, by its process (Claude sessions), while it's on screen.
     private(set) var loads: [Int32: AgentLoad] = [:]
@@ -104,6 +120,7 @@ final class AgentsModule: ModuleController {
         // Off unless switched on: the menu bar shows just Tutto's icon (Bryan, 2026-11-21).
         menuBarLimits = d.object(forKey: Keys.menuBarLimits) as? Bool ?? false
         warnRunaway = flag(Keys.warnRunaway)
+        renewsClaudeSignIn = d.bool(forKey: "agents.renewClaudeSignIn")
     }
 
     /// Claude Code or Codex has been used on this Mac (the card shows only then), checked when it starts.
@@ -133,7 +150,13 @@ final class AgentsModule: ModuleController {
         guard !running else { return }
         running = true
         installed = Self.agentsFound()
-        usage.onEstimate = { [weak self] estimate in self?.claudeLimits = estimate }
+        usage.onEstimate = { [weak self] estimate in
+            self?.claudeEstimate = estimate
+            self?.showClaudeLimits()
+        }
+        planReader.renews = renewsClaudeSignIn
+        planReader.onResult = { [weak self] usage, status in self?.planRead(usage, status) }
+        planReader.read(force: true)
         watch()
         reloadClaude(initial: true)
         loadCodex()
@@ -631,6 +654,42 @@ final class AgentsModule: ModuleController {
         unread.contains { $0.matches(session) }
     }
 
+    // MARK: Claude's own numbers
+
+    /// While the card or page shows: asks now if the last answer is older than the interval, and
+    /// again every interval.
+    private func startPlanTimer() {
+        guard running, planTimer == nil else { return }
+        planReader.read()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + ClaudePlanUsageReader.interval, repeating: ClaudePlanUsageReader.interval, leeway: .seconds(20))
+        timer.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.planReader.read() } }
+        timer.resume()
+        planTimer = timer
+    }
+
+    /// Asks Claude again now (the Agents page's Refresh).
+    func refreshClaudePlan() { planReader.read(force: true) }
+
+    private func planRead(_ usage: ClaudePlanUsage?, _ status: ClaudePlanUsageReader.Status) {
+        claudePlanStatus = status
+        if let usage {
+            claudePlan = usage
+            claudePlanSamples = (claudePlanSamples + [usage]).filter { usage.at.timeIntervalSince($0.at) < 3 * 3600 }
+        }
+        showClaudeLimits()
+    }
+
+    /// Claude's own reading while it's under half an hour old, else the estimate.
+    private func showClaudeLimits() {
+        let now = Date()
+        if let plan = claudePlan, now.timeIntervalSince(plan.at) < 30 * 60 {
+            claudeLimits = plan.limits(samples: claudePlanSamples, now: now)
+        } else {
+            claudeLimits = claudeEstimate
+        }
+    }
+
     // MARK: What it costs (on screen only)
 
     func begin() {
@@ -640,6 +699,7 @@ final class AgentsModule: ModuleController {
         watchers += 1
         now = Date()
         if unreadStale { scheduleUnread(delay: 0) }
+        startPlanTimer()
         guard sampler == nil else { return }
         sample()
         let timer = DispatchSource.makeTimerSource(queue: .main)
@@ -652,6 +712,8 @@ final class AgentsModule: ModuleController {
     func end() {
         watchers = max(0, watchers - 1)
         guard watchers == 0 else { return }
+        planTimer?.cancel()
+        planTimer = nil
         sampler?.cancel()
         sampler = nil
         lastTable = nil
