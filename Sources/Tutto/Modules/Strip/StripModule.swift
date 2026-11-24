@@ -1523,12 +1523,23 @@ final class StripModule: ModuleController {
             }
             switchWindows(targets, fullScreen: true, anchor: anchor)
         } else {
-            var back = StripFullScreen.toBringBack(sentFullScreen, existing: StripAX.existingWindowIDs())
-            sentFullScreen.removeAll()
+            // Every window in full screen comes back, not only the ones Full sent: one put there with
+            // its green button is on the strip's side too (Bryan, 2026-11-24: "i press strip and none
+            // of the windows changed"; Firefox was in full screen by hand, so Strip found nothing).
+            let existing = StripAX.existingWindowIDs()
+            var back = StripFullScreen.toBringBack(sentFullScreen, existing: existing)
+            sentFullScreen.removeAll { !existing.contains($0.window) }
+            for window in fullScreenWindows() where !back.contains(where: { $0.window == window.id }) {
+                back.append(StripFullScreen.Sent(window: window.id, pid: Int32(window.pid)))
+            }
             // Hide the Dock is for the strip: it hides before the windows come back, so they come
             // back at full height.
             syncDock()
-            guard !back.isEmpty else { return }
+            guard !back.isEmpty else {
+                // Nothing in full screen: the strip is put in order instead, so the click does something you see.
+                rebuild(arrange: true)
+                return Toast.shared.show("Strip", detail: "Every window is already on the strip.", duration: 2.5)
+            }
             // Yours comes back first, in front of you.
             if let anchor, let i = back.firstIndex(where: { $0.window == anchor.id }) { back.insert(back.remove(at: i), at: 0) }
             let display = StripDisplay.all().first?.frame.size ?? NSScreen.main?.frame.size ?? .zero
@@ -1615,6 +1626,10 @@ final class StripModule: ModuleController {
                     if fullScreen {
                         self.sentFullScreen += done.map { StripFullScreen.Sent(window: $0.id, pid: Int32($0.pid)) }
                     } else {
+                        // Only the ones that came back are forgotten: a window that didn't answer is
+                        // still asked the next time Strip is pressed.
+                        let back = Set(done.map(\.id))
+                        self.sentFullScreen.removeAll { back.contains($0.window) }
                         self.rebuild(arrange: true)
                     }
                     // Every window in full screen now: the desktop shows the Dock (Hide the Dock is for the strip).

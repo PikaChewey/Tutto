@@ -3050,8 +3050,9 @@ private struct WindowModeSwitch: View {
     private func option(_ title: String, full: Bool) -> some View {
         let selected = strip.fullWindows == full
         return Button {
-            guard !selected else { return }
-            // Windows slide into Spaces of their own (or back): the panel goes first.
+            // Pressed even when it's the one shown: Strip brings back whatever is in full screen
+            // (put there by hand, or a window that didn't answer last time), Full sends any window
+            // that came out. Windows slide into Spaces of their own (or back): the panel goes first.
             afterPanelCloses { strip.setFullWindows(full) }
         } label: {
             Text(title)
