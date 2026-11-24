@@ -1476,7 +1476,9 @@ final class StripModule: ModuleController {
             } else {
                 reveal(state)
             }
-            if !goRound(state, towards: towards, wentRound: wentRound, from: stripBefore) { apply(state, animated: true) }
+            if !goRound(state, towards: towards, wentRound: wentRound, from: stripBefore) {
+                apply(state, animated: true, sizeAtOnce: Self.sizingCommands.contains(command))
+            }
             if wentRound, let towards { indicator.wentRound(forward: towards == .right) }
             if state.strip.focusedWindow != before { focusWindow(in: state) }
             if mouseFollowsFocus { warpPointer(to: state) }
@@ -1842,7 +1844,14 @@ final class StripModule: ModuleController {
     }
 
     /// Sends every window of a strip toward its place: sizes change at once, positions glide.
-    private func apply(_ state: StripState, animated: Bool) {
+    /// Keys that change a window's size: the new size is sent once, not frame by frame.
+    private static let sizingCommands: Set<StripCommand> = [.cycleWidth, .fullWidth, .wider, .narrower, .taller, .shorter, .equalizeHeights]
+
+    /// `sizeAtOnce`: windows take their new size in one go and only their position glides. An app
+    /// lays its whole window out again at every new size; sent on every frame (120 a second) a
+    /// browser or an Electron app fell behind and the resize dragged (Bryan, 2026-11-24: ⌃⌥R
+    /// "kinda laggy esp when i ... cycle through width"). Moving a window costs an app nothing.
+    private func apply(_ state: StripState, animated: Bool, sizeAtOnce: Bool = false) {
         let timing = PerfLog.begin("strip apply"); defer { timing.end() }
         guard isCurrent(state.key) else { return }
         let geometry = geometry(for: state)
@@ -1883,6 +1892,10 @@ final class StripModule: ModuleController {
             // Position and size follow the same spring, so columns stay exactly a gap apart while
             // widths change (the order each frame is sent in keeps macOS from clamping a size).
             if instant { spring.snap(to: placement.frame) }
+            if sizeAtOnce {
+                spring.width.snap(to: placement.frame.width)
+                spring.height.snap(to: placement.frame.height)
+            }
             w.spring = spring
             animating.insert(w.id)
         }
