@@ -68,7 +68,7 @@ final class AgentsTests: XCTestCase {
 
     // MARK: Codex
 
-    private let meta = #"{"timestamp":"2026-11-17T02:36:34.590Z","type":"session_meta","payload":{"id":"01a1e75c","cwd":"/Users/me/Waterloo","originator":"Codex Desktop","source":"vscode"}}"#
+    private let meta = #"{"timestamp":"2026-11-17T02:36:34.590Z","type":"session_meta","payload":{"id":"01a1e75c","cwd":"/Users/me/Projects/notes","originator":"Codex Desktop","source":"vscode"}}"#
     private func event(_ type: String, _ time: String) -> String {
         #"{"timestamp":"\#(time)","type":"event_msg","payload":{"type":"\#(type)"}}"#
     }

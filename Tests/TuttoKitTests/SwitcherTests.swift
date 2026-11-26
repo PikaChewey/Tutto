@@ -50,7 +50,7 @@ final class SwitcherRulesTests: XCTestCase {
         XCTAssertEqual(WindowTitles.clean("Inbox (3) – bryan@example.com – Gmail - Google Chrome", appName: "Google Chrome"),
                        "Inbox (3) – bryan@example.com – Gmail")
         XCTAssertEqual(WindowTitles.clean("Startup Cold Email Kit", appName: "Firefox"), "Startup Cold Email Kit")
-        XCTAssertEqual(WindowTitles.clean("/Users/bryan/Documents/notes.txt", appName: "TextEdit"), "notes.txt")
+        XCTAssertEqual(WindowTitles.clean("/Users/me/Documents/notes.txt", appName: "TextEdit"), "notes.txt")
         XCTAssertEqual(WindowTitles.clean("Big - Small", appName: "Notes"), "Big - Small")
         XCTAssertEqual(WindowTitles.clean("   ", appName: "Notes"), "")
     }

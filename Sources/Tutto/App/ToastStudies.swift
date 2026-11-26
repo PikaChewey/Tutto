@@ -28,7 +28,7 @@ struct ToastSample: Identifiable {
         return [
             ToastSample(title: "Copied", detail: "1440 × 900", image: shot, action: "Edit"),
             ToastSample(title: "Claude finished", detail: "Fix the flaky upload test", image: claude, action: "Open"),
-            ToastSample(title: "Claude needs you", detail: "Plus One sound effects · wants to run a command", image: claude, action: "Open", urgent: true),
+            ToastSample(title: "Claude needs you", detail: "Add dark mode to settings · wants to run a command", image: claude, action: "Open", urgent: true),
             ToastSample(title: "Copied as plain text", detail: "Press ⌘V to paste", symbol: "doc.on.clipboard"),
         ]
     }

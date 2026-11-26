@@ -331,7 +331,7 @@ struct UnreadChatRow: View {
     }
 }
 
-/// Finished sessions in one line: "2 done · site, Grasp Project", their icons overlapping. A
+/// Finished sessions in one line: "2 done · Landing page, Write the API docs", their icons overlapping. A
 /// click opens them on the Agents page.
 struct DoneLine: View {
     var agents: AgentsModule

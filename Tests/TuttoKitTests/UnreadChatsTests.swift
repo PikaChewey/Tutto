@@ -135,12 +135,12 @@ final class UnreadChatsTests: XCTestCase {
     /// Marked read in Tutto: hidden while the chat stays as it was; back after a new reply or after
     /// "Mark as Unread" in its app.
     func testTuttoReadMarkYieldsToTheApp() {
-        let head = Data(#"{"lastTurnEdgeAt":1795312240090,"title":"NeetCode"}"#.utf8)
+        let head = Data(#"{"lastTurnEdgeAt":1795312240090,"title":"Study plan"}"#.utf8)
         let chat = ClaudeUnread.chat(id: "local_a", head: head)!
         let mark: Any = chat.state
         XCTAssertTrue(chat.isCovered(by: mark))
         XCTAssertFalse(ClaudeUnread.chat(id: "local_a", head: head, marked: true)!.isCovered(by: mark), "marked unread in Claude")
-        let replied = ClaudeUnread.chat(id: "local_a", head: Data(#"{"lastTurnEdgeAt":1795312999000,"title":"NeetCode"}"#.utf8))!
+        let replied = ClaudeUnread.chat(id: "local_a", head: Data(#"{"lastTurnEdgeAt":1795312999000,"title":"Study plan"}"#.utf8))!
         XCTAssertFalse(replied.isCovered(by: mark), "a new reply")
         XCTAssertFalse(chat.isCovered(by: nil))
         // An older mark, saved as the turn's time.

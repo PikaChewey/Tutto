@@ -806,15 +806,15 @@ final class AgentsModule: ModuleController {
         previewing = true
         installed = true
         sessions = AgentSession.ordered([
-            AgentSession(tool: .claude, sessionID: "a", name: "Plus One sound effects", folder: NSHomeDirectory() + "/Projects/plusone",
+            AgentSession(tool: .claude, sessionID: "a", name: "Add dark mode to settings", folder: NSHomeDirectory() + "/Projects/notes-app",
                          activity: .needsYou("input needed"), since: now.addingTimeInterval(-240), pid: 9001, host: .claudeApp),
-            AgentSession(tool: .claude, sessionID: "b", name: "Tutto application", folder: NSHomeDirectory(), activity: .working,
+            AgentSession(tool: .claude, sessionID: "b", name: "Speed up the image cache", folder: NSHomeDirectory() + "/Projects/gallery", activity: .working,
                          since: now.addingTimeInterval(-3900), pid: 9002, host: .claudeApp),
             AgentSession(tool: .codex, sessionID: "c", name: "Fix the flaky upload test", folder: NSHomeDirectory() + "/Projects/shop", activity: .working,
                          since: now.addingTimeInterval(-720), host: .codexApp),
-            AgentSession(tool: .claude, sessionID: "d", name: "Grasp Project", folder: NSHomeDirectory(), activity: .yourTurn,
+            AgentSession(tool: .claude, sessionID: "d", name: "Write the API docs", folder: NSHomeDirectory() + "/Projects/api", activity: .yourTurn,
                          since: now.addingTimeInterval(-9600), pid: 9003, host: .claudeApp),
-            AgentSession(tool: .claude, sessionID: "e", name: "site", folder: NSHomeDirectory() + "/Projects/site", activity: .yourTurn,
+            AgentSession(tool: .claude, sessionID: "e", name: "Landing page", folder: NSHomeDirectory() + "/Projects/site", activity: .yourTurn,
                          since: now.addingTimeInterval(-600), pid: 9004, host: .other),
         ])
         loads = [9001: AgentLoad(cpu: 0.4, memory: 105_000_000, watts: 0.1, processes: 1, busiest: nil),
@@ -822,17 +822,16 @@ final class AgentsModule: ModuleController {
                  9003: AgentLoad(cpu: 0, memory: 271_000_000, watts: nil, processes: 2, busiest: nil),
                  9004: AgentLoad(cpu: 0.1, memory: 86_000_000, watts: nil, processes: 1, busiest: nil)]
         codexLoad = AgentLoad(cpu: 38, memory: 640_000_000, watts: 1.8, processes: 9, busiest: nil)
-        claudeLimits = AgentLimits(tool: .claude, fiveHour: LimitEstimate(window: .fiveHour, percent: 31, resetsAt: now.addingTimeInterval(9000), exact: false),
-                                   week: LimitEstimate(window: .week, percent: 66, resetsAt: now.addingTimeInterval(190_000), exact: false),
-                                   basis: "the weekly limit you reached Nov 11")
+        claudeLimits = AgentLimits(tool: .claude, fiveHour: LimitEstimate(window: .fiveHour, percent: 31, resetsAt: now.addingTimeInterval(9000), exact: true),
+                                   week: LimitEstimate(window: .week, percent: 63, resetsAt: now.addingTimeInterval(190_000), exact: true))
         codexLimits = AgentLimits(tool: .codex, fiveHour: LimitEstimate(window: .fiveHour, percent: 78, resetsAt: now.addingTimeInterval(7200),
                                                                         limitAt: now.addingTimeInterval(2700), exact: true),
                                   week: LimitEstimate(window: .week, percent: 24, resetsAt: now.addingTimeInterval(300_000), exact: true))
         leftRunning = [LeftRunning(pid: 9100, name: "node", folder: NSHomeDirectory() + "/Projects/site", ports: [5173], memory: 312_000_000,
                                    started: now.addingTimeInterval(-26_000)),
-                       LeftRunning(pid: 9101, name: "node", folder: NSHomeDirectory() + "/Projects/stdout", ports: [3000], memory: 488_000_000,
+                       LeftRunning(pid: 9101, name: "node", folder: NSHomeDirectory() + "/Projects/blog", ports: [3000], memory: 488_000_000,
                                    started: now.addingTimeInterval(-90_000))]
-        unread = [UnreadChat(tool: .claude, chatID: "local_demo1", title: "Morning brief", at: now.addingTimeInterval(-1500)),
+        unread = [UnreadChat(tool: .claude, chatID: "local_demo1", title: "Plan the next release", at: now.addingTimeInterval(-1500)),
                   UnreadChat(tool: .codex, chatID: "demo2", title: "Set up the release script", at: now.addingTimeInterval(-7400)),
                   UnreadChat(tool: .claude, chatID: "local_demo3", title: "Review the landing page copy", at: now.addingTimeInterval(-30_000)),
                   UnreadChat(tool: .claude, chatID: "local_demo4", title: "Daily notes", at: now.addingTimeInterval(-90_000))]

@@ -7,11 +7,12 @@
 //  holds charging off for the charge limit (`ChargeControlCore.swift`).
 //
 //  This file is compiled into BOTH TuttoKit and TuttoHelper. Sources/TuttoHelper/Shared/
-//  holds a symlink to it, so the helper does not have to link all of TuttoKit. Keep it
-//  Foundation-only. The explicit @objc name keeps the wire name identical in both modules.
+//  holds a symlink to it, so the helper does not have to link all of TuttoKit. Keep it to
+//  Foundation and Security. The explicit @objc name keeps the wire name identical in both modules.
 //
 
 import Foundation
+import Security
 
 /// Names, versions and code-signing requirements shared by the app and the helper.
 public enum TuttoFanHelper {
@@ -26,7 +27,24 @@ public enum TuttoFanHelper {
 
     public static let appBundleIdentifier = "ca.bryanyao.Tutto"
     public static let helperIdentifier = "ca.bryanyao.Tutto.helper"
-    public static let teamIdentifier = "8WA5T6YMPK"
+    /// The team that signed this copy: the app and the helper each read it from their own
+    /// signature, so a Tutto built and signed by anyone accepts only its own helper and app.
+    /// (It was this Mac's team, written in, and someone building Tutto with their own identity
+    /// got a helper that refused their app: no fan control, no lid-closed Stay Awake.)
+    /// The original team when the signature can't be read (an unsigned debug run).
+    public static let teamIdentifier: String = ownTeamIdentifier() ?? "8WA5T6YMPK"
+
+    static func ownTeamIdentifier() -> String? {
+        var code: SecCode?
+        guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return nil }
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else { return nil }
+        var info: CFDictionary?
+        guard SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+              let team = (info as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String, !team.isEmpty,
+              team.allSatisfy({ $0.isLetter || $0.isNumber }) else { return nil }
+        return team
+    }
 
     /// The helper accepts connections only from a process that satisfies this requirement.
     public static let clientRequirement =

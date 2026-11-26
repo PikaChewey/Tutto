@@ -34,10 +34,10 @@ There is no `KeepAlive` and no `RunAtLoad`. launchd starts the helper when the a
 
 ## Signing
 
-Sign the helper first, then any other nested code, then the app. Don't use `--deep`. Both the app and the helper need the same Apple-issued identity. Ad-hoc signing breaks `SMAppService` registration.
+Sign the helper first, then any other nested code, then the app. Don't use `--deep`. Both the app and the helper need the same Apple-issued identity: each reads its team from its own signature (`TuttoFanHelper.teamIdentifier`) and accepts only the other signed by that team. Ad-hoc signing breaks `SMAppService` registration.
 
 ```sh
-IDENTITY="Apple Development: bryan.yao520@gmail.com (N3UA59RRRA)"
+IDENTITY="Apple Development: Your Name (XXXXXXXXXX)"   # security find-identity -v -p codesigning
 APP=build/Products.noindex/Tutto.app
 
 codesign --force --options runtime --timestamp=none \
@@ -47,8 +47,8 @@ codesign --force --options runtime --timestamp=none --sign "$IDENTITY" "$APP"   
 
 # Check the result:
 codesign --verify --strict --verbose=2 "$APP"
-codesign --verify -R='anchor apple generic and identifier "ca.bryanyao.Tutto.helper" and certificate leaf[subject.OU] = "8WA5T6YMPK"' "$APP/Contents/MacOS/TuttoHelper"
-codesign --verify -R='anchor apple generic and identifier "ca.bryanyao.Tutto" and certificate leaf[subject.OU] = "8WA5T6YMPK"' "$APP"
+codesign --verify -R='anchor apple generic and identifier "ca.bryanyao.Tutto.helper" and certificate leaf[subject.OU] = "<your team ID>"' "$APP/Contents/MacOS/TuttoHelper"
+codesign --verify -R='anchor apple generic and identifier "ca.bryanyao.Tutto" and certificate leaf[subject.OU] = "<your team ID>"' "$APP"
 ```
 
 - **Entitlements.** The helper needs none. It opens `AppleSMC` as root.
@@ -127,7 +127,7 @@ helper?.resetAllFans { status in }
 **Caller check.** The helper calls `NSXPCListener.setConnectionCodeSigningRequirement`, so a non-matching peer is rejected before the delegate runs. It also calls `NSXPCConnection.setCodeSigningRequirement` on every accepted connection. The requirement is:
 
 ```
-anchor apple generic and identifier "ca.bryanyao.Tutto" and certificate leaf[subject.OU] = "8WA5T6YMPK"
+anchor apple generic and identifier "ca.bryanyao.Tutto" and certificate leaf[subject.OU] = "<your team ID>"
 ```
 
 **`setFan(i, mode: 1, rpm)`, manual.** This follows the known-good write sequence for Apple silicon SMCs (from published open-source SMC research):

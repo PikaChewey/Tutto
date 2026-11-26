@@ -232,7 +232,7 @@ enum Snapshots {
         let icon = NSRect(x: visible.maxX - 220, y: visible.maxY, width: 24, height: 24)
         var backdrop: NSWindow?
         if let behind {
-            let frame = NSRect(x: visible.maxX - 420, y: visible.minY, width: 420, height: visible.height)
+            let frame = screen.frame  // the whole screen: nothing of what's really on it shows through the glass
             let under = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
             let image = NSImageView(frame: NSRect(origin: .zero, size: frame.size))
             image.image = behind
