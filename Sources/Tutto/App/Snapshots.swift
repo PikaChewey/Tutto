@@ -490,7 +490,7 @@ struct SnapshotExtras {
         }
         study("original") { MenuPanel(model: $0).background(PanelMaterialStandIn()) }
         // The shipped panel (layout A), at full height, at rest and with a control open.
-        for (name, open, levels) in [("panel", nil, false), ("panel-sound", "sound", true), ("panel-clicker", "clicker", false)] as [(String, String?, Bool)] {
+        for (name, open, levels) in [("panel", nil, false), ("panel-sound", "sound", true), ("panel-clicker", "clicker", false), ("panel-compress", "compress", false)] as [(String, String?, Bool)] {
             extras.append(SnapshotExtras(name: name, inDefaultSet: false) { model in
                 ThinScrollStage.limit = 5_000
                 SoundCard.startsShowingLevels = levels

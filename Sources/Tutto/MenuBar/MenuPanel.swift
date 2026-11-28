@@ -1943,6 +1943,9 @@ struct ConvertCard: View {
     @Bindable var converter: ConverterModule
     /// On the Customize page: shown closed, not used.
     var placeholder = false
+    /// Shown from the control strip's Compress chip: it opens with its drop well showing, since that
+    /// click already asked for it (the arrow still folds it).
+    var startsExpanded = false
     /// Opened from its arrow, it stays open the next time the panel opens.
     @AppStorage("panel.convertOpen") private var keptOpen = false
     /// The arrow's state for this panel (a stored setting changes the view outside the animation, so
@@ -1954,7 +1957,7 @@ struct ConvertCard: View {
     nonisolated(unsafe) static var startsOpen = false
     nonisolated(unsafe) static var startsClosed = false
 
-    private var isOpen: Bool { !placeholder && !Self.startsClosed && (Self.startsOpen || (opened ?? keptOpen)) }
+    private var isOpen: Bool { !placeholder && !Self.startsClosed && (Self.startsOpen || (opened ?? (startsExpanded || keptOpen))) }
     private var dragging: Bool { !placeholder && PanelDrag.shared.files }
 
     var body: some View {
