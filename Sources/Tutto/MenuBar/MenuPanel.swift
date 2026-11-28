@@ -1943,21 +1943,13 @@ struct ConvertCard: View {
     @Bindable var converter: ConverterModule
     /// On the Customize page: shown closed, not used.
     var placeholder = false
-    /// Shown from the control strip's Compress chip: it opens with its drop well showing, since that
-    /// click already asked for it (the arrow still folds it).
-    var startsExpanded = false
-    /// Opened from its arrow, it stays open the next time the panel opens.
-    @AppStorage("panel.convertOpen") private var keptOpen = false
-    /// The arrow's state for this panel (a stored setting changes the view outside the animation, so
-    /// opening snapped; this animates, and the setting follows it).
-    @State private var opened: Bool?
-    @State private var hoveringHeader = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Snapshots render it open (`convert-open`) or closed (`convert-closed`).
+    /// Always open with its drop well (no arrow to fold it). Snapshots can still render it closed
+    /// (`convert-closed`); `convert-open` is kept for old snapshot scripts.
     nonisolated(unsafe) static var startsOpen = false
     nonisolated(unsafe) static var startsClosed = false
 
-    private var isOpen: Bool { !placeholder && !Self.startsClosed && (Self.startsOpen || (opened ?? (startsExpanded || keptOpen))) }
+    private var isOpen: Bool { !placeholder && !Self.startsClosed }
     private var dragging: Bool { !placeholder && PanelDrag.shared.files }
 
     var body: some View {
@@ -2005,29 +1997,8 @@ struct ConvertCard: View {
         HStack(spacing: 8) {
             RowLabel(symbol: ModuleID.converter.symbol, title: "Convert & Compress", live: converter.working != nil,
                      help: "Compress, convert, resize, crop or zip files")
-            Spacer(minLength: 6)
-            Button(action: toggle) {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(hoveringHeader ? Color.ink : Color.ink3)
-                    .rotationEffect(.degrees(isOpen ? 180 : 0))
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
-                    .lensHover(cornerRadius: 8, x: 0, y: 0, swell: Motion.iconSwell)
-            }
-            .buttonStyle(PressStyle())
-            .accessibilityLabel(isOpen ? "Hide actions" : "Show actions")
         }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: toggle)
-        .onHover { hoveringHeader = $0 }
-        .help(isOpen ? "Hide it" : "Drop files on the panel to compress, convert, resize or crop them, or open this")
-    }
-
-    private func toggle() {
-        let open = !isOpen
-        withAnimation(Motion.adaptive(Motion.snappy, reduceMotion: reduceMotion)) { opened = open }
-        keptOpen = open
+        .help("Drop files on the panel to compress, convert, resize or crop them")
     }
 
     /// The four places to drop, side by side.

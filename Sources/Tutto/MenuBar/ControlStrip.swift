@@ -107,7 +107,7 @@ struct ControlStripView: View {
     private func control(_ id: String) -> some View {
         switch id {
         case "sound": if let sound = model.sound, SoundModule.isSupported { SoundCard(sound: sound) }
-        case "compress": if let converter = model.converter { ConvertCard(converter: converter, placeholder: editing != nil, startsExpanded: true) }
+        case "compress": if let converter = model.converter { ConvertCard(converter: converter, placeholder: editing != nil) }
         default: ControlRows(model: model, ids: [id], editing: nil)
         }
     }
